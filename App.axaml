@@ -1,0 +1,161 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WiimControl.App"
+             Name="Wiim Control"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <Color x:Key="SystemAccentColor">#5B5BF6</Color>
+    <Color x:Key="SystemAccentColorDark1">#5050E2</Color>
+    <Color x:Key="SystemAccentColorDark2">#4646CC</Color>
+    <Color x:Key="SystemAccentColorDark3">#3C3CB4</Color>
+    <Color x:Key="SystemAccentColorLight1">#7272FF</Color>
+    <Color x:Key="SystemAccentColorLight2">#8A8AFF</Color>
+    <Color x:Key="SystemAccentColorLight3">#A4A4FF</Color>
+    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#2F2F2F" />
+    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#3A3A3A" />
+    <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#555555" />
+    <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#606060" />
+    <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="Transparent" />
+    <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="Transparent" />
+    <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="White" />
+    <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="White" />
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+
+    <Style Selector="Window">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="#181818" />
+    </Style>
+
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="#A6A6A6" />
+    </Style>
+    <Style Selector="TextBlock.dim">
+      <Setter Property="Foreground" Value="#7A7A7A" />
+    </Style>
+    <Style Selector="TextBlock.accent">
+      <Setter Property="Foreground" Value="#A4A4FF" />
+    </Style>
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontSize" Value="28" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="TextBlock.heading">
+      <Setter Property="FontSize" Value="15.5" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="TextBlock.device">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="TextBlock.small">
+      <Setter Property="FontSize" Value="12.5" />
+    </Style>
+
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#2A2A2A" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="20,16" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+    <Style Selector="Border.card.active">
+      <Setter Property="Background" Value="#474747" />
+    </Style>
+
+    <Style Selector="Button.pill">
+      <Setter Property="Background" Value="#3A3A3A" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="Padding" Value="16,8" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.pill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#4A4A4A" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.pill:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#555555" />
+    </Style>
+    <Style Selector="Button.pill:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#303030" />
+      <Setter Property="Foreground" Value="#6E6E6E" />
+    </Style>
+    <Style Selector="Button.pill.accent">
+      <Setter Property="Background" Value="#5B5BF6" />
+    </Style>
+    <Style Selector="Button.pill.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#7272FF" />
+    </Style>
+
+    <Style Selector="Button.icon">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="Width" Value="38" />
+      <Setter Property="Height" Value="38" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#4A4A4A" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.icon:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#6E6E6E" />
+    </Style>
+
+    <Style Selector="Button.nav">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,2" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2C2C2C" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.nav.selected">
+      <Setter Property="Background" Value="#25254A" />
+    </Style>
+    <Style Selector="Button.nav.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2C2C55" />
+    </Style>
+
+    <Style Selector="ComboBox">
+      <Setter Property="Background" Value="#3A3A3A" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="MinHeight" Value="38" />
+    </Style>
+    <Style Selector="ComboBox:pointerover /template/ Border#Background">
+      <Setter Property="Background" Value="#4A4A4A" />
+    </Style>
+
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="#3A3A3A" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style Selector="ToggleSwitch">
+      <Setter Property="OnContent" Value="{x:Null}" />
+      <Setter Property="OffContent" Value="{x:Null}" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Application.Styles>
+</Application>
