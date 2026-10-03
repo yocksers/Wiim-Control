@@ -47,7 +47,7 @@ other WiiM/LinkPlay devices) from your PC.
 
 ## Windows
 
-Run `WiimControlSetup.exe`.
+Run `WiimControl-1.01-Windows_Setup.exe`.
 
 ## Linux
 
