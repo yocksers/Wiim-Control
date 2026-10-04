@@ -26,8 +26,29 @@ static class WiimDiscovery
 
         var merged = new Dictionary<string, KnownDevice>();
         foreach (var d in ssdpTask.Result) merged[d.Ip] = d;
-        foreach (var d in scanTask.Result) merged.TryAdd(d.Ip, d);
-        return merged.Values.ToList();
+        foreach (var d in scanTask.Result)
+        {
+            if (!merged.TryGetValue(d.Ip, out var existing)) merged[d.Ip] = d;
+            else if (existing.Uuid.Length == 0) merged[d.Ip] = existing with { Uuid = d.Uuid };
+        }
+
+        var withIds = await Task.WhenAll(merged.Values.Select(async d =>
+            d.Uuid.Length > 0 ? d : d with { Uuid = await FetchUuidAsync(d.Ip) ?? string.Empty }));
+        return withIds.ToList();
+    }
+
+    public static async Task<string?> FetchUuidAsync(string ip)
+    {
+        try
+        {
+            var json = await ProbeHttp.GetStringAsync($"https://{ip}/httpapi.asp?command=getStatusEx");
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("uuid", out var uuid) && uuid.GetString() is { Length: > 0 } value ? value : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static async Task<List<KnownDevice>> DiscoverViaSsdpAsync(TimeSpan timeout)
@@ -136,7 +157,7 @@ static class WiimDiscovery
                 if (manufacturer.Contains("linkplay", StringComparison.OrdinalIgnoreCase)
                     || friendlyName.Contains("wiim", StringComparison.OrdinalIgnoreCase))
                 {
-                    results[uri.Host] = new KnownDevice(friendlyName, uri.Host, uri.Host);
+                    results[uri.Host] = new KnownDevice(friendlyName, uri.Host, string.Empty);
                 }
             }
             catch { }
@@ -194,6 +215,7 @@ static class WiimDiscovery
                 string hardware = doc.RootElement.TryGetProperty("hardware", out var hw) ? hw.GetString() ?? "" : "";
                 string project  = doc.RootElement.TryGetProperty("project", out var pr) ? pr.GetString() ?? "" : "";
                 string deviceName = doc.RootElement.TryGetProperty("DeviceName", out var dn) ? dn.GetString() ?? "" : "";
+                string uuid = doc.RootElement.TryGetProperty("uuid", out var id) ? id.GetString() ?? "" : "";
 
                 if (hardware.Contains("wiim", StringComparison.OrdinalIgnoreCase)
                     || project.Contains("wiim", StringComparison.OrdinalIgnoreCase)
@@ -201,7 +223,7 @@ static class WiimDiscovery
                 {
                     var name = !string.IsNullOrWhiteSpace(deviceName) ? deviceName
                         : !string.IsNullOrWhiteSpace(hardware) ? hardware : "WiiM Amp";
-                    return new KnownDevice(name, ip.ToString(), string.Empty);
+                    return new KnownDevice(name, ip.ToString(), uuid);
                 }
             }
             catch { }

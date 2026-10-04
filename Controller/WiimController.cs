@@ -89,7 +89,7 @@ sealed partial class WiimController : IDisposable
 
         if (OperatingSystem.IsWindows())
         {
-            _shellWnd = new ShellHookWindow(HandleKeyCommand, _forwardMediaKeys);
+            _shellWnd = new ShellHookWindow(HandleKeyCommand, OnHotkeyPressed, _forwardMediaKeys);
             _hookID = InstallHook();
 
             if (_outputMonitor != null)
@@ -105,11 +105,14 @@ sealed partial class WiimController : IDisposable
                 };
             }
         }
-        else
+        else if (OperatingSystem.IsLinux())
         {
             _linuxShortcuts = new LinuxShortcuts(cmd => Dispatcher.UIThread.Post(() => HandleCommand(cmd)));
             if (_linuxPortalShortcuts) _ = _linuxShortcuts.RegisterAsync(_forwardMediaKeys);
         }
+
+        StartHotkeys();
+        _ = FillMissingDeviceIdsAsync();
     }
 
     private void HandleKeyCommand(string cmd)
@@ -149,6 +152,7 @@ sealed partial class WiimController : IDisposable
     {
         _shutdown.Cancel();
         if (_hookID != IntPtr.Zero) UnhookWindowsHookEx(_hookID);
+        if (!ReferenceEquals(_globalHotkeys, _shellWnd)) _globalHotkeys?.Dispose();
         _shellWnd?.Dispose();
         _linuxShortcuts?.Dispose();
         _tray?.Dispose();

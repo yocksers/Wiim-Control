@@ -2,8 +2,10 @@ namespace WiimControl;
 
 sealed partial class WiimController
 {
-    private static readonly string _cfgPath = OperatingSystem.IsWindows()
-        ? Path.Combine(AppContext.BaseDirectory, "wiim.cfg")
+    private static readonly string _cfgPath =
+        OperatingSystem.IsWindows() ? Path.Combine(AppContext.BaseDirectory, "wiim.cfg")
+        : OperatingSystem.IsMacOS() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "Library", "Application Support", "Wiim Control", "wiim.cfg")
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "wiim-control", "wiim.cfg");
 
     private static bool IsAutoStartEnabled() => AutoStart.IsEnabled();
@@ -24,6 +26,7 @@ sealed partial class WiimController
             if (key == "groupvolumekeys") _groupVolumeKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "groupleader")     _groupLeaderIp = val;
             if (key == "linuxportalshortcuts") _linuxPortalShortcuts = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "hotkeys")         ParseHotkeys(val);
             if (key == "windowmaximized") _windowMaximized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "windowsize" && val.Split('x') is [var w, var h] &&
                 int.TryParse(w, out int width) && int.TryParse(h, out int height) && width > 0 && height > 0)
@@ -52,7 +55,7 @@ sealed partial class WiimController
             File.WriteAllLines(_cfgPath, [
                 $"ip={_deviceIp}", $"deviceUuid={_deviceUuid}", $"logStep={_logStep}",
                 $"forwardMediaKeys={_forwardMediaKeys}", $"groupVolumeKeys={_groupVolumeKeys}", $"groupLeader={_groupLeaderIp}",
-                $"linuxPortalShortcuts={_linuxPortalShortcuts}",
+                $"linuxPortalShortcuts={_linuxPortalShortcuts}", $"hotkeys={SerializeHotkeys()}",
                 $"windowSize={(_windowSize is { } size ? $"{(int)size.Width}x{(int)size.Height}" : "")}", $"windowMaximized={_windowMaximized}",
                 $"uiScale={_uiScalePercent}",
                 $"suppressWindowsOSD={_suppress}", $"volumeStep={_volumeStep}",

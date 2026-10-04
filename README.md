@@ -1,6 +1,6 @@
 # Wiim Control
 
-A tray app for **Windows and Linux** for controlling **WiiM amps** (WiiM Amp, WiiM Amp Ultra and
+A tray app for **Windows, Linux and macOS** for controlling **WiiM amps** (WiiM Amp, WiiM Amp Ultra and
 other WiiM/LinkPlay devices) from your PC.
 
 ## Features
@@ -20,7 +20,8 @@ other WiiM/LinkPlay devices) from your PC.
 - Keeps a list of your amps; pick which one the volume keys control.
 - For every amp: now playing (title, artist, album art, source and audio quality),
   play/pause, previous and next, and its own volume slider and mute button.
-- Reconnects automatically if the active amp gets a new IP address (for amps found by discovery).
+- Remembers each amp's unique ID, so it reconnects automatically when the active amp gets a new IP
+  address, and **Discover** updates amps that have moved instead of adding them twice.
 
 **Multiroom**
 - Link your amps together so they play in sync. The group leader is the controlled amp by default,
@@ -43,28 +44,44 @@ other WiiM/LinkPlay devices) from your PC.
 - Right-click menu with the most common settings, the amp's presets 1–12 (with their names when the
   amp reports them), device switching and a connection test.
 - The tray tooltip shows the active amp and the track that is playing.
-- Start with Windows (or when you log in, on Linux).
+- Start with Windows (or at login on Linux and macOS).
+
+**Hotkeys**
+- Set your own keyboard shortcuts for volume up/down, mute, play/pause, next, previous and opening
+  the settings. They work in every program, which is handy if your keyboard has no media keys.
 
 ## Windows
 
-Run `WiimControl-1.01-Windows_Setup.exe`.
+Run `WiimControlSetup.exe`.
 
 ## Linux
 
 Download `WiimControl-<version>-x86_64.AppImage`, make it executable and run it:
 
 ```
-chmod +x WiimControl-1.01-x86_64.AppImage
-./WiimControl-1.01-x86_64.AppImage
+chmod +x WiimControl-1.02-x86_64.AppImage
+./WiimControl-1.02-x86_64.AppImage
 ```
 
 Settings are stored in `~/.config/wiim-control/`. The tray icon works out of the box on KDE Plasma
 and most desktops; GNOME needs the AppIndicator extension.
 
-**Volume keys on Linux.** there are two ways to connect the volume keys to the amp (both on the **General** page):
+**Volume keys on Linux.** There are three ways to control the amp from the keyboard:
 
 1. **Desktop global shortcuts** (KDE Plasma, GNOME 48 and newer): switch on *Use the desktop's
    global shortcuts* and approve the shortcuts when the desktop asks.
 2. **Keyboard settings**: bind the keys to the commands shown on the General page, for example
-   `WiimControl-1.01-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
+   `WiimControl-1.02-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
    `--next` and `--previous`. Each command is sent to the running Wiim Control.
+3. **Hotkeys page**: set your own shortcuts in Wiim Control. No desktop setup needed on X11 desktops
+   such as XFCE, Cinnamon and MATE. Ctrl + Alt + F1 to F12 can't be used; Linux reserves them.
+
+## macOS
+
+Download `WiimControl-<version>-macos-arm64.zip` (Apple Silicon) or `WiimControl-<version>-macos-x64.zip`
+(Intel), unzip it and move **Wiim Control** to Applications. It runs in the menu bar.
+
+macOS doesn't let apps take over the volume keys, so set your own shortcuts on the **Hotkeys** page.
+The first time Wiim Control connects to your amps, macOS asks for permission to access the local
+network. Unless the app is signed and notarized, macOS blocks the first start: right-click the app
+and choose **Open**.

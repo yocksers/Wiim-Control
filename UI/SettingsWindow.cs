@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -84,6 +85,13 @@ sealed partial class WiimController
         private readonly TextBlock _lblAmpStatus = Subtitle();
         private bool _ampBusy;
 
+        private readonly StackPanel _hotkeyList = new();
+        private readonly TextBlock _lblHotkeyNote = new()
+        {
+            Classes = { "accent" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), IsVisible = false
+        };
+        private HotkeyAction? _recording;
+
         private sealed record VolumeControls(LevelSlider Slider, TextBlock Value, Button Mute, PathIcon MuteIcon);
 
         private sealed record NowPlayingControls(ArtworkView Art, TextBlock Title, TextBlock Artist, TextBlock Detail,
@@ -139,6 +147,8 @@ sealed partial class WiimController
                 _volumeSendTimer.Stop();
                 _volumePollTimer.Stop();
                 if (_owner._linuxShortcuts != null) _owner._linuxShortcuts.StatusChanged -= UpdatePortalStatus;
+                _owner.HotkeysChanged -= RebuildHotkeys;
+                if (_recording != null) _ = _owner.ApplyHotkeysAsync();
             };
         }
 
@@ -267,6 +277,7 @@ sealed partial class WiimController
             var eqPage = BuildEqPage();
             var volumePage = BuildVolumePage();
             var ampPage = BuildAmpPage();
+            var hotkeysPage = BuildHotkeysPage();
             var generalPage = BuildGeneralPage();
 
             var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 0) };
@@ -285,6 +296,7 @@ sealed partial class WiimController
             sidebarItems.Children.Add(Nav("Volume", Icons.Volume, volumePage));
             sidebarItems.Children.Add(SectionLabel("Settings"));
             sidebarItems.Children.Add(Nav("Amp settings", Icons.Wrench, ampPage));
+            sidebarItems.Children.Add(Nav("Hotkeys", Icons.Keyboard, hotkeysPage));
             sidebarItems.Children.Add(Nav("General", Icons.Settings, generalPage));
 
             var sidebar = new Border
@@ -1247,10 +1259,18 @@ sealed partial class WiimController
                 cards.Children.Add(Card("Output devices",
                     Muted("Take over the volume keys only for these outputs (none selected = all)."), _outputList, btnClear));
             }
-            else
+            else if (OperatingSystem.IsLinux())
             {
                 cards.Children.Add(Card("Behavior", ToggleRow(AutoStart.Label, _chkAutoStart)));
                 cards.Children.Add(BuildLinuxShortcutsCard());
+            }
+            else
+            {
+                cards.Children.Add(Card("Behavior", ToggleRow(AutoStart.Label, _chkAutoStart)));
+                cards.Children.Add(Card("Volume and media keys",
+                    Muted("macOS doesn't let apps take over the volume keys. Set your own shortcuts on the Hotkeys page, " +
+                          "or run these commands from the Shortcuts app or Automator:"),
+                    CommandList()));
             }
 
             var scale = new ComboBox { Width = 140 };
@@ -1292,6 +1312,17 @@ sealed partial class WiimController
             };
             if (_owner._linuxShortcuts != null) _owner._linuxShortcuts.StatusChanged += UpdatePortalStatus;
 
+            return Card("Keyboard shortcuts",
+                ToggleRow("Use the desktop's global shortcuts for the volume keys", _chkPortal),
+                _lblPortalStatus,
+                ToggleRow("Include the media keys (play/pause, next, previous)", _chkForwardMedia),
+                Muted("You can also set your own shortcuts on the Hotkeys page. If your desktop doesn't support global shortcuts, " +
+                      "bind these commands to the keys in its keyboard settings instead:"),
+                CommandList());
+        }
+
+        private static StackPanel CommandList()
+        {
             string exe = Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } appImage
                 ? appImage
                 : Environment.ProcessPath ?? "WiimControl";
@@ -1313,13 +1344,101 @@ sealed partial class WiimController
                 row.Children.Add(command);
                 commands.Children.Add(row);
             }
+            return commands;
+        }
 
-            return Card("Keyboard shortcuts",
-                ToggleRow("Use the desktop's global shortcuts for the volume keys", _chkPortal),
-                _lblPortalStatus,
-                ToggleRow("Include the media keys (play/pause, next, previous)", _chkForwardMedia),
-                Muted("If your desktop doesn't support global shortcuts, bind these commands to the keys in its keyboard settings instead:"),
-                commands);
+        private Control BuildHotkeysPage()
+        {
+            AddHandler(KeyDownEvent, OnRecordKeyDown, RoutingStrategies.Tunnel);
+            _owner.HotkeysChanged += RebuildHotkeys;
+            var intro = Card(null,
+                Muted("Set your own keyboard shortcuts for Wiim Control. They work in every program, also when this window is closed."),
+                Muted($"Click a shortcut and press the keys you want. Combine a letter, number, arrow or other key with at least one of " +
+                      $"Ctrl, Alt, Shift or {Hotkey.MetaName}, or use an F-key on its own. Press Esc to cancel."),
+                _lblHotkeyNote);
+            return Page("Hotkeys", null, [], new StackPanel { Children = { intro, Card("Shortcuts", _hotkeyList) } });
+        }
+
+        private void RebuildHotkeys()
+        {
+            string? note = _owner.HotkeyNote;
+            _lblHotkeyNote.Text = note ?? string.Empty;
+            _lblHotkeyNote.IsVisible = note != null;
+
+            var rows = new List<Control>();
+            foreach (var (action, label, _) in HotkeyActions)
+            {
+                var a = action;
+                bool hasKey = _owner._hotkeys.TryGetValue(action, out var hotkey);
+                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { new TextBlock { Text = label } } };
+                if (hasKey && _owner._failedHotkeys.Contains(action))
+                    text.Children.Add(new TextBlock
+                    {
+                        Text = "Couldn't be set. Another program may already use this shortcut.",
+                        Classes = { "small" }, Foreground = new SolidColorBrush(Color.Parse("#FF8A80")), TextWrapping = TextWrapping.Wrap
+                    });
+
+                bool recordingThis = _recording == action;
+                var shortcut = Pill(recordingThis ? "Press keys…" : hasKey ? hotkey.Display : "Not set", accent: recordingThis);
+                shortcut.MinWidth = 180;
+                shortcut.HorizontalContentAlignment = HorizontalAlignment.Center;
+                shortcut.Margin = new Thickness(12, 0, 8, 0);
+                shortcut.Click += async (_, _) => await StartRecordingAsync(a);
+                var clear = Pill("Clear");
+                clear.IsEnabled = hasKey && _recording == null;
+                clear.Click += async (_, _) => await _owner.SetHotkeyAsync(a, null);
+
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 4) };
+                row.Children.Add(text);
+                Grid.SetColumn(shortcut, 1);
+                row.Children.Add(shortcut);
+                Grid.SetColumn(clear, 2);
+                row.Children.Add(clear);
+                rows.Add(row);
+            }
+            SetRows(_hotkeyList, rows);
+        }
+
+        private async Task StartRecordingAsync(HotkeyAction action)
+        {
+            await Task.Yield();
+            _recording = action;
+            await _owner.SuspendHotkeysAsync();
+            RebuildHotkeys();
+        }
+
+        private async void OnRecordKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (_recording is not { } action) return;
+            e.Handled = true;
+            if (e.Key == Key.Escape)
+            {
+                _recording = null;
+                await _owner.ApplyHotkeysAsync();
+                RebuildHotkeys();
+                return;
+            }
+            if (KeyMap.IsModifierKey(e.Key)) return;
+
+            var hotkey = new Hotkey(e.Key, e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Shift | KeyModifiers.Meta));
+            var duplicate = _owner._hotkeys.Where(p => p.Key != action && p.Value.Equals(hotkey)).Select(p => (HotkeyAction?)p.Key).FirstOrDefault();
+            string? problem =
+                !KeyMap.IsSupported(e.Key) ? "That key can't be used for a hotkey. Try a letter, number, arrow or F-key." :
+                !hotkey.HasModifier && !hotkey.IsFunctionKey ? $"Please add at least one of Ctrl, Alt, Shift or {Hotkey.MetaName}, or use an F-key." :
+                OperatingSystem.IsLinux() && e.Key is >= Key.F1 and <= Key.F12 &&
+                    hotkey.Modifiers.HasFlag(KeyModifiers.Control) && hotkey.Modifiers.HasFlag(KeyModifiers.Alt)
+                    ? "Ctrl + Alt + F1 to F12 are reserved by Linux for switching to text consoles. Please choose another combination." :
+                duplicate is { } other ? $"{hotkey.Display} is already used for \"{HotkeyActions.First(h => h.Action == other).Label}\"." :
+                null;
+            if (problem != null)
+            {
+                await Dialogs.MessageAsync(this, problem, _scale);
+                return;
+            }
+
+            _recording = null;
+            await _owner.SetHotkeyAsync(action, hotkey);
+            RebuildHotkeys();
         }
 
         private void UpdatePortalStatus() => Dispatcher.UIThread.Post(() =>
@@ -1363,6 +1482,7 @@ sealed partial class WiimController
             }
             if (toggles.Count == 0) toggles.Add(Muted("No playback devices found"));
             SetRows(_outputList, toggles);
+            RebuildHotkeys();
 
             _loading = false;
         }

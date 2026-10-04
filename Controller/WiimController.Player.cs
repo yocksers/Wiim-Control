@@ -190,14 +190,15 @@ sealed partial class WiimController
         try { found = await WiimDiscovery.DiscoverAsync(TimeSpan.FromSeconds(3)); }
         catch { return; }
 
-        var match = found.FirstOrDefault(d => d.Uuid == _deviceUuid);
+        var match = found.FirstOrDefault(d => SameDeviceId(d.Uuid, _deviceUuid));
         if (match.Ip is null || match.Ip == _deviceIp) return;
 
+        string oldIp = _deviceIp;
         _deviceIp = match.Ip;
         _consecutiveFailures = 0;
         for (int i = 0; i < _knownDevices.Count; i++)
-            if (_knownDevices[i].Uuid == _deviceUuid)
-                _knownDevices[i] = match;
+            if (_knownDevices[i].Ip == oldIp || SameDeviceId(_knownDevices[i].Uuid, _deviceUuid))
+                _knownDevices[i] = _knownDevices[i] with { Ip = match.Ip };
         SaveConfig();
 
         Avalonia.Threading.Dispatcher.UIThread.Post(RefreshDeviceStatusUi);

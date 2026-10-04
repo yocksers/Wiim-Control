@@ -1,10 +1,11 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Avalonia.Input;
 
 namespace WiimControl;
 
 [SupportedOSPlatform("windows")]
-sealed class ShellHookWindow : IDisposable
+sealed class ShellHookWindow : IGlobalHotkeys
 {
     private const int HSHELL_APPCOMMAND      = 12;
     private const int APPCOMMAND_VOLUME_MUTE = 8;
@@ -30,6 +31,12 @@ sealed class ShellHookWindow : IDisposable
     private const uint VK_MEDIA_PREV_TRACK = 0xB1;
     private const uint VK_MEDIA_STOP       = 0xB2;
     private const uint VK_MEDIA_PLAY_PAUSE = 0xB3;
+
+    private const int  USER_HOTKEY_BASE = 0xA000;
+    private const uint MOD_ALT     = 0x0001;
+    private const uint MOD_CONTROL = 0x0002;
+    private const uint MOD_SHIFT   = 0x0004;
+    private const uint MOD_WIN     = 0x0008;
 
     private const uint WS_POPUP = 0x80000000;
     private const uint WS_EX_TOOLWINDOW = 0x00000080;
@@ -80,14 +87,17 @@ sealed class ShellHookWindow : IDisposable
     private readonly string _className = $"WiimControlShellHook{Environment.ProcessId}";
     private readonly WndProcDelegate _wndProc;
     private readonly Action<string> _onCommand;
+    private readonly Action<int> _onHotkey;
+    private readonly HashSet<int> _userHotkeys = new();
     private readonly IntPtr _hInstance;
     private readonly IntPtr _hWnd;
     private readonly uint _shellMsg;
     private bool _mediaKeysEnabled;
 
-    public ShellHookWindow(Action<string> onCommand, bool forwardMediaKeys = false)
+    public ShellHookWindow(Action<string> onCommand, Action<int> onHotkey, bool forwardMediaKeys = false)
     {
         _onCommand = onCommand;
+        _onHotkey = onHotkey;
         _mediaKeysEnabled = forwardMediaKeys;
         _wndProc = WndProc;
         _hInstance = GetModuleHandle(null);
@@ -137,8 +147,39 @@ sealed class ShellHookWindow : IDisposable
         UnregisterHotKey(_hWnd, HOTKEY_MEDIA_STOP);
     }
 
+    public string? Note => null;
+
+    public Task<HashSet<int>> SetHotkeysAsync(IReadOnlyDictionary<int, Hotkey> hotkeys)
+    {
+        foreach (int id in _userHotkeys) UnregisterHotKey(_hWnd, USER_HOTKEY_BASE + id);
+        _userHotkeys.Clear();
+        var failed = new HashSet<int>();
+        foreach (var (id, hotkey) in hotkeys)
+        {
+            if (_hWnd == IntPtr.Zero || KeyMap.WindowsVirtualKey(hotkey.Key) is not { } vk)
+            {
+                failed.Add(id);
+                continue;
+            }
+            uint modifiers = 0;
+            if (hotkey.Modifiers.HasFlag(KeyModifiers.Alt)) modifiers |= MOD_ALT;
+            if (hotkey.Modifiers.HasFlag(KeyModifiers.Control)) modifiers |= MOD_CONTROL;
+            if (hotkey.Modifiers.HasFlag(KeyModifiers.Shift)) modifiers |= MOD_SHIFT;
+            if (hotkey.Modifiers.HasFlag(KeyModifiers.Meta)) modifiers |= MOD_WIN;
+            if (RegisterHotKey(_hWnd, USER_HOTKEY_BASE + id, modifiers, vk)) _userHotkeys.Add(id);
+            else failed.Add(id);
+        }
+        return Task.FromResult(failed);
+    }
+
     private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        if (msg == WM_HOTKEY && _userHotkeys.Contains((int)wParam - USER_HOTKEY_BASE))
+        {
+            _onHotkey((int)wParam - USER_HOTKEY_BASE);
+            return IntPtr.Zero;
+        }
+
         if (msg == WM_HOTKEY)
         {
             string? hotkeyCmd = (int)wParam switch
@@ -191,6 +232,7 @@ sealed class ShellHookWindow : IDisposable
             UnregisterHotKey(_hWnd, HOTKEY_VOLUME_DOWN);
             UnregisterHotKey(_hWnd, HOTKEY_VOLUME_MUTE);
             UnregisterMediaHotkeys();
+            foreach (int id in _userHotkeys) UnregisterHotKey(_hWnd, USER_HOTKEY_BASE + id);
             DestroyWindow(_hWnd);
         }
         UnregisterClass(_className, _hInstance);

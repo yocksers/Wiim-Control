@@ -35,6 +35,28 @@ sealed partial class WiimController
         var dev = new KnownDevice($"Wiim Amp {_knownDevices.Count + 1}", ip, string.Empty);
         _knownDevices.Add(dev);
         SwitchDevice(dev);
+        _ = FillMissingDeviceIdsAsync();
+    }
+
+    private static bool SameDeviceId(string a, string b) =>
+        a.Length > 0 && b.Length > 0 && SameUuid(NormalizeUuid(a), NormalizeUuid(b));
+
+    private static bool HasRealId(KnownDevice d) => d.Uuid.Length > 0 && d.Uuid != d.Ip;
+
+    private async Task FillMissingDeviceIdsAsync()
+    {
+        bool changed = false;
+        foreach (var device in _knownDevices.Where(d => !HasRealId(d)).ToList())
+        {
+            var uuid = await WiimDiscovery.FetchUuidAsync(device.Ip);
+            if (uuid == null) continue;
+            int index = _knownDevices.FindIndex(k => k.Ip == device.Ip);
+            if (index < 0) continue;
+            _knownDevices[index] = _knownDevices[index] with { Uuid = uuid };
+            if (device.Ip == _deviceIp) _deviceUuid = uuid;
+            changed = true;
+        }
+        if (changed) SaveConfig();
     }
 
     internal void RemoveDevice(KnownDevice d)
@@ -51,13 +73,28 @@ sealed partial class WiimController
         catch { found = []; }
 
         int added = 0;
+        bool changed = false;
         foreach (var d in found)
         {
             if (_knownDevices.Any(k => k.Ip == d.Ip)) continue;
+            int moved = _knownDevices.FindIndex(k => SameDeviceId(k.Uuid, d.Uuid));
+            if (moved >= 0)
+            {
+                bool wasActive = _knownDevices[moved].Ip == _deviceIp;
+                _knownDevices[moved] = _knownDevices[moved] with { Ip = d.Ip };
+                if (wasActive) _deviceIp = d.Ip;
+                changed = true;
+                continue;
+            }
             _knownDevices.Add(d);
             added++;
         }
-        if (added > 0) SaveConfig();
+        if (added > 0 || changed)
+        {
+            SaveConfig();
+            RefreshDeviceStatusUi();
+        }
+        _ = FillMissingDeviceIdsAsync();
         return added;
     }
 
