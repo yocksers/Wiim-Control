@@ -59,8 +59,8 @@ Run `WiimControlSetup.exe`.
 Download `WiimControl-<version>-x86_64.AppImage`, make it executable and run it:
 
 ```
-chmod +x WiimControl-1.02-x86_64.AppImage
-./WiimControl-1.02-x86_64.AppImage
+chmod +x WiimControl-1.03-x86_64.AppImage
+./WiimControl-1.03-x86_64.AppImage
 ```
 
 Settings are stored in `~/.config/wiim-control/`. The tray icon works out of the box on KDE Plasma
@@ -71,7 +71,7 @@ and most desktops; GNOME needs the AppIndicator extension.
 1. **Desktop global shortcuts** (KDE Plasma, GNOME 48 and newer): switch on *Use the desktop's
    global shortcuts* and approve the shortcuts when the desktop asks.
 2. **Keyboard settings**: bind the keys to the commands shown on the General page, for example
-   `WiimControl-1.02-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
+   `WiimControl-1.03-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
    `--next` and `--previous`. Each command is sent to the running Wiim Control.
 3. **Hotkeys page**: set your own shortcuts in Wiim Control. No desktop setup needed on X11 desktops
    such as XFCE, Cinnamon and MATE. Ctrl + Alt + F1 to F12 can't be used; Linux reserves them.
