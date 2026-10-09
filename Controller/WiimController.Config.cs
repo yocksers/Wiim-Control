@@ -112,12 +112,9 @@ sealed partial class WiimController
         SaveConfig();
     }
 
-    private void ChangeUiScale(int percent)
+    private void SetUiScale(int percent)
     {
-        _settingsWindow?.Close();
         _uiScalePercent = percent;
-        _windowSize = null;
         SaveConfig();
-        ShowSettingsWindow();
     }
 }

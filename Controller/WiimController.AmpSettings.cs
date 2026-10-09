@@ -19,7 +19,8 @@ sealed partial class WiimController
         var filters = SendToDeviceAsync(ip, "getOutputDigitalFilterTypeSupportList");
         var sub = SendToDeviceAsync(ip, "getSubLPF");
         var screen = SendToDeviceAsync(ip, "getLightOperationBrightConfig");
-        await Task.WhenAll(statusEx, balance, fade, led, buttons, output, filters, sub, screen).ConfigureAwait(false);
+        var inputs = GetInputVisibilityAsync(ip);
+        await Task.WhenAll(statusEx, balance, fade, led, buttons, output, filters, sub, screen, inputs).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
 
         var (filterMode, filterList) = ParseFilterList(filters.Result);
@@ -38,7 +39,8 @@ sealed partial class WiimController
             filterList,
             filter,
             ParseSubwoofer(sub.Result),
-            ParseScreen(screen.Result));
+            ParseScreen(screen.Result),
+            inputs.Result);
     }
 
     internal static string OutputName(int? hardware) => hardware switch

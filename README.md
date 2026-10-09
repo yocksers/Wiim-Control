@@ -20,6 +20,7 @@ other WiiM/LinkPlay devices) from your PC.
 - Keeps a list of your amps; pick which one the volume keys control.
 - For every amp: now playing (title, artist, album art, source and audio quality),
   play/pause, previous and next, and its own volume slider and mute button.
+- Switch each amp's input (Wi-Fi, Bluetooth, Line in, Optical, HDMI…) from its **Input** button.
 - Remembers each amp's unique ID, so it reconnects automatically when the active amp gets a new IP
   address, and **Discover** updates amps that have moved instead of adding them twice.
 
@@ -30,14 +31,17 @@ other WiiM/LinkPlay devices) from your PC.
   the group leader.
 
 **Equalizer**
-- Turn the EQ on or off, pick a preset, or adjust the 10-band graphic EQ (±12 dB) for the amp's
-  current input.
+- Turn the EQ on or off, pick a preset, or adjust the 10-band graphic EQ (±12 dB). Shows the amp's
+  current input by default, and you can pick any other input to set its own EQ.
+- Parametric EQ like the WiiM Home app: 10 bands with low shelf, peak or high shelf filters, frequency,
+  gain and Q, a response graph with draggable points, and left and right channels set separately if you like.
 - Save the current EQ as a new preset on the amp, and rename or delete your own presets.
 
 **Amp settings** (per amp)
 - Maximum volume, left/right balance and fade in/out.
 - Digital filter (the list comes from the amp; it differs between models).
 - Status light and touch-button lock.
+- Choose which inputs are shown (saved on the amp, so the WiiM Home app shows the same inputs).
 - WiiM Ultra: screen on/off, automatic brightness and screen brightness.
 
 **Tray**
@@ -59,8 +63,8 @@ Run `WiimControlSetup.exe`.
 Download `WiimControl-<version>-x86_64.AppImage`, make it executable and run it:
 
 ```
-chmod +x WiimControl-1.03-x86_64.AppImage
-./WiimControl-1.03-x86_64.AppImage
+chmod +x WiimControl-1.04-x86_64.AppImage
+./WiimControl-1.04-x86_64.AppImage
 ```
 
 Settings are stored in `~/.config/wiim-control/`. The tray icon works out of the box on KDE Plasma
@@ -71,7 +75,7 @@ and most desktops; GNOME needs the AppIndicator extension.
 1. **Desktop global shortcuts** (KDE Plasma, GNOME 48 and newer): switch on *Use the desktop's
    global shortcuts* and approve the shortcuts when the desktop asks.
 2. **Keyboard settings**: bind the keys to the commands shown on the General page, for example
-   `WiimControl-1.03-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
+   `WiimControl-1.04-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
    `--next` and `--previous`. Each command is sent to the running Wiim Control.
 3. **Hotkeys page**: set your own shortcuts in Wiim Control. No desktop setup needed on X11 desktops
    such as XFCE, Cinnamon and MATE. Ctrl + Alt + F1 to F12 can't be used; Linux reserves them.
