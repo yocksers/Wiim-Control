@@ -41,6 +41,7 @@ sealed partial class WiimController
         private readonly Stepper _numStep = new() { Minimum = 1, Maximum = 50, HorizontalAlignment = HorizontalAlignment.Right };
         private readonly ComboBox _cboCorner = new() { Width = 190 };
         private readonly ComboBox _cboDuration = new() { Width = 190 };
+        private readonly ComboBox _cboOsdScale = new() { Width = 190 };
         private readonly StackPanel _outputList = new();
         private bool _loading;
 
@@ -102,7 +103,7 @@ sealed partial class WiimController
         private sealed record VolumeControls(LevelSlider Slider, TextBlock Value, Button Mute, PathIcon MuteIcon);
 
         private sealed record NowPlayingControls(ArtworkView Art, TextBlock Title, TextBlock Artist, TextBlock Detail,
-            Button PlayPause, PathIcon PlayPauseIcon, Button Previous, Button Next);
+            PlayingIndicator Playing, Button PlayPause, PathIcon PlayPauseIcon, Button Previous, Button Next);
 
         public SettingsWindow(WiimController owner)
         {
@@ -651,8 +652,11 @@ sealed partial class WiimController
             var art = new ArtworkView { VerticalAlignment = VerticalAlignment.Center };
             var title = new TextBlock { Classes = { "heading" }, TextTrimming = TextTrimming.CharacterEllipsis };
             var artist = new TextBlock { Classes = { "muted" }, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0) };
-            var detail = new TextBlock { Classes = { "dim", "small" }, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0) };
-            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { title, artist, detail } };
+            var detail = new TextBlock { Classes = { "dim", "small" }, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var playing = new PlayingIndicator { Foreground = Palette.AccentText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            var detailRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0), Children = { playing, detail } };
+            DockPanel.SetDock(playing, Dock.Left);
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { title, artist, detailRow } };
 
             var (previous, _) = IconButton(Icons.Previous);
             var (playPause, playPauseIcon) = IconButton(Icons.Play);
@@ -665,7 +669,7 @@ sealed partial class WiimController
                 Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center,
                 Children = { previous, playPause, next }
             };
-            _nowPlayingControls[ip] = new NowPlayingControls(art, title, artist, detail, playPause, playPauseIcon, previous, next);
+            _nowPlayingControls[ip] = new NowPlayingControls(art, title, artist, detail, playing, playPause, playPauseIcon, previous, next);
 
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 14, 0, 0) };
             row.Children.Add(art);
@@ -688,6 +692,7 @@ sealed partial class WiimController
             {
                 c.Title.Text = _volumes.Count == 0 && _statuses.Count == 0 ? "Loading…" : "Not reachable";
                 c.Artist.Text = c.Detail.Text = string.Empty;
+                c.Playing.IsVisible = false;
                 c.PlayPause.IsEnabled = c.Previous.IsEnabled = c.Next.IsEnabled = false;
                 c.Art.ImageUrl = string.Empty;
                 c.Art.Bitmap = null;
@@ -701,6 +706,7 @@ sealed partial class WiimController
             c.Artist.Text = status.Artist.Length > 0 && status.Album.Length > 0 ? $"{status.Artist}  ·  {status.Album}" : status.Artist;
             c.Detail.Text = string.Join("  ·  ", new[] { source, Quality(status) }.Where(t => t.Length > 0));
             c.PlayPauseIcon.Data = status.IsPlaying ? Icons.Pause : Icons.Play;
+            c.Playing.IsVisible = status.IsPlaying;
             c.PlayPause.IsEnabled = c.Previous.IsEnabled = c.Next.IsEnabled = true;
             if (status.ArtUrl != c.Art.ImageUrl)
             {
@@ -1424,7 +1430,16 @@ sealed partial class WiimController
                 if (_loading) return;
                 if ((_cboDuration.SelectedItem as ComboBoxItem)?.Tag is int ms) _owner.SetOsdDuration(ms);
             };
-            var overlayCard = Card("Volume overlay", LabeledRow("Position", _cboCorner), LabeledRow("Duration", _cboDuration));
+            foreach (int percent in new[] { 75, 90, 100, 110, 125, 150, 175, 200, 250 }) _cboOsdScale.Items.Add(ComboItem(percent, $"{percent}%"));
+            _cboOsdScale.SelectionChanged += (_, _) =>
+            {
+                if (_loading || (_cboOsdScale.SelectedItem as ComboBoxItem)?.Tag is not int percent) return;
+                _owner.SetOsdScale(percent);
+                var preview = _volumes.TryGetValue(_owner._deviceIp, out var current) ? current : new DeviceVolume(50, false);
+                _owner.ShowVolumeOsd(preview.Volume, preview.Muted);
+            };
+            var overlayCard = Card("Volume overlay", LabeledRow("Position", _cboCorner), LabeledRow("Duration", _cboDuration),
+                LabeledRow("Size", _cboOsdScale));
 
             return Page("Volume", null, [], new StackPanel { Children = { keysCard, overlayCard } });
         }
@@ -1667,6 +1682,13 @@ sealed partial class WiimController
             _cboCorner.SelectedItem = _cboCorner.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is OsdCorner c && c == _owner._osdCorner);
             _cboDuration.SelectedItem = _cboDuration.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is int ms && ms == _owner._osdDurationMs);
             if (_cboDuration.SelectedIndex < 0 && _cboDuration.Items.Count > 0) _cboDuration.SelectedIndex = 2;
+            var osdScale = _cboOsdScale.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is int p && p == _owner._osdScalePercent);
+            if (osdScale == null)
+            {
+                osdScale = ComboItem(_owner._osdScalePercent, $"{_owner._osdScalePercent}%");
+                _cboOsdScale.Items.Add(osdScale);
+            }
+            _cboOsdScale.SelectedItem = osdScale;
 
             var toggles = new List<Control>();
             foreach (var (id, name) in ActiveOutputDevices())

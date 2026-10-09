@@ -35,6 +35,7 @@ sealed partial class WiimController : IDisposable
     private DateTime        _lastCmd     = DateTime.MinValue;
     private OsdCorner       _osdCorner       = OsdCorner.BottomRight;
     private int             _osdDurationMs   = 1500;
+    private int             _osdScalePercent = 100;
     private VolumeOsdWindow? _osd;
     private int?            _cachedVolume;
     private bool?           _cachedMuted;

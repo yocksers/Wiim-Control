@@ -26,7 +26,9 @@ sealed class VolumeOsdWindow : Window
         TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = BarWidth, Margin = new Thickness(0, 10, 0, 0)
     };
     private readonly DispatcherTimer _hideTimer = new();
+    private readonly LayoutTransformControl _scaler = new();
     private OsdCorner _corner;
+    private double _scale = 1;
 
     public VolumeOsdWindow()
     {
@@ -44,7 +46,7 @@ sealed class VolumeOsdWindow : Window
             Width = BarWidth, Height = 14, CornerRadius = new CornerRadius(7), Margin = new Thickness(0, 10, 0, 0),
             Background = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)), Child = _barFill
         };
-        Content = new Border
+        _scaler.Child = new Border
         {
             Background = new SolidColorBrush(Color.FromRgb(32, 32, 32)),
             CornerRadius = new CornerRadius(16),
@@ -52,13 +54,14 @@ sealed class VolumeOsdWindow : Window
             MinWidth = 240,
             Child = new StackPanel { Children = { _label, _bar, _caption } }
         };
+        Content = _scaler;
 
         _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); Hide(); };
         Opened += (_, _) => { WindowChrome.MakeToolWindow(this); Reposition(); };
         SizeChanged += (_, _) => Reposition();
     }
 
-    public void ShowVolume(int volume, bool muted, OsdCorner corner, int durationMs, string caption)
+    public void ShowVolume(int volume, bool muted, OsdCorner corner, int durationMs, string caption, double scale)
     {
         _label.Text = muted ? "Muted" : $"Volume {volume}%";
         _bar.IsVisible = true;
@@ -66,20 +69,25 @@ sealed class VolumeOsdWindow : Window
         _barFill.Width = Math.Max(14, BarWidth * Math.Clamp(volume, 0, 100) / 100.0);
         _caption.Text = caption.Length > 0 ? "♪  " + caption : string.Empty;
         _caption.IsVisible = caption.Length > 0;
-        Present(corner, durationMs);
+        Present(corner, durationMs, scale);
     }
 
-    public void ShowMessage(string message, OsdCorner corner, int durationMs)
+    public void ShowMessage(string message, OsdCorner corner, int durationMs, double scale)
     {
         _label.Text = message;
         _bar.IsVisible = false;
         _caption.IsVisible = false;
-        Present(corner, durationMs);
+        Present(corner, durationMs, scale);
     }
 
-    private void Present(OsdCorner corner, int durationMs)
+    private void Present(OsdCorner corner, int durationMs, double scale)
     {
         _corner = corner;
+        if (_scale != scale || _scaler.LayoutTransform == null)
+        {
+            _scale = scale;
+            _scaler.LayoutTransform = new ScaleTransform(scale, scale);
+        }
         if (!IsVisible) Show();
         Reposition();
         _hideTimer.Stop();

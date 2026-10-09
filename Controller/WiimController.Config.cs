@@ -36,6 +36,7 @@ sealed partial class WiimController
             if (key == "volumestep" && int.TryParse(val, out int step) && step >= 1) _volumeStep = step;
             if (key == "osdcorner" && Enum.TryParse<OsdCorner>(val, true, out var corner)) _osdCorner = corner;
             if (key == "osddurationms" && int.TryParse(val, out int dur) && dur >= 200) _osdDurationMs = dur;
+            if (key == "osdscale" && int.TryParse(val, out int osdScale) && osdScale is >= 50 and <= 300) _osdScalePercent = osdScale;
             if (key == "enabledoutputs" && val.Length > 0)
                 _enabledOutputIds = new HashSet<string>(val.Split('|', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
             if (key == "knowndevices" && val.Length > 0)
@@ -59,7 +60,7 @@ sealed partial class WiimController
                 $"windowSize={(_windowSize is { } size ? $"{(int)size.Width}x{(int)size.Height}" : "")}", $"windowMaximized={_windowMaximized}",
                 $"uiScale={_uiScalePercent}",
                 $"suppressWindowsOSD={_suppress}", $"volumeStep={_volumeStep}",
-                $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}",
+                $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
                 $"enabledOutputs={string.Join('|', _enabledOutputIds)}",
                 $"knownDevices={string.Join('\u0002', _knownDevices.Select(d => string.Join('\u0001', d.Name, d.Ip, d.Uuid)))}"
             ]);
@@ -83,6 +84,7 @@ sealed partial class WiimController
     private void SetLogStep(bool value) { _logStep = value; SaveConfig(); SyncTrayCheckboxes(); }
     private void SetOsdCorner(OsdCorner value) { _osdCorner = value; SaveConfig(); SyncTrayCheckboxes(); }
     private void SetOsdDuration(int value) { _osdDurationMs = value; SaveConfig(); SyncTrayCheckboxes(); }
+    private void SetOsdScale(int value) { _osdScalePercent = value; SaveConfig(); }
     private void SetGroupVolumeKeys(bool value) { _groupVolumeKeys = value; SaveConfig(); }
     private void SetGroupLeader(string ip) { _groupLeaderIp = ip; SaveConfig(); }
 

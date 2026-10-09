@@ -1,5 +1,5 @@
 #define MyAppName "Wiim Control"
-#define MyAppVersion "1.04"
+#define MyAppVersion "1.05"
 #define MyAppPublisher "Wiim Control"
 #define MyAppExeName "WiimControl.exe"
 #define MyOldAppName "Wiim Volume Control"
@@ -18,6 +18,7 @@ PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 OutputDir=Output
 OutputBaseFilename=WiimControlSetup
+SetupIconFile=..\logo.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

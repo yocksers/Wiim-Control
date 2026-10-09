@@ -304,13 +304,13 @@ sealed partial class WiimController
     private void Notify(string message) => Dispatcher.UIThread.Post(() =>
     {
         _osd ??= new VolumeOsdWindow();
-        _osd.ShowMessage(message, _osdCorner, 3000);
+        _osd.ShowMessage(message, _osdCorner, 3000, _osdScalePercent / 100.0);
     });
 
     private void ShowVolumeOsd(int volume, bool muted) => Dispatcher.UIThread.Post(() =>
     {
         _osd ??= new VolumeOsdWindow();
-        _osd.ShowVolume(volume, muted, _osdCorner, _osdDurationMs, _nowPlayingText);
+        _osd.ShowVolume(volume, muted, _osdCorner, _osdDurationMs, _nowPlayingText, _osdScalePercent / 100.0);
     });
 
     private void SyncTrayCheckboxes()
