@@ -22,6 +22,7 @@ sealed partial class WiimController
         _deviceUuid   = d.Uuid;
         _cachedVolume = null;
         _cachedMuted  = null;
+        _cachedIp     = string.Empty;
         _nowPlayingText  = string.Empty;
         _activeMaxVolume = 100;
         RefreshDeviceStatusUi();
@@ -62,8 +63,22 @@ sealed partial class WiimController
     internal void RemoveDevice(KnownDevice d)
     {
         _knownDevices.RemoveAll(k => k.Ip == d.Ip);
-        if (d.Ip == _deviceIp && _knownDevices.Count > 0) SwitchDevice(_knownDevices[0]);
-        else { RefreshDeviceStatusUi(); SaveConfig(); }
+        if (d.Ip == _deviceIp && _knownDevices.Count > 0)
+        {
+            SwitchDevice(_knownDevices[0]);
+            return;
+        }
+        if (d.Ip == _deviceIp)
+        {
+            _deviceIp = string.Empty;
+            _deviceUuid = string.Empty;
+            _cachedVolume = null;
+            _cachedMuted = null;
+            _cachedIp = string.Empty;
+            _nowPlayingText = string.Empty;
+        }
+        RefreshDeviceStatusUi();
+        SaveConfig();
     }
 
     internal async Task<int> DiscoverAndMergeDevicesAsync()
@@ -105,6 +120,7 @@ sealed partial class WiimController
         _outputMonitor?.SetEnabledDevices(_enabledOutputIds);
         SaveConfig();
         UpdateTrayStatus();
+        UpdateVolumeKeyRegistration();
     }
 
     internal void ClearOutputDevices()
@@ -113,5 +129,6 @@ sealed partial class WiimController
         _outputMonitor?.SetEnabledDevices(_enabledOutputIds);
         SaveConfig();
         UpdateTrayStatus();
+        UpdateVolumeKeyRegistration();
     }
 }

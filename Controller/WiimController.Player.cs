@@ -2,20 +2,29 @@ namespace WiimControl;
 
 sealed partial class WiimController
 {
-    internal async Task PlayPresetAsync(int preset)
+    private async Task<bool> SendPlayerCommandAsync(string ip, string command)
     {
+        if (string.IsNullOrEmpty(ip)) return false;
         try
         {
-            var url = $"https://{PlaybackTarget}/httpapi.asp?command=MCUKeyShortClick:{preset}";
-            await _http.GetAsync(url).ConfigureAwait(false);
-            OnWiimRequestSucceeded();
+            using var response = await _http.GetAsync($"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException($"The amp answered with HTTP {(int)response.StatusCode}.");
+            string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (ip == _deviceIp) OnWiimRequestSucceeded();
+            if (CommandSucceeded(body)) return true;
+            Notify("The amp didn't accept the command.");
+            return false;
         }
         catch (Exception ex)
         {
             Notify($"Error: {ex.Message}");
-            _ = OnWiimRequestFailedAsync();
+            if (ip == _deviceIp) _ = OnWiimRequestFailedAsync();
+            return false;
         }
     }
+
+    internal Task PlayPresetAsync(int preset) => SendPlayerCommandAsync(PlaybackTarget, $"MCUKeyShortClick:{preset}");
 
     internal async Task SendMediaCommandAsync(string action)
     {
@@ -24,17 +33,7 @@ sealed partial class WiimController
             "playpause" => "onepause",
             _           => action
         };
-        try
-        {
-            var url = $"https://{PlaybackTarget}/httpapi.asp?command=setPlayerCmd:{wiimCmd}";
-            await _http.GetAsync(url).ConfigureAwait(false);
-            OnWiimRequestSucceeded();
-        }
-        catch (Exception ex)
-        {
-            Notify($"Error: {ex.Message}");
-            _ = OnWiimRequestFailedAsync();
-        }
+        await SendPlayerCommandAsync(PlaybackTarget, $"setPlayerCmd:{wiimCmd}").ConfigureAwait(false);
     }
 
     internal async Task<int> TestConnectionAsync()
@@ -43,72 +42,72 @@ sealed partial class WiimController
         return (int)resp.StatusCode;
     }
 
-    private async Task<(int Volume, bool Muted)?> GetPlayerStatusAsync()
+    private async Task<(int Volume, bool Muted)?> GetPlayerStatusAsync(string ip)
     {
         try
         {
             var json = await _http.GetStringAsync(
-                $"https://{_deviceIp}/httpapi.asp?command=getPlayerStatus").ConfigureAwait(false);
+                $"https://{ip}/httpapi.asp?command=getPlayerStatus").ConfigureAwait(false);
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("vol", out var volProp)) return null;
             if (!int.TryParse(volProp.GetString(), out int vol)) return null;
             bool muted = doc.RootElement.TryGetProperty("mute", out var muteProp) && muteProp.GetString() == "1";
-            OnWiimRequestSucceeded();
+            if (ip == _deviceIp) OnWiimRequestSucceeded();
             return (vol, muted);
         }
         catch (Exception ex)
         {
             Notify($"Error: {ex.Message}");
-            _ = OnWiimRequestFailedAsync();
+            if (ip == _deviceIp) _ = OnWiimRequestFailedAsync();
             return null;
         }
+    }
+
+    private async Task<(int Volume, bool Muted)?> GetVolumeStateAsync(string ip)
+    {
+        if (_cachedIp == ip && _cachedVolume is int volume && _cachedMuted is bool muted && DateTime.UtcNow - _cacheSyncUtc < CacheLifetime)
+            return (volume, muted);
+        return await GetPlayerStatusAsync(ip).ConfigureAwait(false);
+    }
+
+    private void StoreVolumeState(string ip, int volume, bool muted)
+    {
+        if (ip != _deviceIp) return;
+        _cachedIp = ip;
+        _cachedVolume = volume;
+        _cachedMuted = muted;
+        _cacheSyncUtc = DateTime.UtcNow;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => _settingsWindow?.ShowVolume(ip, volume, muted));
     }
 
     private int ApplyVolumeStep(int current, int direction)
     {
         if (!_logStep) return Math.Clamp(current + direction * _volumeStep, 0, 100);
+        if (direction < 0 && current <= 0) return 0;
 
         double db = 20.0 * Math.Log10(Math.Max(current, 1) / 100.0) + direction * 1.5;
         int next = (int)Math.Round(100.0 * Math.Pow(10.0, db / 20.0));
+        next = direction > 0 ? Math.Max(next, current + 1) : Math.Min(next, current - 1);
         return Math.Clamp(next, 0, 100);
     }
 
     private async Task ChangeVolumeAsync(int direction)
     {
-        int current;
-        bool muted;
-        if (_cachedVolume is int cv && _cachedMuted is bool cm && DateTime.UtcNow - _cacheSyncUtc < CacheLifetime)
-        {
-            current = cv;
-            muted = cm;
-        }
-        else
-        {
-            var status = await GetPlayerStatusAsync().ConfigureAwait(false);
-            if (status is not { } s) return;
-            current = s.Volume;
-            muted = s.Muted;
-        }
-
-        int newVol = Math.Min(ApplyVolumeStep(current, direction), _activeMaxVolume);
+        string ip = _deviceIp;
+        int maxVolume = _activeMaxVolume;
+        if (string.IsNullOrEmpty(ip)) return;
+        if (!await _volumeGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false)) return;
         try
         {
-            await _http.GetAsync(
-                $"https://{_deviceIp}/httpapi.asp?command=setPlayerCmd:vol:{newVol}").ConfigureAwait(false);
-            OnWiimRequestSucceeded();
+            if (await GetVolumeStateAsync(ip).ConfigureAwait(false) is not { } state) return;
+            int newVol = Math.Min(ApplyVolumeStep(state.Volume, direction), maxVolume);
+            if (!await SendPlayerCommandAsync(ip, $"setPlayerCmd:vol:{newVol}").ConfigureAwait(false)) return;
+            if (ip != _deviceIp) return;
+            StoreVolumeState(ip, newVol, state.Muted);
+            ShowVolumeOsd(newVol, state.Muted);
+            if (_groupVolumeKeys) _ = AdjustGroupVolumeAsync(newVol - state.Volume);
         }
-        catch (Exception ex)
-        {
-            Notify($"Error: {ex.Message}");
-            _ = OnWiimRequestFailedAsync();
-            return;
-        }
-
-        _cachedVolume = newVol;
-        _cachedMuted  = muted;
-        _cacheSyncUtc = DateTime.UtcNow;
-        ShowVolumeOsd(newVol, muted);
-        if (_groupVolumeKeys) _ = AdjustGroupVolumeAsync(newVol - current);
+        finally { _volumeGate.Release(); }
     }
 
     private async Task AdjustGroupVolumeAsync(int delta)
@@ -136,39 +135,20 @@ sealed partial class WiimController
 
     private async Task ToggleMuteAsync()
     {
-        int volume;
-        bool isMuted;
-        if (_cachedVolume is int cv && _cachedMuted is bool cm && DateTime.UtcNow - _cacheSyncUtc < CacheLifetime)
-        {
-            volume = cv;
-            isMuted = cm;
-        }
-        else
-        {
-            var status = await GetPlayerStatusAsync().ConfigureAwait(false);
-            if (status is not { } s) return;
-            volume = s.Volume;
-            isMuted = s.Muted;
-        }
-
+        string ip = _deviceIp;
+        if (string.IsNullOrEmpty(ip)) return;
+        if (!await _volumeGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false)) return;
         try
         {
-            await _http.GetAsync(
-                $"https://{_deviceIp}/httpapi.asp?command=setPlayerCmd:mute:{(isMuted ? 0 : 1)}").ConfigureAwait(false);
-            OnWiimRequestSucceeded();
+            if (await GetVolumeStateAsync(ip).ConfigureAwait(false) is not { } state) return;
+            bool muted = !state.Muted;
+            if (!await SendPlayerCommandAsync(ip, $"setPlayerCmd:mute:{(muted ? 1 : 0)}").ConfigureAwait(false)) return;
+            if (ip != _deviceIp) return;
+            StoreVolumeState(ip, state.Volume, muted);
+            ShowVolumeOsd(state.Volume, muted);
+            if (_groupVolumeKeys) _ = MuteGroupAsync(muted);
         }
-        catch (Exception ex)
-        {
-            Notify($"Error: {ex.Message}");
-            _ = OnWiimRequestFailedAsync();
-            return;
-        }
-
-        _cachedVolume = volume;
-        _cachedMuted  = !isMuted;
-        _cacheSyncUtc = DateTime.UtcNow;
-        ShowVolumeOsd(volume, !isMuted);
-        if (_groupVolumeKeys) _ = MuteGroupAsync(!isMuted);
+        finally { _volumeGate.Release(); }
     }
 
     private void OnWiimRequestSucceeded() => _consecutiveFailures = 0;

@@ -139,6 +139,7 @@ sealed partial class WiimController
         }
         _mnuPresets.Opening += async (_, _) => await UpdatePresetNamesAsync();
         menu.Add(Submenu("Presets", _mnuPresets));
+        menu.Add(BuildSleepMenu());
 
         menu.Add(MenuAction("Test connection…", async () =>
         {
@@ -231,10 +232,12 @@ sealed partial class WiimController
     private async Task UpdatePresetNamesAsync()
     {
         if (_mnuPresets == null) return;
-        var names = ParsePresetNames(await SendToDeviceAsync(_deviceIp, "getPresetInfo"));
+        var presets = await GetPresetsAsync(_deviceIp);
         var items = _mnuPresets.Items.OfType<NativeMenuItem>().ToList();
         for (int i = 0; i < items.Count; i++)
-            items[i].Header = names.TryGetValue(i + 1, out var name) ? $"{i + 1}. {name}" : $"Preset {i + 1}";
+            items[i].Header = presets?.Presets.FirstOrDefault(p => p.Number == i + 1) is { } preset
+                ? $"{i + 1}. {preset.Name}"
+                : $"Preset {i + 1}";
     }
 
     private void BuildDevicesMenu()
@@ -299,6 +302,46 @@ sealed partial class WiimController
             ClearOutputDevices();
             BuildOutputDevicesMenu();
         }));
+    }
+
+    private readonly List<(int Minutes, NativeMenuItem Item)> _sleepItems = [];
+
+    private NativeMenuItem BuildSleepMenu()
+    {
+        var sleepMenu = new NativeMenu();
+        var header = Submenu("Sleep timer", sleepMenu);
+        foreach (int minutes in SleepChoices.Prepend(0))
+        {
+            int m = minutes;
+            var item = Radio(m == 0 ? "Off" : $"{m} minutes", m == 0, () => _ = SetTraySleepAsync(m));
+            _sleepItems.Add((m, item));
+            sleepMenu.Add(item);
+        }
+        sleepMenu.Opening += async (_, _) =>
+        {
+            int seconds = await GetSleepSecondsAsync(_deviceIp);
+            header.Header = seconds > 0 ? $"Sleep timer ({(seconds + 59) / 60} min left)" : "Sleep timer";
+            foreach (var (m, item) in _sleepItems) item.IsChecked = m == 0 && seconds == 0;
+        };
+        return header;
+    }
+
+    private async Task SetTraySleepAsync(int minutes)
+    {
+        bool ok = await SetSleepTimerAsync(_deviceIp, minutes);
+        foreach (var (m, item) in _sleepItems) item.IsChecked = ok && m == minutes;
+        Notify(!ok ? "The amp didn't accept the sleep timer."
+            : minutes > 0 ? $"Sleep timer: the amp stops playing in {minutes} minutes."
+            : "Sleep timer off.");
+    }
+
+    private DateTime _lastErrorNotice;
+
+    internal void ReportError()
+    {
+        if (DateTime.UtcNow - _lastErrorNotice < TimeSpan.FromSeconds(10)) return;
+        _lastErrorNotice = DateTime.UtcNow;
+        Notify("Something went wrong. The details were saved to wiim-errors.log.");
     }
 
     private void Notify(string message) => Dispatcher.UIThread.Post(() =>

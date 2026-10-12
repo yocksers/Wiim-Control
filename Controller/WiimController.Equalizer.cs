@@ -5,19 +5,20 @@ namespace WiimControl;
 
 sealed partial class WiimController
 {
-    private async Task<string?> SendEqCommandAsync(string command)
+    private async Task<string?> SendEqCommandAsync(string ip, string command)
     {
+        if (string.IsNullOrEmpty(ip)) return null;
         try
         {
             var body = await _http.GetStringAsync(
-                $"https://{_deviceIp}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
-            OnWiimRequestSucceeded();
+                $"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
+            if (ip == _deviceIp) OnWiimRequestSucceeded();
             return body;
         }
         catch (Exception ex)
         {
             Notify($"Error: {ex.Message}");
-            _ = OnWiimRequestFailedAsync();
+            if (ip == _deviceIp) _ = OnWiimRequestFailedAsync();
             return null;
         }
     }
@@ -36,9 +37,9 @@ sealed partial class WiimController
             ? element.EnumerateArray().Select(e => e.GetString()).OfType<string>().ToList()
             : [];
 
-    internal async Task<EqPresetList> GetEqPresetListAsync(string pluginUri)
+    internal async Task<EqPresetList> GetEqPresetListAsync(string ip, string pluginUri)
     {
-        var json = await SendEqCommandAsync($"EQv2GetList:{pluginUri}").ConfigureAwait(false);
+        var json = await SendEqCommandAsync(ip, $"EQv2GetList:{pluginUri}").ConfigureAwait(false);
         try
         {
             using var doc = JsonDocument.Parse(json ?? string.Empty);
@@ -50,7 +51,7 @@ sealed partial class WiimController
         }
         catch (JsonException) { }
 
-        json = await SendEqCommandAsync("EQGetList").ConfigureAwait(false);
+        json = await SendEqCommandAsync(ip, "EQGetList").ConfigureAwait(false);
         try
         {
             using var doc = JsonDocument.Parse(json ?? string.Empty);
@@ -59,40 +60,40 @@ sealed partial class WiimController
         catch (JsonException) { return new EqPresetList([], []); }
     }
 
-    private async Task<bool> HasCustomEqPresetAsync(string name, string pluginUri) =>
-        (await GetEqPresetListAsync(pluginUri).ConfigureAwait(false)).Custom.Contains(name);
+    private async Task<bool> HasCustomEqPresetAsync(string ip, string name, string pluginUri) =>
+        (await GetEqPresetListAsync(ip, pluginUri).ConfigureAwait(false)).Custom.Contains(name);
 
-    internal async Task<bool> SaveEqPresetAsync(string name, string source, string pluginUri, bool replacing)
+    internal async Task<bool> SaveEqPresetAsync(string ip, string name, string source, string pluginUri, bool replacing)
     {
         if (source.Length > 0)
         {
             var payload = JsonSerializer.Serialize(new { source_name = source, pluginURI = pluginUri, Name = name }, EqJson);
-            bool saved = CommandSucceeded(await SendEqCommandAsync($"EQSourceSave:{payload}").ConfigureAwait(false));
-            if (saved && (replacing || await HasCustomEqPresetAsync(name, pluginUri).ConfigureAwait(false))) return true;
+            bool saved = CommandSucceeded(await SendEqCommandAsync(ip, $"EQSourceSave:{payload}").ConfigureAwait(false));
+            if (saved && (replacing || await HasCustomEqPresetAsync(ip, name, pluginUri).ConfigureAwait(false))) return true;
         }
         if (pluginUri != DefaultEqPlugin) return false;
-        bool legacySaved = CommandSucceeded(await SendEqCommandAsync($"EQSave:{name}").ConfigureAwait(false));
-        return legacySaved && (replacing || await HasCustomEqPresetAsync(name, pluginUri).ConfigureAwait(false));
+        bool legacySaved = CommandSucceeded(await SendEqCommandAsync(ip, $"EQSave:{name}").ConfigureAwait(false));
+        return legacySaved && (replacing || await HasCustomEqPresetAsync(ip, name, pluginUri).ConfigureAwait(false));
     }
 
-    internal async Task<bool> RenameEqPresetAsync(string name, string newName, string pluginUri)
+    internal async Task<bool> RenameEqPresetAsync(string ip, string name, string newName, string pluginUri)
     {
         var payload = JsonSerializer.Serialize(new { pluginURI = pluginUri, Name = name, newName }, EqJson);
-        if (!CommandSucceeded(await SendEqCommandAsync($"EQv2Rename:{payload}").ConfigureAwait(false))) return false;
-        var list = await GetEqPresetListAsync(pluginUri).ConfigureAwait(false);
+        if (!CommandSucceeded(await SendEqCommandAsync(ip, $"EQv2Rename:{payload}").ConfigureAwait(false))) return false;
+        var list = await GetEqPresetListAsync(ip, pluginUri).ConfigureAwait(false);
         return list.Custom.Contains(newName) && !list.Custom.Contains(name);
     }
 
-    internal async Task<bool> DeleteEqPresetAsync(string name, string pluginUri)
+    internal async Task<bool> DeleteEqPresetAsync(string ip, string name, string pluginUri)
     {
         var payload = JsonSerializer.Serialize(new { pluginURI = pluginUri, Name = name }, EqJson);
-        if (!CommandSucceeded(await SendEqCommandAsync($"EQv2Delete:{payload}").ConfigureAwait(false))) return false;
-        return !await HasCustomEqPresetAsync(name, pluginUri).ConfigureAwait(false);
+        if (!CommandSucceeded(await SendEqCommandAsync(ip, $"EQv2Delete:{payload}").ConfigureAwait(false))) return false;
+        return !await HasCustomEqPresetAsync(ip, name, pluginUri).ConfigureAwait(false);
     }
 
-    internal async Task<EqState?> GetEqStateAsync()
+    internal async Task<EqState?> GetEqStateAsync(string ip)
     {
-        var json = await SendEqCommandAsync("EQGetBand").ConfigureAwait(false);
+        var json = await SendEqCommandAsync(ip, "EQGetBand").ConfigureAwait(false);
         if (json == null) return null;
         try
         {
@@ -120,19 +121,19 @@ sealed partial class WiimController
         catch (Exception) { return null; }
     }
 
-    internal async Task<bool> SetEqEnabledAsync(bool enabled) =>
-        CommandSucceeded(await SendEqCommandAsync(enabled ? "EQOn" : "EQOff").ConfigureAwait(false));
+    internal async Task<bool> SetEqEnabledAsync(string ip, bool enabled) =>
+        CommandSucceeded(await SendEqCommandAsync(ip, enabled ? "EQOn" : "EQOff").ConfigureAwait(false));
 
-    internal async Task<bool> LoadEqPresetAsync(string name) =>
-        CommandSucceeded(await SendEqCommandAsync($"EQLoad:{name}").ConfigureAwait(false));
+    internal async Task<bool> LoadEqPresetAsync(string ip, string name) =>
+        CommandSucceeded(await SendEqCommandAsync(ip, $"EQLoad:{name}").ConfigureAwait(false));
 
-    internal async Task<bool> SetEqBandsAsync(IEnumerable<EqBand> bands)
+    internal async Task<bool> SetEqBandsAsync(string ip, IEnumerable<EqBand> bands)
     {
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             EQBand = bands.Select(b => new { index = b.Index, param_name = b.ParamName, value = b.Value })
         });
-        return CommandSucceeded(await SendEqCommandAsync($"EQSetBand:{payload}").ConfigureAwait(false));
+        return CommandSucceeded(await SendEqCommandAsync(ip, $"EQSetBand:{payload}").ConfigureAwait(false));
     }
 
     internal const string PeqPlugin = "http://moddevices.com/plugins/caps/EqNp";
@@ -141,25 +142,25 @@ sealed partial class WiimController
     internal static readonly PeqBand[] PeqDefaults =
         [.. new[] { 31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 }.Select(f => new PeqBand(PeqFilter.Peak, f, 0.25, 0))];
 
-    private Task<string?> SendEqJsonAsync(string command, object payload) =>
-        SendEqCommandAsync($"{command}:{JsonSerializer.Serialize(payload, EqJson)}");
+    private Task<string?> SendEqJsonAsync(string ip, string command, object payload) =>
+        SendEqCommandAsync(ip, $"{command}:{JsonSerializer.Serialize(payload, EqJson)}");
 
-    internal async Task<bool> SetEqTypeAsync(string source, string pluginUri)
+    internal async Task<bool> SetEqTypeAsync(string ip, string source, string pluginUri)
     {
-        if (source.Length == 0) return pluginUri == DefaultEqPlugin && await SetEqEnabledAsync(true).ConfigureAwait(false);
-        return CommandSucceeded(await SendEqJsonAsync("EQChangeSourceFX", new { source_name = source, pluginURI = pluginUri }).ConfigureAwait(false));
+        if (source.Length == 0) return pluginUri == DefaultEqPlugin && await SetEqEnabledAsync(ip, true).ConfigureAwait(false);
+        return CommandSucceeded(await SendEqJsonAsync(ip, "EQChangeSourceFX", new { source_name = source, pluginURI = pluginUri }).ConfigureAwait(false));
     }
 
-    internal async Task<bool> TurnEqOffAsync(string source, string pluginUri)
+    internal async Task<bool> TurnEqOffAsync(string ip, string source, string pluginUri)
     {
-        if (source.Length == 0) return await SetEqEnabledAsync(false).ConfigureAwait(false);
-        return CommandSucceeded(await SendEqJsonAsync("EQSourceOff", new { source_name = source, pluginURI = pluginUri }).ConfigureAwait(false));
+        if (source.Length == 0) return await SetEqEnabledAsync(ip, false).ConfigureAwait(false);
+        return CommandSucceeded(await SendEqJsonAsync(ip, "EQSourceOff", new { source_name = source, pluginURI = pluginUri }).ConfigureAwait(false));
     }
 
-    internal async Task<PeqState?> GetPeqStateAsync(string source)
+    internal async Task<PeqState?> GetPeqStateAsync(string ip, string source)
     {
         if (source.Length == 0) return null;
-        var json = await SendEqJsonAsync("EQGetLV2SourceBandEx", new { source_name = source, pluginURI = PeqPlugin }).ConfigureAwait(false);
+        var json = await SendEqJsonAsync(ip, "EQGetLV2SourceBandEx", new { source_name = source, pluginURI = PeqPlugin }).ConfigureAwait(false);
         try
         {
             using var doc = JsonDocument.Parse(json ?? string.Empty);
@@ -206,7 +207,7 @@ sealed partial class WiimController
 
     internal static string PeqChannelKey(int channel) => channel switch { 1 => "EQBandL", 2 => "EQBandR", _ => "EQBand" };
 
-    internal async Task<bool> SetPeqBandsAsync(string source, bool split, int channel, IEnumerable<(int Index, PeqBand Band)> bands)
+    internal async Task<bool> SetPeqBandsAsync(string ip, string source, bool split, int channel, IEnumerable<(int Index, PeqBand Band)> bands)
     {
         var parameters = new List<object>();
         foreach (var (index, band) in bands)
@@ -224,19 +225,19 @@ sealed partial class WiimController
             ["channelMode"] = split ? "L/R" : "Stereo",
             [PeqChannelKey(channel)] = parameters
         };
-        return CommandSucceeded(await SendEqJsonAsync("EQSetLV2SourceBand", payload).ConfigureAwait(false));
+        return CommandSucceeded(await SendEqJsonAsync(ip, "EQSetLV2SourceBand", payload).ConfigureAwait(false));
     }
 
-    internal async Task<bool> SetPeqSplitAsync(string source, bool split) =>
-        CommandSucceeded(await SendEqJsonAsync("EQSetChannelMode",
+    internal async Task<bool> SetPeqSplitAsync(string ip, string source, bool split) =>
+        CommandSucceeded(await SendEqJsonAsync(ip, "EQSetChannelMode",
             new { source_name = source, pluginURI = PeqPlugin, channelMode = split ? "L/R" : "Stereo" }).ConfigureAwait(false));
 
-    internal async Task<bool> LoadSourcePresetAsync(string source, string pluginUri, string name) =>
-        CommandSucceeded(await SendEqJsonAsync("EQv2SourceLoad", new { source_name = source, pluginURI = pluginUri, Name = name }).ConfigureAwait(false));
+    internal async Task<bool> LoadSourcePresetAsync(string ip, string source, string pluginUri, string name) =>
+        CommandSucceeded(await SendEqJsonAsync(ip, "EQv2SourceLoad", new { source_name = source, pluginURI = pluginUri, Name = name }).ConfigureAwait(false));
 
-    internal async Task<List<EqSourceMode>?> GetEqSourceModesAsync()
+    internal async Task<List<EqSourceMode>?> GetEqSourceModesAsync(string ip)
     {
-        var json = await SendEqCommandAsync("EQGetSourceModes").ConfigureAwait(false);
+        var json = await SendEqCommandAsync(ip, "EQGetSourceModes").ConfigureAwait(false);
         try
         {
             using var doc = JsonDocument.Parse(json ?? string.Empty);
@@ -254,9 +255,9 @@ sealed partial class WiimController
         catch (Exception) { return null; }
     }
 
-    internal async Task<EqState?> GetGeqStateAsync(string source)
+    internal async Task<EqState?> GetGeqStateAsync(string ip, string source)
     {
-        var json = await SendEqJsonAsync("EQGetLV2SourceBandEx", new { source_name = source, pluginURI = DefaultEqPlugin }).ConfigureAwait(false);
+        var json = await SendEqJsonAsync(ip, "EQGetLV2SourceBandEx", new { source_name = source, pluginURI = DefaultEqPlugin }).ConfigureAwait(false);
         try
         {
             using var doc = JsonDocument.Parse(json ?? string.Empty);
@@ -280,7 +281,7 @@ sealed partial class WiimController
         catch (Exception) { return null; }
     }
 
-    internal async Task<bool> SetGeqBandsAsync(string source, IEnumerable<EqBand> bands)
+    internal async Task<bool> SetGeqBandsAsync(string ip, string source, IEnumerable<EqBand> bands)
     {
         var payload = new
         {
@@ -289,7 +290,7 @@ sealed partial class WiimController
             channelMode = "Stereo",
             EQBand = bands.Select(b => new { param_name = b.ParamName, value = (b.Value - 50) / 4.0 })
         };
-        return CommandSucceeded(await SendEqJsonAsync("EQSetLV2SourceBand", payload).ConfigureAwait(false));
+        return CommandSucceeded(await SendEqJsonAsync(ip, "EQSetLV2SourceBand", payload).ConfigureAwait(false));
     }
 
     private static double ReadNumber(JsonElement value) =>

@@ -20,14 +20,14 @@ sealed partial class WiimController
     {
         volume = Math.Clamp(volume, 0, 100);
         bool ok = CommandSucceeded(await SendToDeviceAsync(ip, $"setPlayerCmd:vol:{volume}").ConfigureAwait(false));
-        if (ok && ip == _deviceIp && _cachedVolume != null) _cachedVolume = volume;
+        if (ok && ip == _cachedIp && _cachedVolume != null) _cachedVolume = volume;
         return ok;
     }
 
     internal async Task<bool> SetDeviceMuteAsync(string ip, bool muted)
     {
         bool ok = CommandSucceeded(await SendToDeviceAsync(ip, $"setPlayerCmd:mute:{(muted ? 1 : 0)}").ConfigureAwait(false));
-        if (ok && ip == _deviceIp && _cachedMuted != null) _cachedMuted = muted;
+        if (ok && ip == _cachedIp && _cachedMuted != null) _cachedMuted = muted;
         return ok;
     }
 }

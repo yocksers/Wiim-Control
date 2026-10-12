@@ -14,13 +14,17 @@ sealed partial class WiimController
         var balance = SendToDeviceAsync(ip, "getChannelBalance");
         var fade = SendToDeviceAsync(ip, "GetFadeFeature");
         var led = SendToDeviceAsync(ip, "LED_SWITCH_GET");
+        var volumeLight = SendToDeviceAsync(ip, "VOL_LED_SWITCH_GET");
         var buttons = SendToDeviceAsync(ip, "Button_Enable_GET");
         var output = SendToDeviceAsync(ip, "getNewAudioOutputHardwareMode");
         var filters = SendToDeviceAsync(ip, "getOutputDigitalFilterTypeSupportList");
         var sub = SendToDeviceAsync(ip, "getSubLPF");
         var screen = SendToDeviceAsync(ip, "getLightOperationBrightConfig");
         var inputs = GetInputVisibilityAsync(ip);
-        await Task.WhenAll(statusEx, balance, fade, led, buttons, output, filters, sub, screen, inputs).ConfigureAwait(false);
+        var screenUi = GetScreenUiAsync(ip);
+        var wallpapers = GetWallpapersAsync(ip);
+        var alarms = GetAlarmsAsync(ip);
+        await Task.WhenAll(statusEx, balance, fade, led, volumeLight, buttons, output, filters, sub, screen, inputs, screenUi, wallpapers, alarms).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
 
         var (filterMode, filterList) = ParseFilterList(filters.Result);
@@ -40,7 +44,12 @@ sealed partial class WiimController
             filter,
             ParseSubwoofer(sub.Result),
             ParseScreen(screen.Result),
-            inputs.Result);
+            inputs.Result,
+            ParseScreen(screen.Result) == null ? ParseInt(volumeLight.Result) : null,
+            screenUi.Result,
+            wallpapers.Result,
+            ParseDeviceInfo(statusEx.Result),
+            alarms.Result);
     }
 
     internal static string OutputName(int? hardware) => hardware switch
@@ -70,6 +79,12 @@ sealed partial class WiimController
 
     internal async Task<bool> SetStatusLightAsync(string ip, bool on) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"LED_SWITCH_SET:{(on ? 1 : 0)}").ConfigureAwait(false));
+
+    internal static readonly (int Mode, string Label)[] VolumeLightModes =
+        [(0, "Completely off"), (1, "On when adjusting the volume"), (2, "Always on")];
+
+    internal async Task<bool> SetVolumeLightModeAsync(string ip, int mode) =>
+        CommandSucceeded(await SendToDeviceAsync(ip, $"VOL_LED_SWITCH_SET:{mode}").ConfigureAwait(false));
 
     internal async Task<bool> SetButtonsLockedAsync(string ip, bool locked) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"Button_Enable_SET:{(locked ? 0 : 1)}").ConfigureAwait(false));
@@ -160,7 +175,8 @@ sealed partial class WiimController
             double Number(string name) =>
                 root.TryGetProperty(name, out var p) && double.TryParse(p.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : 0;
             return new SubwooferInfo(Number("status") == 1, Number("plugged") == 1, Number("cross"),
-                Number("phase"), Number("level"), Number("main_filter") == 1);
+                Number("phase"), Number("level"), Number("main_filter") == 1,
+                root.TryGetProperty("sub_delay", out _) ? Number("sub_delay") : null);
         }
         catch (JsonException) { return null; }
     }

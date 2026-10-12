@@ -38,6 +38,8 @@ sealed partial class WiimController : IDisposable
     private int             _osdScalePercent = 100;
     private VolumeOsdWindow? _osd;
     private int?            _cachedVolume;
+    private string          _cachedIp = string.Empty;
+    private readonly SemaphoreSlim _volumeGate = new(1, 1);
     private bool?           _cachedMuted;
     private DateTime        _cacheSyncUtc = DateTime.MinValue;
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromSeconds(5);
@@ -95,7 +97,12 @@ sealed partial class WiimController : IDisposable
 
             if (_outputMonitor != null)
             {
-                _outputMonitor.StatusChanged += _ => Dispatcher.UIThread.Post(UpdateTrayStatus);
+                _outputMonitor.StatusChanged += _ => Dispatcher.UIThread.Post(() =>
+                {
+                    UpdateTrayStatus();
+                    UpdateVolumeKeyRegistration();
+                });
+                UpdateVolumeKeyRegistration();
                 _outputMonitor.ExternalVolumeStepDetected += dir =>
                 {
                     if (Debounce()) _ = ChangeVolumeAsync(dir);
@@ -114,6 +121,12 @@ sealed partial class WiimController : IDisposable
 
         StartHotkeys();
         _ = FillMissingDeviceIdsAsync();
+    }
+
+    private void UpdateVolumeKeyRegistration()
+    {
+        if (OperatingSystem.IsWindows())
+            (_shellWnd as ShellHookWindow)?.SetVolumeKeysEnabled(_outputMonitor?.IsCurrentDeviceEnabled() ?? true);
     }
 
     private void HandleKeyCommand(string cmd)

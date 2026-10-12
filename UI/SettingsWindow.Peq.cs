@@ -74,7 +74,7 @@ sealed partial class WiimController
             {
                 if (_eqLoading || (_cboPeqChannels.SelectedItem as ComboBoxItem)?.Tag is not bool split || split == _peqSplit) return;
                 await SendPendingEqBandsAsync();
-                if (!await _owner.SetPeqSplitAsync(_eqSource, split))
+                if (!await _owner.SetPeqSplitAsync(_eqDeviceIp, _eqSource, split))
                     await Dialogs.MessageAsync(this, "The amp didn't change the channel setting.", _scale);
                 _peqChannel = split ? 1 : 0;
                 await RefreshEqAsync();
@@ -297,7 +297,7 @@ sealed partial class WiimController
             _peqSending = true;
             try
             {
-                foreach (var (channel, bands) in groups) await _owner.SetPeqBandsAsync(_eqSource, _peqSplit, channel, bands);
+                foreach (var (channel, bands) in groups) await _owner.SetPeqBandsAsync(_eqDeviceIp, _eqSource, _peqSplit, channel, bands);
             }
             finally { _peqSending = false; }
         }

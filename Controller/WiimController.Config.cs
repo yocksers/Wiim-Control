@@ -2,6 +2,8 @@ namespace WiimControl;
 
 sealed partial class WiimController
 {
+    internal static string ConfigDirectory => Path.GetDirectoryName(_cfgPath) ?? AppContext.BaseDirectory;
+
     private static readonly string _cfgPath =
         OperatingSystem.IsWindows() ? Path.Combine(AppContext.BaseDirectory, "wiim.cfg")
         : OperatingSystem.IsMacOS() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -13,7 +15,14 @@ sealed partial class WiimController
     private void LoadConfig()
     {
         if (!File.Exists(_cfgPath)) return;
-        foreach (var line in File.ReadAllLines(_cfgPath))
+        string[] lines;
+        try { lines = File.ReadAllLines(_cfgPath); }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Settings", ex);
+            return;
+        }
+        foreach (var line in lines)
         {
             var idx = line.IndexOf('=');
             if (idx < 0) continue;
@@ -42,8 +51,8 @@ sealed partial class WiimController
             if (key == "knowndevices" && val.Length > 0)
                 _knownDevices = val.Split('\u0002', StringSplitOptions.RemoveEmptyEntries)
                     .Select(entry => entry.Split('\u0001'))
-                    .Where(parts => parts.Length == 3)
-                    .Select(parts => new KnownDevice(parts[0], parts[1], parts[2]))
+                    .Where(parts => parts.Length is 2 or 3 && parts[1].Length > 0)
+                    .Select(parts => new KnownDevice(parts[0], parts[1], parts.Length == 3 ? parts[2] : string.Empty))
                     .ToList();
         }
     }

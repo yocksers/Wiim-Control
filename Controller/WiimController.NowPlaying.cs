@@ -9,12 +9,14 @@ sealed partial class WiimController
 {
     private static readonly Dictionary<int, string> SourceNames = new()
     {
-        [1] = "AirPlay", [2] = "DLNA", [31] = "Spotify", [32] = "TIDAL Connect", [40] = "Line-in",
-        [41] = "Bluetooth", [43] = "Optical", [45] = "Coaxial", [47] = "Line-in 2", [49] = "HDMI",
-        [51] = "USB", [99] = "Multiroom"
+        [1] = "AirPlay", [2] = "DLNA", [3] = "QPlay", [31] = "Spotify", [32] = "TIDAL Connect", [36] = "Qobuz Connect",
+        [40] = "Line-in", [41] = "Bluetooth", [43] = "Optical", [45] = "Coaxial", [47] = "Line-in 2", [49] = "HDMI",
+        [51] = "USB", [54] = "Phono", [58] = "HDMI ARC", [99] = "Multiroom"
     };
 
+    private const int ArtworkCacheSize = 40;
     private readonly Dictionary<string, Bitmap> _artworkCache = new();
+    private readonly List<string> _artworkOrder = [];
     private readonly DispatcherTimer _nowPlayingTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private string _nowPlayingText = string.Empty;
     private bool _nowPlayingBusy;
@@ -25,7 +27,9 @@ sealed partial class WiimController
     {
         var statusTask = SendToDeviceAsync(ip, "getPlayerStatus");
         var metaTask = SendToDeviceAsync(ip, "getMetaInfo");
-        await Task.WhenAll(statusTask, metaTask).ConfigureAwait(false);
+        var sleepTask = GetSleepSecondsAsync(ip);
+        var renamesTask = EnsureInputRenamesAsync(ip);
+        await Task.WhenAll(statusTask, metaTask, sleepTask, renamesTask).ConfigureAwait(false);
         var status = statusTask.Result;
         if (!int.TryParse(JsonField(status, "vol"), out int volume)) return null;
 
@@ -33,6 +37,12 @@ sealed partial class WiimController
         int.TryParse(JsonField(status, "mode"), out int mode);
         int.TryParse(meta.GetValueOrDefault("sampleRate"), out int sampleRate);
         int.TryParse(meta.GetValueOrDefault("bitDepth"), out int bitDepth);
+        int.TryParse(meta.GetValueOrDefault("bitRate"), out int bitRate);
+        if (bitRate > 50000) bitRate /= 1000;
+        int loop = int.TryParse(JsonField(status, "loop"), out int l) ? l : 4;
+        int.TryParse(JsonField(status, "curpos"), out int position);
+        int.TryParse(JsonField(status, "totlen"), out int duration);
+        string bluetooth = mode == 41 ? await GetBluetoothSourceAsync(ip).ConfigureAwait(false) : string.Empty;
         return new DeviceStatus(
             new DeviceVolume(Math.Clamp(volume, 0, 100), JsonField(status, "mute") == "1"),
             JsonField(status, "status") ?? string.Empty,
@@ -42,7 +52,13 @@ sealed partial class WiimController
             Clean(meta.GetValueOrDefault("album")) ?? Clean(HexText(JsonField(status, "Album"))) ?? string.Empty,
             Clean(meta.GetValueOrDefault("albumArtURI")) ?? string.Empty,
             sampleRate,
-            bitDepth);
+            bitDepth,
+            loop,
+            Math.Max(0, position),
+            Math.Max(0, duration),
+            Math.Max(0, bitRate),
+            bluetooth,
+            sleepTask.Result);
     }
 
     internal async Task<Dictionary<string, DeviceStatus?>> GetAllDeviceStatusesAsync()
@@ -58,17 +74,43 @@ sealed partial class WiimController
     internal async Task<Bitmap?> GetArtworkAsync(string url)
     {
         lock (_artworkCache)
-            if (_artworkCache.TryGetValue(url, out var cached)) return cached;
+            if (_artworkCache.TryGetValue(url, out var cached))
+            {
+                _artworkOrder.Remove(url);
+                _artworkOrder.Add(url);
+                return cached;
+            }
         try
         {
             var bytes = await _http.GetByteArrayAsync(url).ConfigureAwait(false);
             using var stream = new MemoryStream(bytes);
             var thumbnail = Bitmap.DecodeToWidth(stream, 160, BitmapInterpolationMode.HighQuality);
+            var evicted = new List<Bitmap>();
             lock (_artworkCache)
             {
-                if (_artworkCache.Count > 40) _artworkCache.Clear();
-                _artworkCache[url] = thumbnail;
+                if (_artworkCache.TryGetValue(url, out var existing))
+                {
+                    evicted.Add(thumbnail);
+                    thumbnail = existing;
+                }
+                else
+                {
+                    _artworkCache[url] = thumbnail;
+                    _artworkOrder.Add(url);
+                }
+                while (_artworkOrder.Count > ArtworkCacheSize)
+                {
+                    string oldest = _artworkOrder[0];
+                    _artworkOrder.RemoveAt(0);
+                    if (_artworkCache.Remove(oldest, out var old)) evicted.Add(old);
+                }
             }
+            if (evicted.Count > 0)
+                Dispatcher.UIThread.Post(() =>
+                {
+                    foreach (var bitmap in evicted)
+                        if (_settingsWindow?.IsShowingArtwork(bitmap) != true) bitmap.Dispose();
+                });
             return thumbnail;
         }
         catch (Exception)
@@ -96,34 +138,21 @@ sealed partial class WiimController
         _nowPlayingBusy = true;
         try
         {
+            string ip = _deviceIp;
             if (_knownDevices.Count > 1) await GetMultiroomSnapshotAsync();
-            var status = await GetDeviceStatusAsync(PlaybackTarget);
+            string target = PlaybackTarget;
+            var status = await GetDeviceStatusAsync(target);
             _nowPlayingText = status == null ? string.Empty : NowPlayingLine(status);
             RefreshDeviceStatusUi();
+            bool reachable = target == ip ? status != null : await GetDeviceVolumeAsync(ip) != null;
+            if (ip != _deviceIp) return;
+            if (reachable) OnWiimRequestSucceeded();
+            else await OnWiimRequestFailedAsync();
         }
         finally
         {
             _nowPlayingBusy = false;
         }
-    }
-
-    private static Dictionary<int, string> ParsePresetNames(string? json)
-    {
-        var result = new Dictionary<int, string>();
-        if (json == null) return result;
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
-                !doc.RootElement.TryGetProperty("preset_list", out var list) ||
-                list.ValueKind != JsonValueKind.Array) return result;
-            foreach (var p in list.EnumerateArray())
-                if (p.TryGetProperty("number", out var number) && int.TryParse(number.ToString(), out int n) &&
-                    p.TryGetProperty("name", out var name) && Clean(name.ToString()) is { } text)
-                    result[n] = text;
-        }
-        catch (JsonException) { }
-        return result;
     }
 
     private static Dictionary<string, string> MetaFields(string? json)

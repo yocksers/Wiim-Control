@@ -93,6 +93,7 @@ sealed class ShellHookWindow : IGlobalHotkeys
     private readonly IntPtr _hWnd;
     private readonly uint _shellMsg;
     private bool _mediaKeysEnabled;
+    private bool _volumeKeysRegistered;
 
     public ShellHookWindow(Action<string> onCommand, Action<int> onHotkey, bool forwardMediaKeys = false)
     {
@@ -116,10 +117,26 @@ sealed class ShellHookWindow : IGlobalHotkeys
 
         _shellMsg = RegisterWindowMessage("SHELLHOOK");
         RegisterShellHookWindow(_hWnd);
-        RegisterHotKey(_hWnd, HOTKEY_VOLUME_UP,   0, VK_VOLUME_UP);
-        RegisterHotKey(_hWnd, HOTKEY_VOLUME_DOWN, 0, VK_VOLUME_DOWN);
-        RegisterHotKey(_hWnd, HOTKEY_VOLUME_MUTE, 0, VK_VOLUME_MUTE);
+        SetVolumeKeysEnabled(true);
         if (_mediaKeysEnabled) RegisterMediaHotkeys();
+    }
+
+    public void SetVolumeKeysEnabled(bool enabled)
+    {
+        if (_hWnd == IntPtr.Zero || enabled == _volumeKeysRegistered) return;
+        _volumeKeysRegistered = enabled;
+        if (enabled)
+        {
+            RegisterHotKey(_hWnd, HOTKEY_VOLUME_UP,   0, VK_VOLUME_UP);
+            RegisterHotKey(_hWnd, HOTKEY_VOLUME_DOWN, 0, VK_VOLUME_DOWN);
+            RegisterHotKey(_hWnd, HOTKEY_VOLUME_MUTE, 0, VK_VOLUME_MUTE);
+        }
+        else
+        {
+            UnregisterHotKey(_hWnd, HOTKEY_VOLUME_UP);
+            UnregisterHotKey(_hWnd, HOTKEY_VOLUME_DOWN);
+            UnregisterHotKey(_hWnd, HOTKEY_VOLUME_MUTE);
+        }
     }
 
     public void SetMediaKeysEnabled(bool enabled)

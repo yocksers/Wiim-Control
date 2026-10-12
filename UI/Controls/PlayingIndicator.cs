@@ -12,7 +12,7 @@ sealed class PlayingIndicator : Control
     private const double Gap = 2;
     private static readonly double[] Speeds = [5.3, 7.9, 4.4, 6.7];
     private static readonly double[] Phases = [0, 1.9, 3.3, 4.8];
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private bool _attached;
 
@@ -23,7 +23,10 @@ sealed class PlayingIndicator : Control
         Width = 14;
         Height = 12;
         IsVisible = false;
-        _timer.Tick += (_, _) => { if (IsEffectivelyVisible) InvalidateVisual(); };
+        _timer.Tick += (_, _) =>
+        {
+            if (IsEffectivelyVisible && TopLevel.GetTopLevel(this) is not Window { WindowState: WindowState.Minimized }) InvalidateVisual();
+        };
     }
 
     public override void Render(DrawingContext context)

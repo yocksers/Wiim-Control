@@ -8,7 +8,7 @@ other WiiM/LinkPlay devices) from your PC.
 **Volume keys**
 - The keyboard's volume up/down/mute keys control the active WiiM amp instead of Windows.
 - Optional: suppress the Windows volume pop-up and show Wiim Control's own volume overlay instead
-  (position and duration are configurable; it also shows the current track).
+  (position, duration and size are configurable; it also shows the current track).
 - Adjustable volume step, with an optional logarithmic step that is finer at low volume.
 - Respects the amp's maximum volume setting.
 - Optional group volume: the volume keys also change the amps linked to the active amp.
@@ -18,9 +18,14 @@ other WiiM/LinkPlay devices) from your PC.
 **Devices**
 - Finds WiiM devices on your network automatically, or add one by IP address.
 - Keeps a list of your amps; pick which one the volume keys control.
-- For every amp: now playing (title, artist, album art, source and audio quality),
-  play/pause, previous and next, and its own volume slider and mute button.
-- Switch each amp's input (Wi-Fi, Bluetooth, Line in, Optical, HDMI…) from its **Input** button.
+- For every amp: now playing (title, artist, album art, source or streaming service, the connected Bluetooth
+  device and audio quality), play/pause, previous and next, shuffle and repeat, a position bar to jump within
+  the track, and its own volume slider and mute button.
+- Sleep timer for each amp (15 minutes to 2 hours), also in the tray menu.
+- Presets page: each amp's saved presets with their artwork, name and source, including routines made in the WiiM Home
+  app (for example switching the output and EQ); click one to play or run it.
+- Switch each amp's input (Wi-Fi, Bluetooth, Line in, Optical, HDMI…) from its **Input** button. Inputs you
+  renamed in the WiiM Home app are shown with your names.
 - Remembers each amp's unique ID, so it reconnects automatically when the active amp gets a new IP
   address, and **Discover** updates amps that have moved instead of adding them twice.
 
@@ -38,15 +43,20 @@ other WiiM/LinkPlay devices) from your PC.
 - Save the current EQ as a new preset on the amp, and rename or delete your own presets.
 
 **Amp settings** (per amp)
+- Model, firmware and temperatures.
 - Maximum volume, left/right balance and fade in/out.
+- Subwoofer: on/off, level, crossover, phase and delay.
+- Up to three daily alarms that play an internet radio stream or other web address.
 - Digital filter (the list comes from the amp; it differs between models).
-- Status light and touch-button lock.
+- Status light and touch-button lock; WiiM Amp and Amp Pro: volume lights completely off, on when adjusting the volume, or always on.
 - Choose which inputs are shown (saved on the amp, so the WiiM Home app shows the same inputs).
-- WiiM Ultra: screen on/off, automatic brightness and screen brightness.
+- WiiM Amp Ultra screen: on/off, automatic brightness, brightness, 24-hour clock, clock style, standby screen, screen off in standby,
+  now playing layout, second page (cover art, EQ visualization or VU meter) and its style, which page shows first, and the
+  background (thumbnails are loaded from the amp).
 
 **Tray**
 - Right-click menu with the most common settings, the amp's presets 1–12 (with their names when the
-  amp reports them), device switching and a connection test.
+  amp reports them), a sleep timer, device switching and a connection test.
 - The tray tooltip shows the active amp and the track that is playing.
 - Start with Windows (or at login on Linux and macOS).
 
@@ -63,8 +73,8 @@ Run `WiimControlSetup.exe`.
 Download `WiimControl-<version>-x86_64.AppImage`, make it executable and run it:
 
 ```
-chmod +x WiimControl-1.05-x86_64.AppImage
-./WiimControl-1.05-x86_64.AppImage
+chmod +x WiimControl-1.06-x86_64.AppImage
+./WiimControl-1.06-x86_64.AppImage
 ```
 
 Settings are stored in `~/.config/wiim-control/`. The tray icon works out of the box on KDE Plasma
@@ -75,7 +85,7 @@ and most desktops; GNOME needs the AppIndicator extension.
 1. **Desktop global shortcuts** (KDE Plasma, GNOME 48 and newer): switch on *Use the desktop's
    global shortcuts* and approve the shortcuts when the desktop asks.
 2. **Keyboard settings**: bind the keys to the commands shown on the General page, for example
-   `WiimControl-1.05-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
+   `WiimControl-1.06-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
    `--next` and `--previous`. Each command is sent to the running Wiim Control.
 3. **Hotkeys page**: set your own shortcuts in Wiim Control. No desktop setup needed on X11 desktops
    such as XFCE, Cinnamon and MATE. Ctrl + Alt + F1 to F12 can't be used; Linux reserves them.
