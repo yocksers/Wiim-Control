@@ -183,7 +183,7 @@ sealed partial class WiimController
         catch (Exception) { return null; }
     }
 
-    private static PeqBand[] ParsePeqBands(JsonElement array)
+    private static PeqBand[] ParsePeqBands(JsonElement array, int? bandCount = PeqBandCount)
     {
         var values = new Dictionary<string, double>();
         foreach (var b in array.EnumerateArray())
@@ -192,11 +192,13 @@ sealed partial class WiimController
             values[name.GetString() ?? string.Empty] = ReadNumber(v);
         }
 
-        var bands = new PeqBand[PeqBandCount];
-        for (int i = 0; i < PeqBandCount; i++)
+        int count = bandCount ?? values.Keys.Where(k => k.Length > 2 && k[1] == '_' && k[0] is >= 'a' and <= 'z')
+            .Select(k => k[0] - 'a' + 1).DefaultIfEmpty(0).Max();
+        var bands = new PeqBand[count];
+        for (int i = 0; i < count; i++)
         {
             char letter = (char)('a' + i);
-            var d = PeqDefaults[i];
+            var d = i < PeqDefaults.Length ? PeqDefaults[i] : new PeqBand(PeqFilter.Off, 1000, 1, 0);
             double Value(string param, double fallback) => values.TryGetValue($"{letter}_{param}", out var v) ? v : fallback;
             int mode = (int)Math.Round(Value("mode", (int)d.Filter));
             bands[i] = new PeqBand(Enum.IsDefined((PeqFilter)mode) ? (PeqFilter)mode : PeqFilter.Peak,

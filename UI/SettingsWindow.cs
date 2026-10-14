@@ -34,6 +34,7 @@ sealed partial class WiimController
         private readonly ToggleSwitch _chkSuppress = new();
         private readonly ToggleSwitch _chkAutoStart = new();
         private readonly ToggleSwitch _chkForwardMedia = new();
+        private readonly ToggleSwitch _chkMediaControls = new();
         private readonly ToggleSwitch _chkLogStep = new();
         private readonly ToggleSwitch _chkGroupVolume = new();
         private readonly ToggleSwitch _chkPortal = new();
@@ -74,6 +75,9 @@ sealed partial class WiimController
         private string _eqBaseKey = string.Empty;
         private readonly Button _btnEqRename = Pill("Rename…");
         private readonly Button _btnEqDelete = Pill("Delete");
+        private readonly ToggleSwitch _chkRoomFit = new();
+        private readonly ComboBox _cboRoomFit = new() { Width = 240, PlaceholderText = "No profile selected" };
+        private Control? _roomFitRow;
 
         private readonly TextBlock _lblGroupStatus = Subtitle();
         private readonly StackPanel _groupList = new();
@@ -1319,7 +1323,21 @@ sealed partial class WiimController
             _eqTypeRow.IsVisible = false;
             _eqInputRow = LabeledRow("Input", _cboEqInput);
             _eqInputRow.IsVisible = false;
-            var topCard = Card(null, ToggleRow("Enable EQ", _chkEqEnabled), _eqInputRow, _eqTypeRow, LabeledRow("Preset", presetRow),
+            _roomFitRow = new StackPanel
+            {
+                IsVisible = false,
+                Children =
+                {
+                    ToggleRow("RoomFit room correction", _chkRoomFit),
+                    LabeledRow("RoomFit profile", new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal, Spacing = 8, Children = { _btnRoomFitCurve, _cboRoomFit }
+                    })
+                }
+            };
+            _btnRoomFitCurve.Click += async (_, _) => await ShowRoomFitCurveAsync();
+            ToolTip.SetTip(_roomFitRow, "Measured with the WiiM Home app. Applies to every input, on top of the EQ.");
+            var topCard = Card(null, _roomFitRow, ToggleRow("Enable EQ", _chkEqEnabled), _eqInputRow, _eqTypeRow, LabeledRow("Preset", presetRow),
                 presetButtonsBelow);
             topCard.SizeChanged += (_, e) =>
             {
@@ -1428,6 +1446,16 @@ sealed partial class WiimController
                 if (_eqLegacy) await _owner.LoadEqPresetAsync(_eqDeviceIp, name);
                 else await _owner.LoadSourcePresetAsync(_eqDeviceIp, _eqSource, _eqPluginUri, name);
                 await RefreshEqAsync();
+            };
+            _chkRoomFit.IsCheckedChanged += async (_, _) =>
+            {
+                if (_eqLoading) return;
+                if (!await _owner.SetRoomFitEnabledAsync(_eqDeviceIp, _chkRoomFit.IsChecked == true)) await RefreshEqAsync();
+            };
+            _cboRoomFit.SelectionChanged += async (_, _) =>
+            {
+                if (_eqLoading || (_cboRoomFit.SelectedItem as ComboBoxItem)?.Tag is not string name) return;
+                if (!await _owner.LoadRoomFitProfileAsync(_eqDeviceIp, name, _chkRoomFit.IsChecked == true)) await RefreshEqAsync();
             };
             btnFlat.Click += (_, _) => { foreach (var s in _eqSliders) s.Value = 50; };
 
@@ -1589,7 +1617,8 @@ sealed partial class WiimController
             var currentTask = _owner.GetEqStateAsync(ip);
             var modesTask = _owner.GetEqSourceModesAsync(ip);
             var inputsTask = _owner.GetInputsAsync(ip);
-            await Task.WhenAll(currentTask, modesTask, inputsTask);
+            var roomFitTask = _owner.GetRoomFitStateAsync(ip);
+            await Task.WhenAll(currentTask, modesTask, inputsTask, roomFitTask);
             var current = currentTask.Result;
             var modes = current is { Source.Length: > 0 } ? modesTask.Result : null;
             bool legacy = modes == null;
@@ -1667,6 +1696,15 @@ sealed partial class WiimController
             }
             ApplyPeqState(peq);
             ShowEqEditor();
+            var roomFit = roomFitTask.Result;
+            if (_roomFitRow != null) _roomFitRow.IsVisible = roomFit != null;
+            _cboRoomFit.Items.Clear();
+            if (roomFit != null)
+            {
+                foreach (var p in roomFit.Profiles) _cboRoomFit.Items.Add(ComboItem(p, p));
+                _cboRoomFit.SelectedIndex = roomFit.Profiles.IndexOf(roomFit.Active);
+                _chkRoomFit.IsChecked = roomFit.Enabled;
+            }
             _eqLoading = false;
 
             _chkEqEnabled.IsEnabled = _eqAvailable;
@@ -1713,6 +1751,8 @@ sealed partial class WiimController
         {
             _chkSuppress.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetSuppress(_chkSuppress.IsChecked == true); };
             _chkAutoStart.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetAutoStartSetting(_chkAutoStart.IsChecked == true); };
+            _chkMediaControls.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetMediaControls(_chkMediaControls.IsChecked == true); };
+            ToolTip.SetTip(_chkMediaControls, "Shows the track in the media pop-up next to the Windows volume, with play/pause, next and previous for the amp.");
             _chkForwardMedia.IsCheckedChanged += async (_, _) =>
             {
                 if (_loading) return;
@@ -1727,7 +1767,8 @@ sealed partial class WiimController
                 cards.Children.Add(Card("Behavior",
                     ToggleRow("Suppress Windows volume OSD", _chkSuppress),
                     ToggleRow(AutoStart.Label, _chkAutoStart),
-                    ToggleRow("Forward media keys (play/pause/next/prev) to Wiim", _chkForwardMedia)));
+                    ToggleRow("Forward media keys (play/pause/next/prev) to Wiim", _chkForwardMedia),
+                    ToggleRow("Show the amp in the Windows media controls", _chkMediaControls)));
 
                 var btnClear = Pill("Allow all outputs");
                 btnClear.Margin = new Thickness(0, 8, 0, 0);
@@ -1933,6 +1974,7 @@ sealed partial class WiimController
             _chkSuppress.IsChecked = _owner._suppress;
             _chkAutoStart.IsChecked = IsAutoStartEnabled();
             _chkForwardMedia.IsChecked = _owner._forwardMediaKeys;
+            _chkMediaControls.IsChecked = _owner._mediaControls;
             _chkPortal.IsChecked = _owner._linuxPortalShortcuts;
             _numStep.Value = Math.Clamp(_owner._volumeStep, 1, 50);
             _chkLogStep.IsChecked = _owner._logStep;

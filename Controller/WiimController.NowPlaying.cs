@@ -143,6 +143,7 @@ sealed partial class WiimController
             string target = PlaybackTarget;
             var status = await GetDeviceStatusAsync(target);
             _nowPlayingText = status == null ? string.Empty : NowPlayingLine(status);
+            _mediaSession?.Update(status);
             RefreshDeviceStatusUi();
             bool reachable = target == ip ? status != null : await GetDeviceVolumeAsync(ip) != null;
             if (ip != _deviceIp) return;

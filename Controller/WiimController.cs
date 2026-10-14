@@ -87,6 +87,7 @@ sealed partial class WiimController : IDisposable
 
         BuildTrayIcon();
         StartNowPlayingUpdates();
+        UpdateMediaSession();
         _ = RefreshActiveMaxVolumeAsync();
         CommandChannel.StartServer(cmd => Dispatcher.UIThread.Post(() => HandleCommand(cmd)), _shutdown.Token);
 
@@ -103,14 +104,6 @@ sealed partial class WiimController : IDisposable
                     UpdateVolumeKeyRegistration();
                 });
                 UpdateVolumeKeyRegistration();
-                _outputMonitor.ExternalVolumeStepDetected += dir =>
-                {
-                    if (Debounce()) _ = ChangeVolumeAsync(dir);
-                };
-                _outputMonitor.ExternalMuteToggleDetected += () =>
-                {
-                    if (Debounce()) _ = ToggleMuteAsync();
-                };
             }
         }
         else if (OperatingSystem.IsLinux())
@@ -172,6 +165,7 @@ sealed partial class WiimController : IDisposable
         _tray?.Dispose();
         _osd?.Close();
         _nowPlayingTimer.Stop();
+        _mediaSession?.Dispose();
         _http.Dispose();
         _outputMonitor?.Dispose();
     }

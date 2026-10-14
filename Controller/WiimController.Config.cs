@@ -32,6 +32,7 @@ sealed partial class WiimController
             if (key == "deviceuuid")      _deviceUuid = val;
             if (key == "logstep")         _logStep = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "forwardmediakeys") _forwardMediaKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "mediacontrols")   _mediaControls = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "groupvolumekeys") _groupVolumeKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "groupleader")     _groupLeaderIp = val;
             if (key == "linuxportalshortcuts") _linuxPortalShortcuts = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
@@ -64,7 +65,7 @@ sealed partial class WiimController
             Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
             File.WriteAllLines(_cfgPath, [
                 $"ip={_deviceIp}", $"deviceUuid={_deviceUuid}", $"logStep={_logStep}",
-                $"forwardMediaKeys={_forwardMediaKeys}", $"groupVolumeKeys={_groupVolumeKeys}", $"groupLeader={_groupLeaderIp}",
+                $"forwardMediaKeys={_forwardMediaKeys}", $"mediaControls={_mediaControls}", $"groupVolumeKeys={_groupVolumeKeys}", $"groupLeader={_groupLeaderIp}",
                 $"linuxPortalShortcuts={_linuxPortalShortcuts}", $"hotkeys={SerializeHotkeys()}",
                 $"windowSize={(_windowSize is { } size ? $"{(int)size.Width}x{(int)size.Height}" : "")}", $"windowMaximized={_windowMaximized}",
                 $"uiScale={_uiScalePercent}",

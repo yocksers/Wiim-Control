@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace WiimControl;
@@ -87,12 +88,16 @@ sealed partial class WiimController
             _peqChannelButtons.HorizontalAlignment = HorizontalAlignment.Left;
             _peqChannelButtons.Margin = new Thickness(16, 0, 0, 0);
             var btnReset = Pill("Reset");
+            var btnImport = Pill("Import…");
+            ToolTip.SetTip(btnImport, "Load the filters from a Room EQ Wizard or AutoEQ filter file (.txt).");
+            btnImport.Click += async (_, _) => await ImportPeqFileAsync();
+            var editButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { btnImport, btnReset } };
             var channelRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4, 0, 4) };
             channelRow.Children.Add(_cboPeqChannels);
             Grid.SetColumn(_peqChannelButtons, 1);
             channelRow.Children.Add(_peqChannelButtons);
-            Grid.SetColumn(btnReset, 2);
-            channelRow.Children.Add(btnReset);
+            Grid.SetColumn(editButtons, 2);
+            channelRow.Children.Add(editButtons);
             var hint = new TextBlock
             {
                 Text = "Applies to the selected input. Drag a point in the graph to change its frequency and gain, " +
@@ -148,10 +153,66 @@ sealed partial class WiimController
             var card = new Border { Child = grid, IsVisible = false };
             card.Classes.Add("card");
 
-            _eqEditControls.AddRange([_peqGraph, _cboPeqChannels, _btnPeqLeft, _btnPeqRight, btnReset, .. _peqFilters]);
+            _eqEditControls.AddRange([_peqGraph, _cboPeqChannels, _btnPeqLeft, _btnPeqRight, btnImport, btnReset, .. _peqFilters]);
             _peqGraph.Bands = PeqEdited;
             UpdatePeqChannelButtons();
             return card;
+        }
+
+        private async Task ImportPeqFileAsync()
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Import filters",
+                FileTypeFilter = [new FilePickerFileType("Filter files (REW, AutoEQ)") { Patterns = ["*.txt"] }, FilePickerFileTypes.All]
+            });
+            if (files.Count == 0) return;
+
+            string text;
+            try
+            {
+                await using var stream = await files[0].OpenReadAsync();
+                using var reader = new StreamReader(stream);
+                text = await reader.ReadToEndAsync();
+            }
+            catch (Exception ex)
+            {
+                await Dialogs.MessageAsync(this, $"Couldn't read the file: {ex.Message}", _scale);
+                return;
+            }
+
+            var import = PeqFilterFile.Parse(text);
+            var notes = new List<string>();
+            if (import.Skipped.Count > 0)
+                notes.Add($"Skipped, the parametric EQ has no matching filter type: {string.Join(", ", import.Skipped)}.");
+            if (import.Bands.Count == 0)
+            {
+                await Dialogs.MessageAsync(this, string.Join("\n\n",
+                    ["The file has no peak or shelf filters with a Q the amp can use.", .. notes]), _scale);
+                return;
+            }
+
+            var used = import.Bands.Take(PeqBandCount).ToList();
+            if (import.Bands.Count > PeqBandCount)
+                notes.Add($"The file has {import.Bands.Count} usable filters; the amp has {PeqBandCount} bands, so only the first {PeqBandCount} are used.");
+            if (import.Adjusted > 0)
+                notes.Add($"{import.Adjusted} filter(s) were limited to the amp's range (±12 dB, Q 0.01 to 24).");
+            if (import.Preamp is { } preamp && preamp != 0)
+                notes.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"The file's preamp of {preamp:0.0} dB isn't applied: the parametric EQ has no preamp. Lower the volume if you hear distortion."));
+            string which = _peqChannel switch { 1 => " of the left channel", 2 => " of the right channel", _ => string.Empty };
+            string question = $"Replace all bands{which} with the {used.Count} filter(s) from {files[0].Name}?";
+            if (!await Dialogs.ConfirmAsync(this, string.Join("\n\n", [question, .. notes]), _scale)) return;
+
+            for (int i = 0; i < PeqBandCount; i++)
+            {
+                PeqEdited[i] = i < used.Count ? used[i] : PeqDefaults[i] with { Filter = PeqFilter.Off };
+                _peqDirty.Add((_peqChannel, i));
+                UpdatePeqRow(i);
+            }
+            _peqGraph.InvalidateVisual();
+            MarkEqCustom();
+            if (!_peqSendTimer.IsEnabled) _peqSendTimer.Start();
         }
 
         private Border BuildPeqRow(int band)

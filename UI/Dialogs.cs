@@ -75,6 +75,16 @@ static class Dialogs
         return ShowAsync(window, owner, () => true);
     }
 
+    public static Task ContentAsync(Window? owner, Control content, double scale = 1)
+    {
+        var close = DialogButton("Close", accent: true);
+        close.IsDefault = true;
+        close.IsCancel = true;
+        var window = NewDialog(scale, new StackPanel { Children = { content, ButtonRow(close) } });
+        close.Click += (_, _) => window.Close();
+        return ShowAsync(window, owner, () => true);
+    }
+
     public static Task<bool> ConfirmAsync(Window? owner, string message, double scale = 1)
     {
         bool answer = false;

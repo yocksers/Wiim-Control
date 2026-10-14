@@ -14,6 +14,8 @@ enum PeqFilter { Off = -1, LowShelf = 0, Peak = 1, HighShelf = 2 }
 
 readonly record struct PeqBand(PeqFilter Filter, double Frequency, double Q, double Gain);
 
+sealed record RoomFitState(bool Enabled, string Active, List<string> Profiles, PeqBand[] Stereo, PeqBand[]? Left, PeqBand[]? Right);
+
 sealed record PeqState(bool Enabled, string Name, bool Split, PeqBand[] Stereo, PeqBand[] Left, PeqBand[] Right);
 
 sealed record MultiroomSnapshot(HashSet<string> Online, Dictionary<string, string> LeaderOf, Dictionary<string, string> MemberAddresses)
