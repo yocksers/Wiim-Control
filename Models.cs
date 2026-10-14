@@ -62,6 +62,23 @@ sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? Sta
     ScreenConfig? Screen, List<InputVisibility>? Inputs, int? VolumeLightMode, ScreenUi? ScreenUi,
     WallpaperInfo? Wallpapers, DeviceInfo? Device, List<AlarmInfo>? Alarms);
 
+sealed record MediaServer(string Name, string Udn, string ContentDirectoryUrl, string IconUrl, bool OnThisComputer = false);
+
+sealed record MediaEntry(string Id, string Title, bool IsContainer, int? ChildCount, string Class, string Artist, string Album,
+    string ArtUrl, string Url, string ProtocolInfo, TimeSpan Duration)
+{
+    public bool IsAudio => !IsContainer && Url.Length > 0 &&
+        (Class.StartsWith("object.item.audioItem", StringComparison.Ordinal) || ProtocolInfo.Contains(":audio/", StringComparison.OrdinalIgnoreCase));
+}
+
+sealed record BrowsePage(List<MediaEntry> Entries, int Total);
+
+sealed record QueueTrack(string Url, string Title, string Artist, string Album, string ArtUrl, TimeSpan Duration, string ProtocolInfo);
+
+sealed record RadioStation(string Name, string Url, string ArtUrl, string Detail, string Uuid = "");
+
+sealed record RadioCountry(string Code, string Name, int Stations);
+
 readonly record struct KnownDevice(string Name, string Ip, string Uuid)
 {
     public override string ToString() => $"{Name} ({Ip})";

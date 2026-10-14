@@ -174,6 +174,8 @@ sealed partial class WiimController
                 _volumeSendTimer.Stop();
                 _volumePollTimer.Stop();
                 _positionTimer.Stop();
+                ClearLibraryRows();
+                ClearRadioResults();
                 if (_owner._linuxShortcuts != null) _owner._linuxShortcuts.StatusChanged -= UpdatePortalStatus;
                 _owner.HotkeysChanged -= RebuildHotkeys;
                 if (_recording != null) _ = _owner.ApplyHotkeysAsync();
@@ -316,6 +318,8 @@ sealed partial class WiimController
             _devicesPage = devicesPage;
             var multiroomPage = BuildMultiroomPage();
             var presetsPage = BuildPresetsPage();
+            var libraryPage = BuildLibraryPage();
+            var radioPage = BuildRadioPage();
             var eqPage = BuildEqPage();
             var volumePage = BuildVolumePage();
             var ampPage = BuildAmpPage();
@@ -334,6 +338,9 @@ sealed partial class WiimController
             sidebarItems.Children.Add(Nav("Devices", Icons.Speaker, devicesPage));
             sidebarItems.Children.Add(Nav("Multiroom", Icons.Link, multiroomPage));
             sidebarItems.Children.Add(Nav("Presets", Icons.Star, presetsPage));
+            sidebarItems.Children.Add(SectionLabel("Music"));
+            sidebarItems.Children.Add(Nav("Library", Icons.Library, libraryPage));
+            sidebarItems.Children.Add(Nav("Radio", Icons.Radio, radioPage));
             sidebarItems.Children.Add(SectionLabel("Sound"));
             sidebarItems.Children.Add(Nav("Equalizer", Icons.Equalizer, eqPage));
             sidebarItems.Children.Add(Nav("Volume", Icons.Volume, volumePage));
@@ -1987,6 +1994,8 @@ sealed partial class WiimController
             int ampIndex = _owner._knownDevices.FindIndex(d => d.Ip == selectedAmp);
             _cboAmp.SelectedIndex = ampIndex >= 0 ? ampIndex : _cboAmp.Items.Count > 0 ? 0 : -1;
             LoadPresetAmps();
+            FillAmpCombo(_cboLibraryAmp);
+            FillAmpCombo(_cboRadioAmp);
             _cboCorner.SelectedItem = _cboCorner.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is OsdCorner c && c == _owner._osdCorner);
             _cboDuration.SelectedItem = _cboDuration.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is int ms && ms == _owner._osdDurationMs);
             if (_cboDuration.SelectedIndex < 0 && _cboDuration.Items.Count > 0) _cboDuration.SelectedIndex = 2;

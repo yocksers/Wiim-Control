@@ -33,6 +33,8 @@ sealed partial class WiimController
             if (key == "logstep")         _logStep = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "forwardmediakeys") _forwardMediaKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "mediacontrols")   _mediaControls = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "libraryserver")   _libraryServer = val;
+            if (key == "radiofavorites")  _radioFavorites = ParseRadioFavorites(val);
             if (key == "groupvolumekeys") _groupVolumeKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "groupleader")     _groupLeaderIp = val;
             if (key == "linuxportalshortcuts") _linuxPortalShortcuts = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
@@ -72,6 +74,7 @@ sealed partial class WiimController
                 $"suppressWindowsOSD={_suppress}", $"volumeStep={_volumeStep}",
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
                 $"enabledOutputs={string.Join('|', _enabledOutputIds)}",
+                $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}",
                 $"knownDevices={string.Join('\u0002', _knownDevices.Select(d => string.Join('\u0001', d.Name, d.Ip, d.Uuid)))}"
             ]);
         }
