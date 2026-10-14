@@ -3,6 +3,10 @@
 A tray app for **Windows, Linux and macOS** for controlling **WiiM amps** (WiiM Amp, WiiM Amp Ultra and
 other WiiM/LinkPlay devices) from your PC.
 
+<img width="1537" height="633" alt="{DE8B8C8A-31BD-4BFA-B6E6-02F1718D02AD}" src="https://github.com/user-attachments/assets/d6597b0f-ef3c-4e85-8fad-2a5d71204b42" />
+<img width="1554" height="870" alt="{A925C9E9-940D-4BEC-AE53-7A9FCBE469AA}" src="https://github.com/user-attachments/assets/a43b1c90-f3be-49e2-ace2-82393c4898b2" />
+
+
 ## Features
 
 **Volume keys**
