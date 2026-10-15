@@ -33,7 +33,9 @@ sealed partial class WiimController
             "playpause" => "onepause",
             _           => action
         };
-        await SendPlayerCommandAsync(PlaybackTarget, $"setPlayerCmd:{wiimCmd}").ConfigureAwait(false);
+        string target = PlaybackTarget;
+        if (await TryLyrionCommandAsync(target, wiimCmd).ConfigureAwait(false)) return;
+        await SendPlayerCommandAsync(target, $"setPlayerCmd:{wiimCmd}").ConfigureAwait(false);
     }
 
     internal async Task<int> TestConnectionAsync()

@@ -176,6 +176,7 @@ sealed partial class WiimController
                 _positionTimer.Stop();
                 ClearLibraryRows();
                 ClearRadioResults();
+                ClearRecentRows();
                 if (_owner._linuxShortcuts != null) _owner._linuxShortcuts.StatusChanged -= UpdatePortalStatus;
                 _owner.HotkeysChanged -= RebuildHotkeys;
                 if (_recording != null) _ = _owner.ApplyHotkeysAsync();
@@ -320,6 +321,7 @@ sealed partial class WiimController
             var presetsPage = BuildPresetsPage();
             var libraryPage = BuildLibraryPage();
             var radioPage = BuildRadioPage();
+            var recentPage = BuildRecentPage();
             var eqPage = BuildEqPage();
             var volumePage = BuildVolumePage();
             var ampPage = BuildAmpPage();
@@ -341,6 +343,7 @@ sealed partial class WiimController
             sidebarItems.Children.Add(SectionLabel("Music"));
             sidebarItems.Children.Add(Nav("Library", Icons.Library, libraryPage));
             sidebarItems.Children.Add(Nav("Radio", Icons.Radio, radioPage));
+            sidebarItems.Children.Add(Nav("Recent", Icons.History, recentPage));
             sidebarItems.Children.Add(SectionLabel("Sound"));
             sidebarItems.Children.Add(Nav("Equalizer", Icons.Equalizer, eqPage));
             sidebarItems.Children.Add(Nav("Volume", Icons.Volume, volumePage));
@@ -430,6 +433,12 @@ sealed partial class WiimController
             return Page("Devices", _lblDeviceCount, [btnDiscover, btnAdd], _deviceList);
         }
 
+        internal void OnFirmwareChecked() => Dispatcher.UIThread.Post(() =>
+        {
+            RebuildDeviceCards();
+            _ = RefreshDeviceStatusesAsync();
+        });
+
         private void RebuildDeviceCards()
         {
             _volumeControls.Clear();
@@ -447,6 +456,12 @@ sealed partial class WiimController
                 title.Children.Add(new TextBlock { Text = d.Name, Classes = { "device" } });
                 if (active)
                     title.Children.Add(new TextBlock { Text = "●  Active", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center });
+                if (_owner.FirmwareUpdateFor(d.Ip) is { } update)
+                {
+                    var badge = new TextBlock { Text = "⬆  Update available", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center };
+                    ToolTip.SetTip(badge, $"{update.Summary}. Install it from the WiiM Home app.");
+                    title.Children.Add(badge);
+                }
                 var info = new StackPanel();
                 info.Children.Add(title);
                 info.Children.Add(new TextBlock { Text = d.Ip, Classes = { "muted" }, Margin = new Thickness(0, 4, 0, 0) });
@@ -1114,6 +1129,7 @@ sealed partial class WiimController
                 cards.Add(Card("Inputs", inputRows.ToArray()));
             }
 
+            if (s.Squeezelite is { } squeezelite) cards.Add(BuildSqueezeliteCard(ip, squeezelite));
             if (s.Alarms is { Count: > 0 } alarms) cards.Add(BuildAlarmsCard(ip, alarms));
             return cards;
         }
@@ -1312,10 +1328,11 @@ sealed partial class WiimController
             _btnEqSave.Click += async (_, _) => await SaveEqPresetAsync();
             _btnEqRename.Click += async (_, _) => await RenameEqPresetAsync();
             _btnEqDelete.Click += async (_, _) => await DeleteEqPresetAsync();
+            HookEqFileButtons();
             var presetButtons = new StackPanel
             {
                 Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
-                Children = { _btnEqSaveCurrent, _btnEqSave, _btnEqRename, _btnEqDelete }
+                Children = { _btnEqSaveCurrent, _btnEqSave, _btnEqRename, _btnEqDelete, _btnEqExport, _btnEqImport }
             };
             var presetRow = new StackPanel
             {
@@ -1338,7 +1355,7 @@ sealed partial class WiimController
                     ToggleRow("RoomFit room correction", _chkRoomFit),
                     LabeledRow("RoomFit profile", new StackPanel
                     {
-                        Orientation = Orientation.Horizontal, Spacing = 8, Children = { _btnRoomFitCurve, _cboRoomFit }
+                        Orientation = Orientation.Horizontal, Spacing = 8, Children = { _btnRoomFitExport, _btnRoomFitImport, _btnRoomFitCurve, _cboRoomFit }
                     })
                 }
             };
@@ -1348,7 +1365,7 @@ sealed partial class WiimController
                 presetButtonsBelow);
             topCard.SizeChanged += (_, e) =>
             {
-                bool narrow = e.NewSize.Width < 760;
+                bool narrow = e.NewSize.Width < 900;
                 if (narrow == presetButtonsBelow.IsVisible) return;
                 if (narrow)
                 {
@@ -1487,6 +1504,7 @@ sealed partial class WiimController
             bool customSelected = SelectedEqPreset is { } name && _eqCustomPresets.Contains(name);
             _btnEqSave.IsEnabled = _btnEqSaveCurrent.IsEnabled = editable;
             _btnEqRename.IsEnabled = _btnEqDelete.IsEnabled = editable && customSelected;
+            UpdateEqFileButtons();
             ToolTip.SetTip(_btnEqSaveCurrent, BaseCustomPreset is { } preset
                 ? $"Save the changes to \"{preset}\""
                 : "Save the current EQ as a new preset");
@@ -1813,6 +1831,20 @@ sealed partial class WiimController
                 ApplyScale(percent);
             };
             cards.Children.Add(Card("Appearance", LabeledRow("Scale", scale), Muted("Makes this window bigger or smaller.")));
+            var checkUpdates = new ToggleSwitch { IsChecked = _owner._checkUpdates };
+            checkUpdates.IsCheckedChanged += (_, _) => _owner.SetCheckUpdates(checkUpdates.IsChecked == true);
+            var checkNow = Pill("Check now");
+            checkNow.Click += async (_, _) =>
+            {
+                checkNow.IsEnabled = false;
+                try { await _owner.CheckForUpdateAsync(manual: true); }
+                finally { checkNow.IsEnabled = true; }
+            };
+            cards.Children.Add(Card("Updates",
+                ToggleRow("Check for new versions of Wiim Control", checkUpdates),
+                LabeledRow($"You have version {AppVersion}", checkNow),
+                Muted("When a new version is out, Wiim Control asks whether to download and install it.")));
+            cards.Children.Add(BuildBackupCard());
 
             return Page("General", null, [], cards);
         }
@@ -1996,6 +2028,7 @@ sealed partial class WiimController
             LoadPresetAmps();
             FillAmpCombo(_cboLibraryAmp);
             FillAmpCombo(_cboRadioAmp);
+            FillAmpCombo(_cboRecentAmp);
             _cboCorner.SelectedItem = _cboCorner.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is OsdCorner c && c == _owner._osdCorner);
             _cboDuration.SelectedItem = _cboDuration.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is int ms && ms == _owner._osdDurationMs);
             if (_cboDuration.SelectedIndex < 0 && _cboDuration.Items.Count > 0) _cboDuration.SelectedIndex = 2;

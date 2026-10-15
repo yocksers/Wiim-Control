@@ -339,6 +339,7 @@ sealed partial class WiimController
                 await Dialogs.MessageAsync(this, "The amp didn't start the station. Check that it's switched on and reachable.", _scale);
                 return;
             }
+            _owner.AddRecent(new RecentItem(station.Name, station.Detail, station.ArtUrl, DateTime.Now, station, null));
             string name = _owner._knownDevices.FirstOrDefault(d => d.Ip == target).Name ?? target;
             _lblRadioStatus.Text = $"Playing {station.Name} on {name}";
             await Task.Delay(2000);

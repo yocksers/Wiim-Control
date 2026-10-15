@@ -47,6 +47,7 @@ sealed partial class WiimController
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:loopmode:{mode}").ConfigureAwait(false));
 
     internal async Task<bool> SeekAsync(string ip, int seconds) =>
+        await TryLyrionCommandAsync(ip, "seek", seconds).ConfigureAwait(false) ||
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:seek:{Math.Max(0, seconds)}").ConfigureAwait(false));
 
     private static string RenameKey(string input) => input.ToLowerInvariant() switch
@@ -125,7 +126,8 @@ sealed partial class WiimController
             string firmware = Field("firmware");
             if (DateTime.TryParseExact(Field("Release"), "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var released))
                 firmware += $" ({released:d})";
-            return new DeviceInfo(ModelName(Field("project")), firmware, Temperature("temperature_cpu"), Temperature("temperature_tmp102"));
+            return new DeviceInfo(ModelName(Field("project")), firmware, Temperature("temperature_cpu"), Temperature("temperature_tmp102"),
+                ParseFirmwareUpdate(statusEx));
         }
         catch (JsonException) { return null; }
     }

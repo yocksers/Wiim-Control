@@ -71,6 +71,9 @@ sealed partial class WiimController
             return page;
         }
 
+        private static Task<BrowsePage?> BrowseLibraryAsync(MediaServer server, string id, int start, int count) =>
+            server.IsLyrion ? Lms.BrowseAsync(server, id, start, count) : Upnp.BrowseAsync(server, id, start, count);
+
         private string? AmpOf(ComboBox combo) => (combo.SelectedItem as ComboBoxItem)?.Tag as string;
 
         private void FillAmpCombo(ComboBox combo)
@@ -89,7 +92,13 @@ sealed partial class WiimController
             if (force || servers is not { Count: > 0 })
             {
                 _lblLibraryStatus.Text = "Looking for music servers…";
-                servers = await Upnp.DiscoverMediaServersAsync(TimeSpan.FromSeconds(3));
+                var upnp = Upnp.DiscoverMediaServersAsync(TimeSpan.FromSeconds(3));
+                var lyrion = Lms.DiscoverAsync(TimeSpan.FromSeconds(3));
+                await Task.WhenAll(upnp, lyrion);
+                servers = upnp.Result.Concat(lyrion.Result)
+                    .OrderBy(s => s.OnThisComputer ? 0 : 1)
+                    .ThenBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
                 _owner._mediaServers = servers;
             }
             string selected = SelectedLibraryServer?.Udn ?? _owner.LibraryServer;
@@ -108,7 +117,7 @@ sealed partial class WiimController
                 _lblLibraryStatus.Text = "No music server found";
                 _libraryRows.Children.Add(Muted(
                     "No music servers were found on your network. Start a DLNA/UPnP media server, for example Windows Media Player " +
-                    "media streaming, MinimServer, Plex, Jellyfin or a NAS media server, and click Find servers."));
+                    "media streaming, MinimServer, Plex, Jellyfin or a NAS media server, or a Lyrion Music Server, and click Find servers."));
                 return;
             }
             _owner.SetLibraryServer(server.Udn);
@@ -135,7 +144,7 @@ sealed partial class WiimController
             int version = ++_libraryFolderVersion;
             UpdateLibraryCrumbs();
             _lblLibraryStatus.Text = "Loading…";
-            var page = await Upnp.BrowseAsync(server, _libraryPath[^1].Id, 0, LibraryPageSize);
+            var page = await BrowseLibraryAsync(server, _libraryPath[^1].Id, 0, LibraryPageSize);
             if (version != _libraryFolderVersion) return;
 
             ClearLibraryRows();
@@ -160,7 +169,7 @@ sealed partial class WiimController
             if (SelectedLibraryServer is not { } server || _libraryPath.Count == 0) return;
             int version = _libraryFolderVersion;
             _btnLibraryMore.IsEnabled = false;
-            var page = await Upnp.BrowseAsync(server, _libraryPath[^1].Id, _libraryEntries.Count, LibraryPageSize);
+            var page = await BrowseLibraryAsync(server, _libraryPath[^1].Id, _libraryEntries.Count, LibraryPageSize);
             _btnLibraryMore.IsEnabled = true;
             if (version != _libraryFolderVersion || page == null) return;
             _libraryTotal = page.Total;
@@ -336,7 +345,51 @@ sealed partial class WiimController
             else bitmap.Dispose();
         }
 
+        private sealed record PlaySource(MediaServer Server, string FolderId, string FolderTitle, int FolderIndex, string FolderArt);
+
+        private void ResetStatus(TextBlock status)
+        {
+            if (ReferenceEquals(status, _lblLibraryStatus)) UpdateLibraryStatus();
+            else status.Text = string.Empty;
+        }
+
+        private async Task<bool> PlayOnLyrionAsync(string ip, MediaServer server, List<string> trackIds, int start, TextBlock status)
+        {
+            var result = await _owner.PlayOnLyrionAsync(ip, server, trackIds, start);
+            string amp = _owner._knownDevices.FirstOrDefault(d => d.Ip == ip).Name ?? ip;
+            if (result == LyrionPlayResult.NotConnected)
+            {
+                string host = new Uri(server.ContentDirectoryUrl).Host;
+                if (!await Dialogs.ConfirmAsync(this,
+                        $"{amp} isn't connected to {server.Name}. Connect it now?\n\nSqueezelite has to be switched on for this amp in the WiiM Home app.",
+                        _scale)) return false;
+                status.Text = $"Connecting {amp} to {server.Name}…";
+                if (!await _owner.ConnectSqueezeliteAsync(ip, host) || !await _owner.WaitForLyrionPlayerAsync(ip, server))
+                {
+                    ResetStatus(status);
+                    await Dialogs.MessageAsync(this,
+                        $"{amp} didn't connect to {server.Name}. Check that Squeezelite is switched on for this amp in the WiiM Home app.", _scale);
+                    return false;
+                }
+                result = await _owner.PlayOnLyrionAsync(ip, server, trackIds, start);
+            }
+            if (result == LyrionPlayResult.Played) return true;
+            ResetStatus(status);
+            await Dialogs.MessageAsync(this, $"{server.Name} didn't start playing on {amp}.", _scale);
+            return false;
+        }
+
         private static QueueTrack ToQueueTrack(MediaEntry e) => new(e.Url, e.Title, e.Artist, e.Album, e.ArtUrl, e.Duration, e.ProtocolInfo);
+
+        private static async Task<(List<MediaEntry> Tracks, int Start)?> CollectFolderTracksAsync(MediaServer server, string folderId, int index)
+        {
+            var page = await BrowseLibraryAsync(server, folderId, 0, MaxQueueTracks);
+            if (page == null) return null;
+            if (page.Total <= MaxQueueTracks)
+                return (page.Entries.Where(e => e.IsAudio).ToList(), page.Entries.Take(index).Count(e => e.IsAudio));
+            var rest = await BrowseLibraryAsync(server, folderId, index, MaxQueueTracks);
+            return rest == null ? null : (rest.Entries.Where(e => e.IsAudio).ToList(), 0);
+        }
 
         private async Task PlayLibraryFolderAsync()
         {
@@ -357,20 +410,22 @@ sealed partial class WiimController
             else
             {
                 _lblLibraryStatus.Text = "Loading tracks…";
-                var page = await Upnp.BrowseAsync(server, _libraryPath[^1].Id, index, MaxQueueTracks);
+                var page = await BrowseLibraryAsync(server, _libraryPath[^1].Id, index, MaxQueueTracks);
                 tracks = page?.Entries.Where(e => e.IsAudio).ToList() ?? [];
                 start = 0;
             }
-            await PlayLibraryTracksAsync(tracks, start);
+            var folder = _libraryPath[^1];
+            await PlayLibraryTracksAsync(AmpOf(_cboLibraryAmp), new PlaySource(server, folder.Id, folder.Title, index, string.Empty),
+                tracks, start, _lblLibraryStatus);
         }
 
         private async Task PlayLibraryContainerAsync(MediaEntry folder)
         {
             if (SelectedLibraryServer is not { } server) return;
             _lblLibraryStatus.Text = $"Loading {folder.Title}…";
-            var page = await Upnp.BrowseAsync(server, folder.Id, 0, MaxQueueTracks);
+            var page = await BrowseLibraryAsync(server, folder.Id, 0, MaxQueueTracks);
             var tracks = page?.Entries.Where(e => e.IsAudio).ToList() ?? [];
-            if (tracks.Count == 0)
+            if (page == null || tracks.Count == 0)
             {
                 UpdateLibraryStatus();
                 await Dialogs.MessageAsync(this, page == null
@@ -378,35 +433,56 @@ sealed partial class WiimController
                     : $"{folder.Title} has no tracks of its own. Open it to pick an album or a track.", _scale);
                 return;
             }
-            await PlayLibraryTracksAsync(tracks, 0);
+            int first = page.Entries.FindIndex(e => e.IsAudio);
+            await PlayLibraryTracksAsync(AmpOf(_cboLibraryAmp), new PlaySource(server, folder.Id, folder.Title, Math.Max(0, first), folder.ArtUrl),
+                tracks, 0, _lblLibraryStatus);
         }
 
-        private async Task PlayLibraryTracksAsync(List<MediaEntry> tracks, int start)
+        private async Task<bool> PlayLibraryTracksAsync(string? ip, PlaySource source, List<MediaEntry> tracks, int start, TextBlock status)
         {
-            if (AmpOf(_cboLibraryAmp) is not { } ip)
+            if (ip == null)
             {
                 await Dialogs.MessageAsync(this, "Add a Wiim amp on the Devices page first.", _scale);
-                return;
+                return false;
             }
-            if (tracks.Count == 0 || _libraryPlaying) return;
+            if (tracks.Count == 0 || _libraryPlaying) return false;
+            var server = source.Server;
             string target = TargetOf(ip);
             var queue = tracks.Take(MaxQueueTracks).Select(ToQueueTrack).ToList();
+            start = Math.Clamp(start, 0, queue.Count - 1);
             _libraryPlaying = true;
             bool played;
-            try { played = await _owner.PlayTracksAsync(target, queue, start); }
+            try
+            {
+                played = server.IsLyrion
+                    ? await PlayOnLyrionAsync(target, server, tracks.Take(MaxQueueTracks).Select(Lms.TrackId).OfType<string>().ToList(), start, status)
+                    : await _owner.PlayTracksAsync(target, queue, start);
+            }
             finally { _libraryPlaying = false; }
             if (!played)
             {
-                UpdateLibraryStatus();
+                if (server.IsLyrion) return false;
+                ResetStatus(status);
                 await Dialogs.MessageAsync(this, "The amp didn't accept the tracks. Check that it's switched on and reachable.", _scale);
-                return;
+                return false;
             }
+
+            var first = queue[start];
+            var detail = new List<string>();
+            string artist = queue.Select(t => t.Artist).FirstOrDefault(a => a.Length > 0) ?? string.Empty;
+            if (artist.Length > 0) detail.Add(artist);
+            if (start > 0) detail.Add($"from {first.Title}");
+            detail.Add(server.Name);
+            _owner.AddRecent(new RecentItem(source.FolderTitle, string.Join(" · ", detail),
+                first.ArtUrl.Length > 0 ? first.ArtUrl : source.FolderArt, DateTime.Now, null,
+                new RecentLibrary(server.Name, server.Udn, server.ContentDirectoryUrl, server.IsLyrion, source.FolderId, source.FolderIndex)));
+
             string name = _owner._knownDevices.FirstOrDefault(d => d.Ip == target).Name ?? target;
-            _lblLibraryStatus.Text = string.Create(CultureInfo.InvariantCulture,
-                $"Playing {queue[Math.Clamp(start, 0, queue.Count - 1)].Title} on {name}");
+            status.Text = string.Create(CultureInfo.InvariantCulture, $"Playing {first.Title} on {name}");
             await Task.Delay(1500);
             _ = _owner.RefreshNowPlayingAsync();
             if (IsVisible) await RefreshDeviceStatusesAsync();
+            return true;
         }
     }
 }

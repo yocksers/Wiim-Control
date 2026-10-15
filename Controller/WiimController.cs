@@ -88,12 +88,15 @@ sealed partial class WiimController : IDisposable
         BuildTrayIcon();
         StartNowPlayingUpdates();
         UpdateMediaSession();
+        StartFirmwareChecks();
+        StartUpdateChecks();
         _ = RefreshActiveMaxVolumeAsync();
         CommandChannel.StartServer(cmd => Dispatcher.UIThread.Post(() => HandleCommand(cmd)), _shutdown.Token);
 
         if (OperatingSystem.IsWindows())
         {
-            _shellWnd = new ShellHookWindow(HandleKeyCommand, OnHotkeyPressed, _forwardMediaKeys);
+            _shellWnd = new ShellHookWindow(HandleKeyCommand, OnHotkeyPressed, _forwardMediaKeys,
+                () => Dispatcher.UIThread.Post(Exit));
             _hookID = InstallHook();
 
             if (_outputMonitor != null)
@@ -165,6 +168,8 @@ sealed partial class WiimController : IDisposable
         _tray?.Dispose();
         _osd?.Close();
         _nowPlayingTimer.Stop();
+        _firmwareTimer.Stop();
+        _updateTimer.Stop();
         _mediaSession?.Dispose();
         _http.Dispose();
         _outputMonitor?.Dispose();

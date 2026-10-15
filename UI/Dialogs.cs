@@ -85,6 +85,34 @@ static class Dialogs
         return ShowAsync(window, owner, () => true);
     }
 
+    public static Task<int> ButtonsAsync(Window? owner, string message, double scale, params string[] buttons)
+    {
+        int answer = -1;
+        var controls = buttons.Select((text, i) => DialogButton(text, accent: i == 0)).ToArray();
+        controls[0].IsDefault = true;
+        controls[^1].IsCancel = true;
+        var window = NewDialog(scale, new StackPanel { Children = { Message(message), ButtonRow(controls) } });
+        for (int i = 0; i < controls.Length; i++)
+        {
+            int index = i;
+            controls[i].Click += (_, _) => { answer = index; window.Close(); };
+        }
+        return ShowAsync(window, owner, () => answer);
+    }
+
+    public static Task<bool> ChooseAsync(Window? owner, Control content, string okText, double scale = 1)
+    {
+        bool answer = false;
+        var ok = DialogButton(okText, accent: true);
+        var cancel = DialogButton("Cancel");
+        ok.IsDefault = true;
+        cancel.IsCancel = true;
+        var window = NewDialog(scale, new StackPanel { Children = { content, ButtonRow(ok, cancel) } });
+        ok.Click += (_, _) => { answer = true; window.Close(); };
+        cancel.Click += (_, _) => window.Close();
+        return ShowAsync(window, owner, () => answer);
+    }
+
     public static Task<bool> ConfirmAsync(Window? owner, string message, double scale = 1)
     {
         bool answer = false;

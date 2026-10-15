@@ -38,7 +38,7 @@ readonly record struct DigitalFilter(int Index, string Name);
 sealed record SubwooferInfo(bool Enabled, bool Plugged, double Crossover, double Phase, double Level, bool MainHighPass,
     double? Delay);
 
-sealed record DeviceInfo(string Model, string Firmware, int? CpuTemperature, int? BoardTemperature);
+sealed record DeviceInfo(string Model, string Firmware, int? CpuTemperature, int? BoardTemperature, FirmwareUpdate? Update = null);
 
 sealed record PresetInfo(int Number, string Name, string Source, string PictureUrl, string Detail = "", bool IsRoutine = false);
 
@@ -60,9 +60,12 @@ sealed record ScreenUi(string? InputKey, string? Input, bool? Clock24, bool? Sta
 sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? StatusLight, bool? ButtonsLocked,
     int? OutputHardware, string? FilterMode, List<DigitalFilter> Filters, int? Filter, SubwooferInfo? Subwoofer,
     ScreenConfig? Screen, List<InputVisibility>? Inputs, int? VolumeLightMode, ScreenUi? ScreenUi,
-    WallpaperInfo? Wallpapers, DeviceInfo? Device, List<AlarmInfo>? Alarms);
+    WallpaperInfo? Wallpapers, DeviceInfo? Device, List<AlarmInfo>? Alarms, SqueezeliteState? Squeezelite = null);
 
-sealed record MediaServer(string Name, string Udn, string ContentDirectoryUrl, string IconUrl, bool OnThisComputer = false);
+sealed record MediaServer(string Name, string Udn, string ContentDirectoryUrl, string IconUrl, bool OnThisComputer = false,
+    bool IsLyrion = false);
+
+sealed record SqueezeliteState(string State, string ConnectedServer, string DefaultServer, List<string> Found, bool AutoConnect);
 
 sealed record MediaEntry(string Id, string Title, bool IsContainer, int? ChildCount, string Class, string Artist, string Album,
     string ArtUrl, string Url, string ProtocolInfo, TimeSpan Duration)

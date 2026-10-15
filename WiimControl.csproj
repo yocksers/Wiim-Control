@@ -19,9 +19,9 @@
     <SupportedOSPlatformVersion Condition="'$(RuntimeIdentifier)' == 'win-x64'">10.0.17763.0</SupportedOSPlatformVersion>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <Version>1.10</Version>
-    <AssemblyVersion>1.0.10.0</AssemblyVersion>
-    <FileVersion>1.0.10.0</FileVersion>
+    <Version>1.12</Version>
+    <AssemblyVersion>1.0.12.0</AssemblyVersion>
+    <FileVersion>1.0.12.0</FileVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'linux-x64'">

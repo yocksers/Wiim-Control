@@ -9,7 +9,7 @@ sealed partial class WiimController
 {
     private static readonly Dictionary<int, string> SourceNames = new()
     {
-        [1] = "AirPlay", [2] = "DLNA", [3] = "QPlay", [31] = "Spotify", [32] = "TIDAL Connect", [36] = "Qobuz Connect",
+        [1] = "AirPlay", [2] = "DLNA", [3] = "QPlay", [31] = "Spotify", [34] = "Lyrion", [32] = "TIDAL Connect", [36] = "Qobuz Connect",
         [40] = "Line-in", [41] = "Bluetooth", [43] = "Optical", [45] = "Coaxial", [47] = "Line-in 2", [49] = "HDMI",
         [51] = "USB", [54] = "Phono", [58] = "HDMI ARC", [99] = "Multiroom"
     };
@@ -69,6 +69,7 @@ sealed partial class WiimController
     }
 
     internal async Task<bool> SendTransportAsync(string ip, string action) =>
+        await TryLyrionCommandAsync(ip, action).ConfigureAwait(false) ||
         CommandSucceeded(await SendToDeviceAsync(ip, $"setPlayerCmd:{action}").ConfigureAwait(false));
 
     internal async Task<Bitmap?> GetArtworkAsync(string url)

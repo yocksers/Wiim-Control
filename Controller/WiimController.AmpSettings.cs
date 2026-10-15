@@ -24,7 +24,9 @@ sealed partial class WiimController
         var screenUi = GetScreenUiAsync(ip);
         var wallpapers = GetWallpapersAsync(ip);
         var alarms = GetAlarmsAsync(ip);
-        await Task.WhenAll(statusEx, balance, fade, led, volumeLight, buttons, output, filters, sub, screen, inputs, screenUi, wallpapers, alarms).ConfigureAwait(false);
+        var squeezelite = GetSqueezeliteStateAsync(ip);
+        await Task.WhenAll(statusEx, balance, fade, led, volumeLight, buttons, output, filters, sub, screen, inputs, screenUi, wallpapers, alarms,
+            squeezelite).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
 
         var (filterMode, filterList) = ParseFilterList(filters.Result);
@@ -49,7 +51,8 @@ sealed partial class WiimController
             screenUi.Result,
             wallpapers.Result,
             ParseDeviceInfo(statusEx.Result),
-            alarms.Result);
+            alarms.Result,
+            squeezelite.Result);
     }
 
     internal static string OutputName(int? hardware) => hardware switch

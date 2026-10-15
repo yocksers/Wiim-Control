@@ -1,5 +1,5 @@
 #define MyAppName "Wiim Control"
-#define MyAppVersion "1.10"
+#define MyAppVersion "1.12"
 #define MyAppPublisher "Wiim Control"
 #define MyAppExeName "WiimControl.exe"
 #define MyOldAppName "Wiim Volume Control"
@@ -46,17 +46,34 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 
 [UninstallDelete]
 Type: files; Name: "{app}\wiim.cfg"
 
 [Code]
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+procedure CloseRunningApp(const ExeName: String);
 var
   ResultCode: Integer;
+  UserFilter: String;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyOldExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  UserFilter := '/FI "USERNAME eq ' + GetUserNameString + '" ';
+  if Exec(ExpandConstant('{sys}\taskkill.exe'), UserFilter + '/IM ' + ExeName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+    Sleep(2000);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), UserFilter + '/F /IM ' + ExeName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  CloseRunningApp('{#MyAppExeName}');
+  CloseRunningApp('{#MyOldExeName}');
   Result := '';
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  CloseRunningApp('{#MyAppExeName}');
+  Result := True;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

@@ -17,6 +17,9 @@ sealed class ShellHookWindow : IGlobalHotkeys
     private const int APPCOMMAND_MEDIA_PLAY_PAUSE    = 14;
 
     private const int  WM_HOTKEY          = 0x0312;
+    private const int  WM_CLOSE           = 0x0010;
+    private const int  WM_QUERYENDSESSION = 0x0011;
+    private const int  WM_ENDSESSION      = 0x0016;
     private const int  HOTKEY_VOLUME_UP   = 0xB001;
     private const int  HOTKEY_VOLUME_DOWN = 0xB002;
     private const int  HOTKEY_VOLUME_MUTE = 0xB003;
@@ -88,6 +91,7 @@ sealed class ShellHookWindow : IGlobalHotkeys
     private readonly WndProcDelegate _wndProc;
     private readonly Action<string> _onCommand;
     private readonly Action<int> _onHotkey;
+    private readonly Action? _onCloseRequested;
     private readonly HashSet<int> _userHotkeys = new();
     private readonly IntPtr _hInstance;
     private readonly IntPtr _hWnd;
@@ -95,10 +99,11 @@ sealed class ShellHookWindow : IGlobalHotkeys
     private bool _mediaKeysEnabled;
     private bool _volumeKeysRegistered;
 
-    public ShellHookWindow(Action<string> onCommand, Action<int> onHotkey, bool forwardMediaKeys = false)
+    public ShellHookWindow(Action<string> onCommand, Action<int> onHotkey, bool forwardMediaKeys = false, Action? onCloseRequested = null)
     {
         _onCommand = onCommand;
         _onHotkey = onHotkey;
+        _onCloseRequested = onCloseRequested;
         _mediaKeysEnabled = forwardMediaKeys;
         _wndProc = WndProc;
         _hInstance = GetModuleHandle(null);
@@ -191,6 +196,13 @@ sealed class ShellHookWindow : IGlobalHotkeys
 
     private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        if (msg == WM_QUERYENDSESSION) return 1;
+        if ((msg == WM_ENDSESSION && wParam != IntPtr.Zero) || msg == WM_CLOSE)
+        {
+            _onCloseRequested?.Invoke();
+            return IntPtr.Zero;
+        }
+
         if (msg == WM_HOTKEY && _userHotkeys.Contains((int)wParam - USER_HOTKEY_BASE))
         {
             _onHotkey((int)wParam - USER_HOTKEY_BASE);

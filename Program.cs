@@ -15,8 +15,11 @@ static class Program
             return 1;
         }
 
-        using var mutex = new Mutex(true, "Local\\WiimControl.SingleInstance", out bool createdNew);
-        if (!createdNew)
+        using var mutex = new Mutex(false, "Local\\WiimControl.SingleInstance");
+        bool owned;
+        try { owned = mutex.WaitOne(args.Contains("--restart") ? TimeSpan.FromSeconds(15) : TimeSpan.Zero); }
+        catch (AbandonedMutexException) { owned = true; }
+        if (!owned)
         {
             CommandChannel.Send("show");
             return 0;

@@ -61,7 +61,7 @@ static class Upnp
             .ToList();
     }
 
-    private static (List<IPAddress> Lan, List<IPAddress> Other) LocalAddresses()
+    internal static (List<IPAddress> Lan, List<IPAddress> Other) LocalAddresses()
     {
         var lan = new List<IPAddress>();
         var other = new List<IPAddress>();

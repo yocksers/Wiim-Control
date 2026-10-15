@@ -34,6 +34,9 @@ sealed partial class WiimController
             if (key == "forwardmediakeys") _forwardMediaKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "mediacontrols")   _mediaControls = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "libraryserver")   _libraryServer = val;
+            if (key == "recent")          _recent = ParseRecent(val);
+            if (key == "checkupdates")    _checkUpdates = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
+            if (key == "skippedversion")  _skippedVersion = val;
             if (key == "radiofavorites")  _radioFavorites = ParseRadioFavorites(val);
             if (key == "groupvolumekeys") _groupVolumeKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "groupleader")     _groupLeaderIp = val;
@@ -62,6 +65,7 @@ sealed partial class WiimController
 
     private void SaveConfig()
     {
+        if (_configLocked) return;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
@@ -74,7 +78,8 @@ sealed partial class WiimController
                 $"suppressWindowsOSD={_suppress}", $"volumeStep={_volumeStep}",
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
                 $"enabledOutputs={string.Join('|', _enabledOutputIds)}",
-                $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}",
+                $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}", $"recent={SerializeRecent()}",
+                $"checkUpdates={_checkUpdates}", $"skippedVersion={_skippedVersion}",
                 $"knownDevices={string.Join('\u0002', _knownDevices.Select(d => string.Join('\u0001', d.Name, d.Ip, d.Uuid)))}"
             ]);
         }
