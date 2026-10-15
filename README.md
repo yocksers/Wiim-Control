@@ -13,7 +13,7 @@ other WiiM/LinkPlay devices) from your PC.
 - The keyboard's volume up/down/mute keys control the active WiiM amp instead of Windows.
 - Optional: suppress the Windows volume pop-up and show Wiim Control's own volume overlay instead
   (position, duration and size are configurable; it also shows the current track).
-- Adjustable volume step, with an optional logarithmic step that is finer at low volume.
+- Adjustable volume step.
 - Respects the amp's maximum volume setting.
 - Optional group volume: the volume keys also change the amps linked to the active amp.
 - Only take over the volume keys when one of the Windows playback devices you choose is active.
