@@ -3,7 +3,11 @@ using System.Text.Json.Serialization;
 
 namespace WiimControl;
 
-sealed record RecentLibrary(string ServerName, string ServerUdn, string ServerUrl, bool IsLyrion, string FolderId, int FolderIndex);
+sealed record RoonStep(string Title, string Input);
+
+sealed record RecentLibrary(string ServerName, string ServerUdn, string ServerUrl, bool IsLyrion, string FolderId, int FolderIndex,
+    bool IsRoon = false, List<RoonStep>? RoonPath = null, string RoonEntry = "", bool RoonContainer = false, string RoonAction = "",
+    bool IsShare = false);
 
 sealed record RecentItem(string Title, string Detail, string ArtUrl, DateTime Played, RadioStation? Station, RecentLibrary? Library)
 {

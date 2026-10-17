@@ -20,6 +20,9 @@ sealed partial class WiimController : IDisposable
     private string          _deviceUuid = string.Empty;
     private List<KnownDevice> _knownDevices = [];
     private SettingsWindow?  _settingsWindow;
+    private bool             _openingSettings;
+    private bool             _startMinimized;
+    private bool             _nowPlayingVinyl;
     private int              _consecutiveFailures;
     private DateTime         _lastReconnectAttempt = DateTime.MinValue;
     private bool             _logStep;
@@ -48,11 +51,7 @@ sealed partial class WiimController : IDisposable
     {
         _lifetime = lifetime;
         _proc = HookCallback;
-        var handler = new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-        };
-        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(3) };
+        _http = CreateHttpClient();
     }
 
     internal double UiScale => _uiScalePercent / 100.0;
@@ -60,10 +59,11 @@ sealed partial class WiimController : IDisposable
     public async Task StartAsync()
     {
         LoadConfig();
+        ErrorLog.Cleanup();
         AutoStart.MigrateLegacy();
 
         if (_knownDevices.Count == 0 && !string.IsNullOrWhiteSpace(_deviceIp))
-            _knownDevices.Add(new KnownDevice("Wiim Amp", _deviceIp, _deviceUuid));
+            _knownDevices.Add(new KnownDevice("WiiM device", _deviceIp, _deviceUuid));
 
         if (string.IsNullOrWhiteSpace(_deviceIp))
         {
@@ -90,7 +90,6 @@ sealed partial class WiimController : IDisposable
         UpdateMediaSession();
         StartFirmwareChecks();
         StartUpdateChecks();
-        _ = RefreshActiveMaxVolumeAsync();
         CommandChannel.StartServer(cmd => Dispatcher.UIThread.Post(() => HandleCommand(cmd)), _shutdown.Token);
 
         if (OperatingSystem.IsWindows())
@@ -117,6 +116,8 @@ sealed partial class WiimController : IDisposable
 
         StartHotkeys();
         _ = FillMissingDeviceIdsAsync();
+        if (_roonTokens.Count > 0) _ = GetRoonAsync();
+        if (!_startMinimized && _lifetime.Args?.Contains(AutoStart.MinimizedArgument) != true) ShowSettingsWindow();
     }
 
     private void UpdateVolumeKeyRegistration()
@@ -172,6 +173,8 @@ sealed partial class WiimController : IDisposable
         _updateTimer.Stop();
         _mediaSession?.Dispose();
         _http.Dispose();
+        _webHttp.Dispose();
         _outputMonitor?.Dispose();
+        DisposeArtworkCaches();
     }
 }

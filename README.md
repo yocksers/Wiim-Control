@@ -1,105 +1,97 @@
 # Wiim Control
 
-A tray app for **Windows, Linux and macOS** for controlling **WiiM amps** (WiiM Amp, WiiM Amp Ultra and
-other WiiM/LinkPlay devices) from your PC.
-
-<img width="1553" height="861" alt="{FEF32F1C-C2EC-4012-952F-EC464C5EC678}" src="https://github.com/user-attachments/assets/b912696b-4d5f-4b05-b750-6d8f8daeeb75" />
-<img width="1540" height="863" alt="{CBE64CBF-8503-486C-B532-B28A946A05CF}" src="https://github.com/user-attachments/assets/71883cf5-996f-444b-992f-100d261d02a1" />
-
+A program for **Windows, Linux and macOS** that controls **WiiM devices** (Mini, Pro, Pro Plus, Ultra, Sound, Amp,
+Amp Pro, Amp Ultra and other WiiM/LinkPlay devices) from your PC.
 
 ## Features
 
-**Volume keys**
-- The keyboard's volume up/down/mute keys control the active WiiM amp instead of Windows.
-- Optional: suppress the Windows volume pop-up and show Wiim Control's own volume overlay instead
-  (position, duration and size are configurable; it also shows the current track).
-- Adjustable volume step.
-- Respects the amp's maximum volume setting.
-- Optional group volume: the volume keys also change the amps linked to the active amp.
-- Only take over the volume keys when one of the Windows playback devices you choose is active.
-- Optional: forward the media keys (play/pause, next, previous) to the amp.
+**Keyboard and tray**
+- The volume and media keys control the active WiiM device, with an optional on-screen volume overlay.
+- Your own hotkeys that work in every program, a sleep timer, and a tray menu with presets, device switching and more.
+- Shows the device in the system's media controls (Windows, Linux MPRIS, macOS Now Playing).
 
-**Devices**
-- Finds WiiM devices on your network automatically, or add one by IP address.
-- Keeps a list of your amps; pick which one the volume keys control.
-- For every amp: now playing (title, artist, album art, source or streaming service, the connected Bluetooth
-  device and audio quality), play/pause, previous and next, shuffle and repeat, a position bar to jump within
-  the track, and its own volume slider and mute button.
-- Sleep timer for each amp (15 minutes to 2 hours), also in the tray menu.
-- Presets page: each amp's saved presets with their artwork, name and source, including routines made in the WiiM Home
-  app (for example switching the output and EQ); click one to play or run it.
-- Switch each amp's input (Wi-Fi, Bluetooth, Line in, Optical, HDMI…) from its **Input** button. Inputs you
-  renamed in the WiiM Home app are shown with your names.
-- Remembers each amp's unique ID, so it reconnects automatically when the active amp gets a new IP
-  address, and **Discover** updates amps that have moved instead of adding them twice.
+**Devices and playback**
+- Finds your devices automatically (rename and reorder them as you like) and shows what each one plays, with play/pause, next/previous, position, volume,
+  input switching and presets. Click the artwork for a full-window view, optionally as a spinning vinyl record.
+- Plays from DLNA/UPnP servers, shared network folders (SMB), Lyrion Music Server, Roon, internet radio and network streams,
+  with Queue and Recent pages.
+- Multiroom: link devices, choose the group leader, set left/right channels, home theater (center and surround speakers)
+  and group audio delay.
 
-**Multiroom**
-- Link your amps together so they play in sync. The group leader is the controlled amp by default,
-  or any other amp you choose; unlink amps or ungroup a whole group.
-- When the controlled amp is linked to another amp, the media keys, presets and group volume go to
-  the group leader.
+**Sound and device settings**
+- Graphic and parametric EQ with presets, quick buttons, REW/AutoEQ import, export and RoomFit.
+- Volume limit, knob and remote steps, balance, fade, headroom and audio channel.
+- Output switching (including USB DAC, Bluetooth and DLNA out), digital filter, input settings and subwoofer settings,
+  including WiiM Sub Pro pairing.
+- Network, standby, alarms, lights, prompt sounds, automatic updates, restart, and the Amp Ultra screen with your own
+  background pictures.
+- Backup and restore of settings and EQ presets, and automatic update checks for Wiim Control itself.
 
-**Equalizer**
-- Turn the EQ on or off, pick a preset, or adjust the 10-band graphic EQ (±12 dB). Shows the amp's
-  current input by default, and you can pick any other input to set its own EQ.
-- Parametric EQ like the WiiM Home app: 10 bands with low shelf, peak or high shelf filters, frequency,
-  gain and Q, a response graph with draggable points, and left and right channels set separately if you like.
-- Save the current EQ as a new preset on the amp, and rename or delete your own presets.
+## Install
 
-**Amp settings** (per amp)
-- Model, firmware and temperatures.
-- Maximum volume, left/right balance and fade in/out.
-- Subwoofer: on/off, level, crossover, phase and delay.
-- Up to three daily alarms that play an internet radio stream or other web address.
-- Digital filter (the list comes from the amp; it differs between models).
-- Status light and touch-button lock; WiiM Amp and Amp Pro: volume lights completely off, on when adjusting the volume, or always on.
-- Choose which inputs are shown (saved on the amp, so the WiiM Home app shows the same inputs).
-- WiiM Amp Ultra screen: on/off, automatic brightness, brightness, 24-hour clock, clock style, standby screen, screen off in standby,
-  now playing layout, second page (cover art, EQ visualization or VU meter) and its style, which page shows first, and the
-  background (thumbnails are loaded from the amp).
+**Windows:** run `WiimControlSetup.exe`.
 
-**Tray**
-- Right-click menu with the most common settings, the amp's presets 1–12 (with their names when the
-  amp reports them), a sleep timer, device switching and a connection test.
-- The tray tooltip shows the active amp and the track that is playing.
-- Start with Windows (or at login on Linux and macOS).
-
-**Hotkeys**
-- Set your own keyboard shortcuts for volume up/down, mute, play/pause, next, previous and opening
-  the settings. They work in every program, which is handy if your keyboard has no media keys.
-
-## Windows
-
-Run `WiimControlSetup.exe`.
-
-## Linux
-
-Download `WiimControl-<version>-x86_64.AppImage`, make it executable and run it:
+**Linux:** download `WiimControl-<version>-x86_64.AppImage`, then:
 
 ```
-chmod +x WiimControl-1.06-x86_64.AppImage
-./WiimControl-1.06-x86_64.AppImage
+chmod +x WiimControl-<version>-x86_64.AppImage
+./WiimControl-<version>-x86_64.AppImage
 ```
 
-Settings are stored in `~/.config/wiim-control/`. The tray icon works out of the box on KDE Plasma
-and most desktops; GNOME needs the AppIndicator extension.
+Settings are stored in `~/.config/wiim-control/`. On GNOME the tray icon needs the **AppIndicator and KStatusNotifierItem
+Support** extension (Ubuntu includes it). For the volume keys, use the desktop's global shortcuts (KDE Plasma, GNOME 48+),
+bind keys to the commands shown on the General page (for example `--volume-up`), or set hotkeys on the Hotkeys page.
 
-**Volume keys on Linux.** There are three ways to control the amp from the keyboard:
+**macOS:** download the `macos-arm64` (Apple Silicon) or `macos-x64` (Intel) zip, unzip it and move **Wiim Control** to
+Applications. macOS doesn't let apps take over the volume keys, so set hotkeys on the Hotkeys page. If macOS blocks the
+first start, open **System Settings → Privacy & Security** and click **Open Anyway** (on older versions, right-click the
+app and choose **Open**).
 
-1. **Desktop global shortcuts** (KDE Plasma, GNOME 48 and newer): switch on *Use the desktop's
-   global shortcuts* and approve the shortcuts when the desktop asks.
-2. **Keyboard settings**: bind the keys to the commands shown on the General page, for example
-   `WiimControl-1.06-x86_64.AppImage --volume-up`, `--volume-down`, `--mute`, `--play-pause`,
-   `--next` and `--previous`. Each command is sent to the running Wiim Control.
-3. **Hotkeys page**: set your own shortcuts in Wiim Control. No desktop setup needed on X11 desktops
-   such as XFCE, Cinnamon and MATE. Ctrl + Alt + F1 to F12 can't be used; Linux reserves them.
+## Privacy policy
 
-## macOS
+This program will not transfer any information to other networked systems unless specifically requested by the
+user or the person installing or operating it. It has no telemetry, analytics or advertising, and doesn't collect
+or send any personal information.
 
-Download `WiimControl-<version>-macos-arm64.zip` (Apple Silicon) or `WiimControl-<version>-macos-x64.zip`
-(Intel), unzip it and move **Wiim Control** to Applications. It runs in the menu bar.
+To do what you ask it to, Wiim Control connects to:
 
-macOS doesn't let apps take over the volume keys, so set your own shortcuts on the **Hotkeys** page.
-The first time Wiim Control connects to your amps, macOS asks for permission to access the local
-network. Unless the app is signed and notarized, macOS blocks the first start: right-click the app
-and choose **Open**.
+- **Your WiiM devices** on your local network, to control them and read their status and settings.
+- **Music servers and shared folders** on your local network that you use (DLNA/UPnP, Lyrion, Roon and SMB). To play
+  from a shared folder, its address, user name and password are sent to the WiiM device, which reads the files itself.
+- **Internet streams you enter**, which the device plays directly.
+- **[radio-browser.info](https://www.radio-browser.info/)**, to search for radio stations.
+- **Websites that host album art and station logos**, to show the pictures.
+- **GitHub**, to check for and download new versions (can be switched off on the General page).
+- **Buy Me a Coffee**, only when you click the coffee cup.
+
+Settings, backups and the error log are stored only on your computer.
+
+## Credits and third-party software
+
+Wiim Control is built on the work of others. Thank you! These are used under their own licences:
+
+| Project | Used for | Licence |
+| --- | --- | --- |
+| [Avalonia UI](https://avaloniaui.net/) (with its Fluent theme) | The user interface | MIT |
+| [Inter](https://rsms.me/inter/) by Rasmus Andersson | The font | SIL Open Font License 1.1 |
+| [SkiaSharp](https://github.com/mono/SkiaSharp) and [Skia](https://skia.org/) | Drawing, artwork and background pictures | MIT / BSD 3-Clause |
+| [HarfBuzzSharp](https://github.com/mono/SkiaSharp) and [HarfBuzz](https://harfbuzz.github.io/) | Text rendering | MIT |
+| [ANGLE](https://chromium.googlesource.com/angle/angle) | Graphics on Windows | BSD 3-Clause |
+| [MicroCom.Runtime](https://github.com/kekekeks/MicroCom) | Part of Avalonia on Windows | MIT |
+| [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | Media controls and global shortcuts on Linux | MIT |
+| [SMBLibrary](https://github.com/TalAloni/SMBLibrary) by Tal Aloni | Shared network folders | [GNU LGPL v3.0 or later](https://www.gnu.org/licenses/lgpl-3.0.html) |
+| [.NET](https://dotnet.microsoft.com/) | The runtime the app is built on | MIT |
+| [Material Design Icons](https://pictogrammers.com/library/mdi/) by Pictogrammers | The icons | Apache License 2.0 |
+
+SMBLibrary ships as a separate `SMBLibrary.dll` next to the program, so it can be replaced with another build of the
+library, as the LGPL allows.
+
+Also with thanks to:
+
+- [python-linkplay](https://github.com/Velleman/python-linkplay), whose list of WiiM and LinkPlay project codes is used to
+  show each device's model name.
+- [radio-browser.info](https://www.radio-browser.info/), the free community database behind the Radio page.
+- [Roon Labs](https://roon.app/)
+
+WiiM and the WiiM logo are trademarks of their owner, Linkplay Technology. Wiim Control is an independent project and isn't
+made, endorsed or supported by WiiM; the logo in the app only links to [wiimhome.com](https://www.wiimhome.com/).

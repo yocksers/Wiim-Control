@@ -23,11 +23,24 @@ sealed partial class WiimController
     internal async Task<bool> SetSubwooferAsync(string ip, string key, double value) =>
         ReplyIsOk(await SendToDeviceAsync(ip, $"setSubLPF:{key}:{value.ToString("0.###", CultureInfo.InvariantCulture)}").ConfigureAwait(false));
 
-    internal async Task<int> GetSleepSecondsAsync(string ip) =>
-        ParseInt(await SendToDeviceAsync(ip, "getShutdown").ConfigureAwait(false)) is int seconds && seconds > 0 ? seconds : 0;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Fetched, int Seconds)> _sleepCache = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Fetched, int Mode)> _lastModes = new();
 
-    internal async Task<bool> SetSleepTimerAsync(string ip, int minutes) =>
-        ReplyIsOk(await SendToDeviceAsync(ip, minutes > 0 ? $"setShutdown:{minutes * 60}" : "setShutdown:-1").ConfigureAwait(false));
+    internal async Task<int> GetSleepSecondsAsync(string ip)
+    {
+        var now = DateTime.UtcNow;
+        if (_sleepCache.TryGetValue(ip, out var cached) && now - cached.Fetched < TimeSpan.FromSeconds(30))
+            return cached.Seconds > 0 ? Math.Max(0, cached.Seconds - (int)(now - cached.Fetched).TotalSeconds) : 0;
+        int seconds = ParseInt(await SendToDeviceAsync(ip, "getShutdown").ConfigureAwait(false)) is int s && s > 0 ? s : 0;
+        _sleepCache[ip] = (now, seconds);
+        return seconds;
+    }
+
+    internal async Task<bool> SetSleepTimerAsync(string ip, int minutes)
+    {
+        _sleepCache.TryRemove(ip, out _);
+        return ReplyIsOk(await SendToDeviceAsync(ip, minutes > 0 ? $"setShutdown:{minutes * 60}" : "setShutdown:-1").ConfigureAwait(false));
+    }
 
     internal static (bool Shuffle, int Repeat) ParseLoop(int loop) => loop switch
     {
@@ -44,10 +57,11 @@ sealed partial class WiimController
         : repeat switch { 2 => 0, 1 => 1, _ => 4 };
 
     internal async Task<bool> SetLoopModeAsync(string ip, int mode) =>
+        await TryRoonLoopAsync(ip, mode).ConfigureAwait(false) ||
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:loopmode:{mode}").ConfigureAwait(false));
 
     internal async Task<bool> SeekAsync(string ip, int seconds) =>
-        await TryLyrionCommandAsync(ip, "seek", seconds).ConfigureAwait(false) ||
+        await TryExternalCommandAsync(ip, "seek", seconds).ConfigureAwait(false) ||
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:seek:{Math.Max(0, seconds)}").ConfigureAwait(false));
 
     private static string RenameKey(string input) => input.ToLowerInvariant() switch
@@ -100,6 +114,7 @@ sealed partial class WiimController
 
     internal static string ServiceName(DeviceStatus status)
     {
+        if (status.SourceLabel.Length > 0) return status.SourceLabel;
         if (SourceName(status.Mode) is { Length: > 0 } source) return source;
         if (Uri.TryCreate(status.ArtUrl, UriKind.Absolute, out var uri))
             foreach (var (host, name) in ServiceHosts)
@@ -107,13 +122,38 @@ sealed partial class WiimController
         return string.Empty;
     }
 
-    internal static string ModelName(string project) => project switch
+    private static readonly Dictionary<string, string> ModelNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        _ when project.Contains("Amp_Ultra", StringComparison.OrdinalIgnoreCase) => "WiiM Amp Ultra",
-        _ when project.Contains("Amp_Pro", StringComparison.OrdinalIgnoreCase) => "WiiM Amp Pro",
-        _ when project.Contains("WiiM_Amp", StringComparison.OrdinalIgnoreCase) => "WiiM Amp",
-        _ => project.Replace('_', ' ')
+        ["WiiM_Amp_4layer"] = "WiiM Amp",
+        ["WiiM_AMP"] = "WiiM Amp",
+        ["WiiM_Amp_Pro"] = "WiiM Amp Pro",
+        ["WiiM_Amp_Ultra"] = "WiiM Amp Ultra",
+        ["WiiM_Pro_with_gc4a"] = "WiiM Pro",
+        ["WiiM_Pro_Plus"] = "WiiM Pro Plus",
+        ["Muzo_Mini"] = "WiiM Mini",
+        ["WiiM_Mini"] = "WiiM Mini",
+        ["WiiM_Ultra"] = "WiiM Ultra",
+        ["WiiM_Sound"] = "WiiM Sound",
+        ["WiiM_CI_MOD_S"] = "WiiM CI MOD S",
+        ["WiiM_CI_MOD_A80"] = "WiiM CI MOD A80"
     };
+
+    private static readonly string[] SubwooferProjects = ["WiiM_Amp", "WiiM_AMP", "WiiM_Ultra", "WiiM_CI_AMP", "WiiM_CI_MOD_A80"];
+
+    internal static bool HasSubwooferOutput(string? project) =>
+        project is { Length: > 0 } && SubwooferProjects.Any(p => project.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
+    private static readonly string[] ProjectSuffixes = ["_4layer", "_with_gc4a"];
+
+    internal static string ModelName(string project)
+    {
+        if (ModelNames.TryGetValue(project, out var name)) return name;
+        string trimmed = project;
+        foreach (var suffix in ProjectSuffixes)
+            if (trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) trimmed = trimmed[..^suffix.Length];
+        if (trimmed.StartsWith("WiiM_", StringComparison.OrdinalIgnoreCase)) trimmed = "WiiM_" + trimmed[5..];
+        return trimmed.Replace('_', ' ').Trim();
+    }
 
     private static DeviceInfo? ParseDeviceInfo(string? statusEx)
     {
@@ -127,7 +167,7 @@ sealed partial class WiimController
             if (DateTime.TryParseExact(Field("Release"), "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var released))
                 firmware += $" ({released:d})";
             return new DeviceInfo(ModelName(Field("project")), firmware, Temperature("temperature_cpu"), Temperature("temperature_tmp102"),
-                ParseFirmwareUpdate(statusEx));
+                ParseFirmwareUpdate(statusEx), Field("ssid"), Field("MAC"), Field("uuid"));
         }
         catch (JsonException) { return null; }
     }

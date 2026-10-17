@@ -35,6 +35,7 @@ sealed partial class WiimController
 
         var meta = MetaFields(metaTask.Result);
         int.TryParse(JsonField(status, "mode"), out int mode);
+        _lastModes[ip] = (DateTime.UtcNow, mode);
         int.TryParse(meta.GetValueOrDefault("sampleRate"), out int sampleRate);
         int.TryParse(meta.GetValueOrDefault("bitDepth"), out int bitDepth);
         int.TryParse(meta.GetValueOrDefault("bitRate"), out int bitRate);
@@ -43,7 +44,7 @@ sealed partial class WiimController
         int.TryParse(JsonField(status, "curpos"), out int position);
         int.TryParse(JsonField(status, "totlen"), out int duration);
         string bluetooth = mode == 41 ? await GetBluetoothSourceAsync(ip).ConfigureAwait(false) : string.Empty;
-        return new DeviceStatus(
+        return await ApplyRoonAsync(ip, new DeviceStatus(
             new DeviceVolume(Math.Clamp(volume, 0, 100), JsonField(status, "mute") == "1"),
             JsonField(status, "status") ?? string.Empty,
             mode,
@@ -58,7 +59,7 @@ sealed partial class WiimController
             Math.Max(0, duration),
             Math.Max(0, bitRate),
             bluetooth,
-            sleepTask.Result);
+            sleepTask.Result)).ConfigureAwait(false);
     }
 
     internal async Task<Dictionary<string, DeviceStatus?>> GetAllDeviceStatusesAsync()
@@ -69,7 +70,7 @@ sealed partial class WiimController
     }
 
     internal async Task<bool> SendTransportAsync(string ip, string action) =>
-        await TryLyrionCommandAsync(ip, action).ConfigureAwait(false) ||
+        await TryExternalCommandAsync(ip, action).ConfigureAwait(false) ||
         CommandSucceeded(await SendToDeviceAsync(ip, $"setPlayerCmd:{action}").ConfigureAwait(false));
 
     internal async Task<Bitmap?> GetArtworkAsync(string url)
@@ -83,7 +84,7 @@ sealed partial class WiimController
             }
         try
         {
-            var bytes = await _http.GetByteArrayAsync(url).ConfigureAwait(false);
+            var bytes = await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false);
             using var stream = new MemoryStream(bytes);
             var thumbnail = Bitmap.DecodeToWidth(stream, 160, BitmapInterpolationMode.HighQuality);
             var evicted = new List<Bitmap>();
@@ -106,18 +107,49 @@ sealed partial class WiimController
                     if (_artworkCache.Remove(oldest, out var old)) evicted.Add(old);
                 }
             }
-            if (evicted.Count > 0)
-                Dispatcher.UIThread.Post(() =>
-                {
-                    foreach (var bitmap in evicted)
-                        if (_settingsWindow?.IsShowingArtwork(bitmap) != true) bitmap.Dispose();
-                });
+            if (evicted.Count > 0) DisposeWhenUnused(evicted);
             return thumbnail;
         }
         catch (Exception)
         {
             return null;
         }
+    }
+
+    private readonly List<Bitmap> _artworkToDispose = [];
+
+    private void DisposeWhenUnused(IEnumerable<Bitmap> bitmaps) => Dispatcher.UIThread.Post(() =>
+    {
+        _artworkToDispose.AddRange(bitmaps);
+        for (int i = _artworkToDispose.Count - 1; i >= 0; i--)
+        {
+            if (_settingsWindow?.IsShowingArtwork(_artworkToDispose[i]) == true) continue;
+            _artworkToDispose[i].Dispose();
+            _artworkToDispose.RemoveAt(i);
+        }
+    });
+
+    private void DisposeArtworkCaches()
+    {
+        lock (_artworkCache)
+        {
+            foreach (var bitmap in _artworkCache.Values) bitmap.Dispose();
+            _artworkCache.Clear();
+            _artworkOrder.Clear();
+        }
+        lock (_largeArtwork)
+        {
+            foreach (var (_, bitmap) in _largeArtwork) bitmap.Dispose();
+            _largeArtwork.Clear();
+        }
+        lock (_wallpaperCache)
+        {
+            foreach (var bitmap in _wallpaperCache.Values) bitmap.Dispose();
+            _wallpaperCache.Clear();
+            _wallpaperOrder.Clear();
+        }
+        foreach (var bitmap in _artworkToDispose) bitmap.Dispose();
+        _artworkToDispose.Clear();
     }
 
     internal static string NowPlayingLine(DeviceStatus status)
@@ -140,11 +172,11 @@ sealed partial class WiimController
         try
         {
             string ip = _deviceIp;
-            if (_knownDevices.Count > 1) await GetMultiroomSnapshotAsync();
+            if (_knownDevices.Count > 1 && DateTime.UtcNow - _multiroomCacheTime > MultiroomCacheLifetime) await GetMultiroomSnapshotAsync();
             string target = PlaybackTarget;
             var status = await GetDeviceStatusAsync(target);
             _nowPlayingText = status == null ? string.Empty : NowPlayingLine(status);
-            _mediaSession?.Update(status);
+            _mediaSession?.Update(status == null || IsNetworkMode(status.Mode) ? status : status with { PositionMs = 0, DurationMs = 0 });
             RefreshDeviceStatusUi();
             bool reachable = target == ip ? status != null : await GetDeviceVolumeAsync(ip) != null;
             if (ip != _deviceIp) return;

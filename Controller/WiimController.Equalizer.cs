@@ -10,14 +10,13 @@ sealed partial class WiimController
         if (string.IsNullOrEmpty(ip)) return null;
         try
         {
-            var body = await _http.GetStringAsync(
-                $"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
+            var body = await GetAmpStringAsync($"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
             if (ip == _deviceIp) OnWiimRequestSucceeded();
             return body;
         }
         catch (Exception ex)
         {
-            Notify($"Error: {ex.Message}");
+            NotifyRequestFailed(ip, ex);
             if (ip == _deviceIp) _ = OnWiimRequestFailedAsync();
             return null;
         }

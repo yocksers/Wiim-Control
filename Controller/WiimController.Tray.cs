@@ -145,7 +145,7 @@ sealed partial class WiimController
         {
             try
             {
-                var resp = await _http.GetAsync($"https://{_deviceIp}/httpapi.asp?command=getPlayerStatus");
+                using var resp = await _http.GetAsync($"https://{_deviceIp}/httpapi.asp?command=getPlayerStatus");
                 Notify($"Connected — HTTP {(int)resp.StatusCode}");
             }
             catch (Exception ex) { Notify($"Failed: {ex.Message}"); }
@@ -181,9 +181,19 @@ sealed partial class WiimController
             _settingsWindow.Activate();
             return;
         }
-        _settingsWindow = new SettingsWindow(this);
-        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        _settingsWindow.Show();
+        if (_openingSettings) return;
+        _openingSettings = true;
+        try
+        {
+            var window = new SettingsWindow(this);
+            window.Closed += (_, _) => { if (_settingsWindow == window) _settingsWindow = null; };
+            _settingsWindow = window;
+            window.Show();
+        }
+        finally
+        {
+            _openingSettings = false;
+        }
     }
 
     private static readonly string AppVersion =
@@ -261,7 +271,7 @@ sealed partial class WiimController
         }));
         _mnuDevices.Add(MenuAction("Add device manually…", async () =>
         {
-            var ip = await Dialogs.PromptAsync(null, "Enter the Wiim Amp's IP address:", string.Empty, UiScale);
+            var ip = await Dialogs.PromptAsync(null, "Enter the WiiM device's IP address:", string.Empty, UiScale);
             if (!string.IsNullOrWhiteSpace(ip)) AddManualDevice(ip);
         }));
 
@@ -330,8 +340,8 @@ sealed partial class WiimController
     {
         bool ok = await SetSleepTimerAsync(_deviceIp, minutes);
         foreach (var (m, item) in _sleepItems) item.IsChecked = ok && m == minutes;
-        Notify(!ok ? "The amp didn't accept the sleep timer."
-            : minutes > 0 ? $"Sleep timer: the amp stops playing in {minutes} minutes."
+        Notify(!ok ? "The device didn't accept the sleep timer."
+            : minutes > 0 ? $"Sleep timer: the device stops playing in {minutes} minutes."
             : "Sleep timer off.");
     }
 

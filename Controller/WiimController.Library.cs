@@ -9,7 +9,7 @@ sealed partial class WiimController
     private const string PlayQueueService = "urn:schemas-wiimu-com:service:PlayQueue:1";
     internal const int MaxQueueTracks = 500;
 
-    private readonly ConcurrentDictionary<string, string> _playQueueUrls = new();
+    private readonly ConcurrentDictionary<string, string> _serviceUrls = new();
     private readonly SemaphoreSlim _thumbnailGate = new(6, 6);
     private List<RadioStation> _radioFavorites = [];
     private List<MediaServer>? _mediaServers;
@@ -21,28 +21,32 @@ sealed partial class WiimController
     internal string LibraryServer => _libraryServer;
     internal string RadioCountryCode => _radioCountry ??= RadioDirectory.HomeCountry();
 
-    private async Task<string> GetPlayQueueUrlAsync(string ip)
+    private Task<string> GetPlayQueueUrlAsync(string ip) => GetServiceUrlAsync(ip, PlayQueueService, "/upnp/control/PlayQueue1");
+
+    private async Task<string> GetServiceUrlAsync(string ip, string serviceType, string fallbackPath)
     {
-        if (_playQueueUrls.TryGetValue(ip, out var cached)) return cached;
-        string url = $"http://{ip}:49152/upnp/control/PlayQueue1";
+        string key = $"{ip}|{serviceType}";
+        if (_serviceUrls.TryGetValue(key, out var cached)) return cached;
+        string url = $"http://{ip}:49152{fallbackPath}";
         try
         {
             string location = $"http://{ip}:49152/description.xml";
             var doc = XDocument.Parse(await _http.GetStringAsync(location).ConfigureAwait(false));
             var ns = doc.Root?.GetDefaultNamespace() ?? XNamespace.None;
-            if (doc.Descendants(ns + "service").FirstOrDefault(s => s.Element(ns + "serviceType")?.Value == PlayQueueService)
+            if (doc.Descendants(ns + "service").FirstOrDefault(s => s.Element(ns + "serviceType")?.Value == serviceType)
                     ?.Element(ns + "controlURL")?.Value is { Length: > 0 } control)
                 url = new Uri(new Uri(location), control).ToString();
         }
         catch (Exception) { }
-        _playQueueUrls[ip] = url;
+        _serviceUrls[key] = url;
         return url;
     }
 
-    internal async Task<bool> PlayTracksAsync(string ip, IReadOnlyList<QueueTrack> tracks, int startIndex)
+    internal async Task<bool> PlayTracksAsync(string ip, IReadOnlyList<QueueTrack> tracks, int startIndex, bool share = false)
     {
         if (tracks.Count == 0) return false;
-        string context = Didl.QueueContext("WiimControl", tracks, Math.Clamp(startIndex, 0, tracks.Count - 1), radio: false);
+        string context = Didl.QueueContext("WiimControl", tracks, Math.Clamp(startIndex, 0, tracks.Count - 1), radio: false,
+            share ? ShareSourceName : "UPnPServer");
         bool ok = await Upnp.CallAsync(await GetPlayQueueUrlAsync(ip).ConfigureAwait(false), PlayQueueService, "CreateQueue",
             ("QueueContext", context)).ConfigureAwait(false) != null;
         if (ok && ip == _deviceIp) OnWiimRequestSucceeded();
@@ -65,7 +69,10 @@ sealed partial class WiimController
         try
         {
             if (stillWanted?.Invoke() == false) return null;
-            var bytes = await _http.GetByteArrayAsync(url).ConfigureAwait(false);
+            var bytes = IsShareUrl(url)
+                ? await ReadShareFileAsync(url).ConfigureAwait(false)
+                : await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false);
+            if (bytes == null) return null;
             using var stream = new MemoryStream(bytes);
             return Bitmap.DecodeToWidth(stream, width, BitmapInterpolationMode.HighQuality);
         }

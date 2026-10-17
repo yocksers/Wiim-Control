@@ -5,6 +5,8 @@ namespace WiimControl;
 sealed partial class WiimController
 {
     private MultiroomSnapshot? _multiroomCache;
+    private DateTime _multiroomCacheTime = DateTime.MinValue;
+    private static readonly TimeSpan MultiroomCacheLifetime = TimeSpan.FromSeconds(30);
 
     internal string EffectiveGroupLeader =>
         _groupLeaderIp.Length > 0 && _knownDevices.Any(d => d.Ip == _groupLeaderIp) ? _groupLeaderIp : _deviceIp;
@@ -25,6 +27,10 @@ sealed partial class WiimController
         }
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _deviceModels = new();
+
+    internal string? ModelOf(string ip) => _deviceModels.GetValueOrDefault(ip);
+
     internal async Task<MultiroomSnapshot> GetMultiroomSnapshotAsync()
     {
         var devices = _knownDevices.ToList();
@@ -42,6 +48,7 @@ sealed partial class WiimController
         {
             if (r.Status == null && r.Slaves == null) continue;
             online.Add(r.Device.Ip);
+            if (JsonField(r.Status, "project") is { Length: > 0 } project) _deviceModels[r.Device.Ip] = ModelName(project);
             var uuid = NormalizeUuid(JsonField(r.Status, "uuid") ?? r.Device.Uuid);
             if (uuid.Length > 0) uuids[r.Device.Ip] = uuid;
         }
@@ -62,6 +69,7 @@ sealed partial class WiimController
         }
         var snapshot = new MultiroomSnapshot(online, leaderOf, memberAddress);
         _multiroomCache = snapshot;
+        _multiroomCacheTime = DateTime.UtcNow;
         return snapshot;
     }
 

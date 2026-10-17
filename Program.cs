@@ -21,7 +21,7 @@ static class Program
         catch (AbandonedMutexException) { owned = true; }
         if (!owned)
         {
-            CommandChannel.Send("show");
+            if (!args.Contains(AutoStart.MinimizedArgument)) CommandChannel.Send("show");
             return 0;
         }
 

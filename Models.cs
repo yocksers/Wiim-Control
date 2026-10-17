@@ -28,7 +28,7 @@ readonly record struct DeviceVolume(int Volume, bool Muted);
 
 sealed record DeviceStatus(DeviceVolume Volume, string PlayState, int Mode, string Title, string Artist, string Album,
     string ArtUrl, int SampleRate, int BitDepth, int Loop = 4, int PositionMs = 0, int DurationMs = 0, int BitRate = 0,
-    string BluetoothName = "", int SleepSeconds = 0)
+    string BluetoothName = "", int SleepSeconds = 0, string SourceLabel = "")
 {
     public bool IsPlaying => PlayState.Equals("play", StringComparison.OrdinalIgnoreCase);
 }
@@ -36,9 +36,13 @@ sealed record DeviceStatus(DeviceVolume Volume, string PlayState, int Mode, stri
 readonly record struct DigitalFilter(int Index, string Name);
 
 sealed record SubwooferInfo(bool Enabled, bool Plugged, double Crossover, double Phase, double Level, bool MainHighPass,
-    double? Delay);
+    double? Delay, bool Bypass = false);
 
-sealed record DeviceInfo(string Model, string Firmware, int? CpuTemperature, int? BoardTemperature, FirmwareUpdate? Update = null);
+sealed record DeviceInfo(string Model, string Firmware, int? CpuTemperature, int? BoardTemperature, FirmwareUpdate? Update = null,
+    string Ssid = "", string Mac = "", string Uuid = "");
+
+sealed record NetworkInfo(bool Wired, string WifiName, string Ip, int? Rssi, string ApMac, int? TxRate, int? Snr, int? Frequency,
+    int? Channel, bool? FiveGhzOnly, bool? Roaming, bool? Ipv6, string? PreferredDns, int? StandbySeconds);
 
 sealed record PresetInfo(int Number, string Name, string Source, string PictureUrl, string Detail = "", bool IsRoutine = false);
 
@@ -46,24 +50,35 @@ sealed record PresetList(int Slots, List<PresetInfo> Presets);
 
 sealed record AlarmInfo(int Slot, bool Enabled, string Trigger, TimeSpan? TimeUtc, string Path);
 
-sealed record ScreenConfig(string RawJson, bool On, bool AutoBrightness, int Brightness);
+sealed record ScreenConfig(string RawJson, bool On, bool AutoBrightness, int Brightness, bool? WakeByTouch = null);
 
 readonly record struct InputVisibility(string Mode, bool Shown);
 
 sealed record ScreenView(string Key, int Value, List<int> Choices);
 
-sealed record WallpaperInfo(string RawJson, List<string> Current, int MaxNumber);
+sealed record WallpaperInfo(string RawJson, List<string> Current, int MaxNumber, int Width = 480, int Height = 320);
 
 sealed record ScreenUi(string? InputKey, string? Input, bool? Clock24, bool? StandbyScreenOff, int? StartPage,
-    Dictionary<string, ScreenView> Views);
+    Dictionary<string, ScreenView> Views, List<string>? Inputs = null, string? PlayingInputKey = null, bool? InputScreenOn = null,
+    bool? HideCoverIcon = null, Dictionary<int, string>? ClockColors = null);
 
 sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? StatusLight, bool? ButtonsLocked,
     int? OutputHardware, string? FilterMode, List<DigitalFilter> Filters, int? Filter, SubwooferInfo? Subwoofer,
     ScreenConfig? Screen, List<InputVisibility>? Inputs, int? VolumeLightMode, ScreenUi? ScreenUi,
-    WallpaperInfo? Wallpapers, DeviceInfo? Device, List<AlarmInfo>? Alarms, SqueezeliteState? Squeezelite = null);
+    WallpaperInfo? Wallpapers, DeviceInfo? Device, List<AlarmInfo>? Alarms, SqueezeliteState? Squeezelite = null,
+    NetworkInfo? Network = null, int? ButtonVolumeStep = null, int? RemoteVolumeStep = null, List<string>? OutputModes = null,
+    string? UsbDacName = null, bool BluetoothOut = false, bool CastOut = false, OutputState? Output = null,
+    InputSettings? InputOptions = null, bool? AutoHeadroom = null, double? HeadroomGain = null, int? Channel = null,
+    bool? PromptSounds = null, AutoUpdate? AutoUpdate = null);
 
 sealed record MediaServer(string Name, string Udn, string ContentDirectoryUrl, string IconUrl, bool OnThisComputer = false,
-    bool IsLyrion = false);
+    bool IsLyrion = false, bool IsRoon = false, bool IsShare = false);
+
+sealed record InputsPage(bool Reachable, List<InputVisibility>? Inputs, InputSettings? Options);
+
+sealed record OutputPage(bool Reachable, OutputState? Output, string? OutputName, string? FilterMode, List<DigitalFilter> Filters, int? Filter);
+
+sealed record SharedFolder(string Name, string Host, string Share, string Folder, string User, string Password);
 
 sealed record SqueezeliteState(string State, string ConnectedServer, string DefaultServer, List<string> Found, bool AutoConnect);
 

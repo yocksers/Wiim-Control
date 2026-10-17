@@ -35,7 +35,15 @@ sealed partial class WiimController
     }
 
     internal BackupFile CreateBackupFile(List<AmpBackup> amps) =>
-        new(BackupApp, AppVersion, DateTime.Now, ReadConfigText(), amps);
+        new(BackupApp, AppVersion, DateTime.Now, ConfigTextForBackup(), amps);
+
+    private string ConfigTextForBackup()
+    {
+        string sharedFolders = "sharedFolders=" + JsonSerializer.Serialize(_sharedFolders.Select(f => f with { Password = string.Empty }).ToList());
+        var lines = ReadConfigText().Replace("\r\n", "\n").Split('\n')
+            .Select(line => line.StartsWith("sharedFolders=", StringComparison.OrdinalIgnoreCase) ? sharedFolders : line);
+        return string.Join(Environment.NewLine, lines);
+    }
 
     internal static BackupFile? ParseBackupFile(string json)
     {
@@ -259,7 +267,7 @@ sealed partial class WiimController
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
-            File.WriteAllText(_cfgPath, text);
+            WriteConfigFile(_cfgPath, text.Replace("\r\n", "\n").Split('\n'));
             _configLocked = true;
             return true;
         }

@@ -60,8 +60,10 @@ sealed partial class WiimController
 
     private async Task<bool> TryLyrionCommandAsync(string ip, string action, int seconds = 0)
     {
-        if (JsonField(await SendToDeviceAsync(ip, "getPlayerStatus").ConfigureAwait(false), "mode") !=
-            Lms.SourceMode.ToString(CultureInfo.InvariantCulture)) return false;
+        int source = _lastModes.TryGetValue(ip, out var known) && DateTime.UtcNow - known.Fetched < TimeSpan.FromSeconds(5)
+            ? known.Mode
+            : int.TryParse(JsonField(await SendToDeviceAsync(ip, "getPlayerStatus").ConfigureAwait(false), "mode"), out int m) ? m : -1;
+        if (source != Lms.SourceMode) return false;
         if (await GetLyrionLinkAsync(ip).ConfigureAwait(false) is not { } link) return false;
 
         string[]? command = action switch

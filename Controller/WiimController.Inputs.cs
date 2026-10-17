@@ -24,7 +24,7 @@ sealed partial class WiimController
     {
         4 or 40 or 60 => "line-in",
         47 => "line-in2",
-        5 or 41 => "bluetooth",
+        41 => "bluetooth",
         6 or 43 => "optical",
         45 => "co-axial",
         49 or 58 => "HDMI",

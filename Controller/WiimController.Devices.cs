@@ -24,16 +24,15 @@ sealed partial class WiimController
         _cachedMuted  = null;
         _cachedIp     = string.Empty;
         _nowPlayingText  = string.Empty;
-        _activeMaxVolume = 100;
         RefreshDeviceStatusUi();
         SaveConfig();
-        _ = RefreshActiveMaxVolumeAsync();
         _ = RefreshNowPlayingAsync();
+        _settingsWindow?.OnActiveDeviceChanged();
     }
 
     internal void AddManualDevice(string ip)
     {
-        var dev = new KnownDevice($"Wiim Amp {_knownDevices.Count + 1}", ip, string.Empty);
+        var dev = new KnownDevice($"WiiM device {_knownDevices.Count + 1}", ip, string.Empty);
         _knownDevices.Add(dev);
         SwitchDevice(dev);
         _ = FillMissingDeviceIdsAsync();
@@ -58,6 +57,30 @@ sealed partial class WiimController
             changed = true;
         }
         if (changed) SaveConfig();
+    }
+
+    internal const int MaxDeviceNameLength = 50;
+
+    internal async Task<bool> RenameDeviceAsync(string ip, string name)
+    {
+        string hex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(name));
+        if (!CommandSucceeded(await SendToDeviceAsync(ip, $"setHexDeviceName:{hex}").ConfigureAwait(false))) return false;
+        int index = _knownDevices.FindIndex(k => k.Ip == ip);
+        if (index >= 0) _knownDevices[index] = _knownDevices[index] with { Name = name };
+        SaveConfig();
+        RefreshDeviceStatusUi();
+        return true;
+    }
+
+    internal bool MoveDevice(KnownDevice d, int offset)
+    {
+        int index = _knownDevices.FindIndex(k => k.Ip == d.Ip);
+        int target = index + offset;
+        if (index < 0 || target < 0 || target >= _knownDevices.Count) return false;
+        _knownDevices.RemoveAt(index);
+        _knownDevices.Insert(target, d);
+        SaveConfig();
+        return true;
     }
 
     internal void RemoveDevice(KnownDevice d)

@@ -10,9 +10,16 @@ sealed partial class WiimController
 {
     private const int WallpaperThumbWidth = 160;
     private const int MaxBuiltInWallpapers = 30;
+    private const int WallpaperCacheSize = 120;
     private readonly Dictionary<string, Bitmap> _wallpaperCache = new();
+    private readonly List<string> _wallpaperOrder = [];
     private readonly SemaphoreSlim _wallpaperDownloads = new(4);
     private readonly Dictionary<string, int> _builtInWallpaperCount = new();
+    private static readonly (string Prefix, string Extension)[] BuiltInWallpaperFamilies =
+        [("home_bg_", ".bmp"), ("sound_featured_", ".jpg"), ("bar_featured_", ".jpg")];
+
+    internal static bool IsBuiltInWallpaperName(string name) => BuiltInWallpaperFamilies.Any(f =>
+        name.StartsWith(f.Prefix, StringComparison.OrdinalIgnoreCase) && name.EndsWith(f.Extension, StringComparison.OrdinalIgnoreCase));
 
     internal async Task<WallpaperInfo?> GetWallpapersAsync(string ip)
     {
@@ -22,7 +29,9 @@ sealed partial class WiimController
             if (JsonNode.Parse(json ?? string.Empty) is not JsonObject root || root["wallpaper_list"]?["current"] is not JsonArray current) return null;
             var names = current.Select(n => n?.GetValue<string>()).OfType<string>().ToList();
             int max = root["max_number"] is JsonValue m && m.TryGetValue<int>(out int n) ? n : 1;
-            return new WallpaperInfo(root.ToJsonString(), names, Math.Max(1, max));
+            int width = root["resolution"]?["width"] is JsonValue w && w.TryGetValue<int>(out int wv) && wv > 0 ? wv : 480;
+            int height = root["resolution"]?["height"] is JsonValue h && h.TryGetValue<int>(out int hv) && hv > 0 ? hv : 320;
+            return new WallpaperInfo(root.ToJsonString(), names, Math.Max(1, max), width, height);
         }
         catch (Exception) { return null; }
     }
@@ -42,17 +51,32 @@ sealed partial class WiimController
 
     internal async Task<List<(string Name, Bitmap? Thumbnail)>> GetWallpaperThumbnailsAsync(string ip, WallpaperInfo info)
     {
+        var probes = await Task.WhenAll(BuiltInWallpaperFamilies.Select(async f =>
+            info.Current.Any(c => c.StartsWith(f.Prefix, StringComparison.OrdinalIgnoreCase)) ||
+            await GetWallpaperThumbnailAsync(ip, $"{f.Prefix}1{f.Extension}").ConfigureAwait(false) != null)).ConfigureAwait(false);
+        var families = BuiltInWallpaperFamilies.Where((_, i) => probes[i]).ToList();
+        if (families.Count == 0) families.Add(BuiltInWallpaperFamilies[0]);
+
+        var builtIn = (await Task.WhenAll(families.Select(f => GetBuiltInWallpapersAsync(ip, f.Prefix, f.Extension))).ConfigureAwait(false))
+            .SelectMany(list => list).ToList();
+        var extra = info.Current.Where(c => builtIn.All(b => b.Name != c)).ToList();
+        var extraThumbs = await Task.WhenAll(extra.Select(name => GetWallpaperThumbnailAsync(ip, name))).ConfigureAwait(false);
+        return builtIn.Where(p => p.Thumbnail != null || info.Current.Contains(p.Name)).Concat(extra.Zip(extraThumbs)).ToList();
+    }
+
+    private async Task<List<(string Name, Bitmap? Thumbnail)>> GetBuiltInWallpapersAsync(string ip, string prefix, string extension)
+    {
+        string key = $"{ip}|{prefix}";
         int known;
-        lock (_builtInWallpaperCount) known = _builtInWallpaperCount.GetValueOrDefault(ip, MaxBuiltInWallpapers);
-        var builtIn = Enumerable.Range(1, known).Select(i => $"home_bg_{i}.bmp").ToList();
-        var names = builtIn.Concat(info.Current.Where(c => !builtIn.Contains(c))).ToList();
+        lock (_builtInWallpaperCount) known = _builtInWallpaperCount.GetValueOrDefault(key, MaxBuiltInWallpapers);
+        var names = Enumerable.Range(1, known).Select(i => $"{prefix}{i}{extension}").ToList();
         var thumbs = await Task.WhenAll(names.Select(name => GetWallpaperThumbnailAsync(ip, name))).ConfigureAwait(false);
         var found = names.Zip(thumbs).ToList();
-        int count = found.Take(builtIn.Count).TakeWhile(p => p.Second != null).Count();
-        bool endFound = count == builtIn.Count || found.Skip(count).Take(Math.Min(2, builtIn.Count - count)).All(p => p.Second == null);
+        int count = found.TakeWhile(p => p.Second != null).Count();
+        bool endFound = count == names.Count || found.Skip(count).Take(Math.Min(2, names.Count - count)).All(p => p.Second == null);
         if (count > 0 && endFound)
-            lock (_builtInWallpaperCount) _builtInWallpaperCount[ip] = count;
-        return found.Where(p => p.Second != null || info.Current.Contains(p.First)).Select(p => (p.First, p.Second)).ToList();
+            lock (_builtInWallpaperCount) _builtInWallpaperCount[key] = count;
+        return found.Select(p => (p.First, p.Second)).ToList();
     }
 
     private async Task<Bitmap?> GetWallpaperThumbnailAsync(string ip, string name)
@@ -66,7 +90,15 @@ sealed partial class WiimController
             var bytes = await _http.GetByteArrayAsync($"https://{ip}/wallpaper/{Uri.EscapeDataString(name)}").ConfigureAwait(false);
             var thumb = DecodeWallpaper(bytes);
             if (thumb != null)
-                lock (_wallpaperCache) _wallpaperCache[key] = thumb;
+                lock (_wallpaperCache)
+                {
+                    if (_wallpaperCache.TryAdd(key, thumb)) _wallpaperOrder.Add(key);
+                    while (_wallpaperOrder.Count > WallpaperCacheSize)
+                    {
+                        _wallpaperCache.Remove(_wallpaperOrder[0]);
+                        _wallpaperOrder.RemoveAt(0);
+                    }
+                }
             return thumb;
         }
         catch (Exception) { return null; }

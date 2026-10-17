@@ -9,16 +9,16 @@ sealed partial class WiimController
         {
             using var response = await _http.GetAsync($"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                throw new HttpRequestException($"The amp answered with HTTP {(int)response.StatusCode}.");
+                throw new HttpRequestException($"The device answered with HTTP {(int)response.StatusCode}.", null, response.StatusCode);
             string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             if (ip == _deviceIp) OnWiimRequestSucceeded();
             if (CommandSucceeded(body)) return true;
-            Notify("The amp didn't accept the command.");
+            Notify("The device didn't accept the command.");
             return false;
         }
         catch (Exception ex)
         {
-            Notify($"Error: {ex.Message}");
+            NotifyRequestFailed(ip, ex);
             if (ip == _deviceIp) _ = OnWiimRequestFailedAsync();
             return false;
         }
@@ -34,13 +34,13 @@ sealed partial class WiimController
             _           => action
         };
         string target = PlaybackTarget;
-        if (await TryLyrionCommandAsync(target, wiimCmd).ConfigureAwait(false)) return;
+        if (await TryExternalCommandAsync(target, wiimCmd).ConfigureAwait(false)) return;
         await SendPlayerCommandAsync(target, $"setPlayerCmd:{wiimCmd}").ConfigureAwait(false);
     }
 
     internal async Task<int> TestConnectionAsync()
     {
-        var resp = await _http.GetAsync($"https://{_deviceIp}/httpapi.asp?command=getPlayerStatus");
+        using var resp = await _http.GetAsync($"https://{_deviceIp}/httpapi.asp?command=getPlayerStatus");
         return (int)resp.StatusCode;
     }
 
@@ -48,8 +48,7 @@ sealed partial class WiimController
     {
         try
         {
-            var json = await _http.GetStringAsync(
-                $"https://{ip}/httpapi.asp?command=getPlayerStatus").ConfigureAwait(false);
+            var json = await GetAmpStringAsync($"https://{ip}/httpapi.asp?command=getPlayerStatus").ConfigureAwait(false);
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("vol", out var volProp)) return null;
             if (!int.TryParse(volProp.GetString(), out int vol)) return null;
@@ -59,7 +58,7 @@ sealed partial class WiimController
         }
         catch (Exception ex)
         {
-            Notify($"Error: {ex.Message}");
+            NotifyRequestFailed(ip, ex);
             if (ip == _deviceIp) _ = OnWiimRequestFailedAsync();
             return null;
         }
@@ -96,13 +95,12 @@ sealed partial class WiimController
     private async Task ChangeVolumeAsync(int direction)
     {
         string ip = _deviceIp;
-        int maxVolume = _activeMaxVolume;
         if (string.IsNullOrEmpty(ip)) return;
         if (!await _volumeGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false)) return;
         try
         {
             if (await GetVolumeStateAsync(ip).ConfigureAwait(false) is not { } state) return;
-            int newVol = Math.Min(ApplyVolumeStep(state.Volume, direction), maxVolume);
+            int newVol = ApplyVolumeStep(state.Volume, direction);
             if (!await SendPlayerCommandAsync(ip, $"setPlayerCmd:vol:{newVol}").ConfigureAwait(false)) return;
             if (ip != _deviceIp) return;
             StoreVolumeState(ip, newVol, state.Muted);
@@ -184,6 +182,6 @@ sealed partial class WiimController
         SaveConfig();
 
         Avalonia.Threading.Dispatcher.UIThread.Post(RefreshDeviceStatusUi);
-        Notify($"Wiim Amp reconnected at {match.Ip}");
+        Notify($"WiiM device reconnected at {match.Ip}");
     }
 }

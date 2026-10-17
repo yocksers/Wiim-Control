@@ -11,10 +11,12 @@ sealed partial class WiimController
     {
         if (_mediaControls && _mediaSession == null)
         {
-#if WINDOWS
-            try { _mediaSession = new WindowsMediaSession(OnMediaSessionCommand, OnMediaSessionSeek); }
-            catch (Exception ex) { Notify($"Couldn't show the amp in the Windows media controls: {ex.Message}"); }
-#endif
+            try { _mediaSession = CreateMediaSession(); }
+            catch (Exception ex)
+            {
+                ErrorLog.Write("Media controls", ex);
+                Notify($"Couldn't show the device in the media controls: {ex.Message}");
+            }
             if (_mediaSession != null) _ = RefreshNowPlayingAsync();
         }
         else if (!_mediaControls && _mediaSession != null)
@@ -24,6 +26,24 @@ sealed partial class WiimController
         }
         _nowPlayingTimer.Interval = TimeSpan.FromSeconds(_mediaSession != null ? 4 : 10);
     }
+
+    private IMediaSession? CreateMediaSession()
+    {
+#if WINDOWS
+        return new WindowsMediaSession(OnMediaSessionCommand, OnMediaSessionSeek);
+#else
+        if (OperatingSystem.IsLinux())
+            return LinuxMediaSession.Create(OnMediaSessionCommand, OnMediaSessionSeek, () => Dispatcher.UIThread.Post(ShowSettingsWindow),
+                OnMediaSessionVolume);
+        if (OperatingSystem.IsMacOS()) return MacMediaSession.Create(OnMediaSessionCommand, OnMediaSessionSeek);
+        return null;
+#endif
+    }
+
+    internal static string MediaControlsName =>
+        OperatingSystem.IsWindows() ? "Windows media controls" : OperatingSystem.IsMacOS() ? "macOS Now Playing controls" : "desktop's media controls";
+
+    private static bool IsNetworkMode(int mode) => mode != 99 && InputOfMode(mode) == "wifi";
 
     private void SetMediaControls(bool value)
     {
@@ -36,6 +56,13 @@ sealed partial class WiimController
     {
         await SendMediaCommandAsync(action);
         await Task.Delay(400);
+        await RefreshNowPlayingAsync();
+    });
+
+    private void OnMediaSessionVolume(int volume) => Dispatcher.UIThread.Post(async () =>
+    {
+        if (_deviceIp.Length == 0) return;
+        await SetDeviceVolumeAsync(_deviceIp, volume);
         await RefreshNowPlayingAsync();
     });
 

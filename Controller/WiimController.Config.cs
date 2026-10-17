@@ -36,7 +36,14 @@ sealed partial class WiimController
             if (key == "libraryserver")   _libraryServer = val;
             if (key == "recent")          _recent = ParseRecent(val);
             if (key == "checkupdates")    _checkUpdates = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
+            if (key == "startminimized")  _startMinimized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "nowplayingvinyl") _nowPlayingVinyl = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "skippedversion")  _skippedVersion = val;
+            if (key == "hiddeneqpresets") ParseNameSet(_hiddenEqPresets, val);
+            if (key == "rooncore")       _roonCore = val;
+            if (key == "roontokens")     ParseRoonTokens(val);
+            if (key == "sharedfolders")  _sharedFolders = ParseSharedFolders(val);
+            if (key == "hiddenpeqpresets") ParseNameSet(_hiddenPeqPresets, val);
             if (key == "radiofavorites")  _radioFavorites = ParseRadioFavorites(val);
             if (key == "groupvolumekeys") _groupVolumeKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "groupleader")     _groupLeaderIp = val;
@@ -69,7 +76,7 @@ sealed partial class WiimController
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
-            File.WriteAllLines(_cfgPath, [
+            WriteConfigFile(_cfgPath, [
                 $"ip={_deviceIp}", $"deviceUuid={_deviceUuid}", $"logStep={_logStep}",
                 $"forwardMediaKeys={_forwardMediaKeys}", $"mediaControls={_mediaControls}", $"groupVolumeKeys={_groupVolumeKeys}", $"groupLeader={_groupLeaderIp}",
                 $"linuxPortalShortcuts={_linuxPortalShortcuts}", $"hotkeys={SerializeHotkeys()}",
@@ -79,7 +86,9 @@ sealed partial class WiimController
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
                 $"enabledOutputs={string.Join('|', _enabledOutputIds)}",
                 $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}", $"recent={SerializeRecent()}",
-                $"checkUpdates={_checkUpdates}", $"skippedVersion={_skippedVersion}",
+                $"checkUpdates={_checkUpdates}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingVinyl={_nowPlayingVinyl}",
+                $"hiddenEqPresets={string.Join('\u0001', _hiddenEqPresets)}", $"hiddenPeqPresets={string.Join('\u0001', _hiddenPeqPresets)}",
+                $"roonCore={_roonCore}", $"roonTokens={SerializeRoonTokens()}", $"sharedFolders={SerializeSharedFolders()}",
                 $"knownDevices={string.Join('\u0002', _knownDevices.Select(d => string.Join('\u0001', d.Name, d.Ip, d.Uuid)))}"
             ]);
         }
@@ -89,7 +98,21 @@ sealed partial class WiimController
         }
     }
 
+    internal static void WriteConfigFile(string path, IEnumerable<string> lines)
+    {
+        string temp = path + ".tmp";
+        File.WriteAllLines(temp, lines);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        File.Move(temp, path, overwrite: true);
+    }
+
     private void SetSuppress(bool value) { _suppress = value; SaveConfig(); SyncTrayCheckboxes(); }
+    private void SetStartMinimized(bool value) { _startMinimized = value; SaveConfig(); }
+    internal bool NowPlayingVinyl
+    {
+        get => _nowPlayingVinyl;
+        set { _nowPlayingVinyl = value; SaveConfig(); }
+    }
     private void SetAutoStartSetting(bool value) { AutoStart.SetEnabled(value); SyncTrayCheckboxes(); }
     private void SetForwardMediaKeys(bool value)
     {
