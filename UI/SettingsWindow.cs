@@ -918,7 +918,9 @@ sealed partial class WiimController
             c.Title.Text = status.Title.Length > 0 ? status.Title
                 : status.IsPlaying ? (source.Length > 0 ? source : "Playing")
                 : "Not playing";
-            c.Artist.Text = status.Artist.Length > 0 && status.Album.Length > 0 ? $"{status.Artist}  ·  {status.Album}" : status.Artist;
+            c.Artist.Text = string.Join("  ·  ", new[] { status.Artist.Trim(), status.Album.Trim() }
+                .Where(t => t.Length > 0 && !t.Equals(c.Title.Text?.Trim(), StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
             c.Detail.Text = string.Join("  ·  ", new[] { source, Quality(status) }.Where(t => t.Length > 0));
             c.PlayPauseIcon.Data = status.IsPlaying ? Icons.Pause : Icons.Play;
             c.Playing.IsVisible = status.IsPlaying;
