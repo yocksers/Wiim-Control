@@ -1,5 +1,9 @@
 # Wiim Control
 
+<img width="575" height="357" alt="image" src="https://github.com/user-attachments/assets/915ca154-748e-436e-a3fa-fcb541a17915" />
+<img width="570" height="362" alt="image" src="https://github.com/user-attachments/assets/7ed78cc4-af41-4113-b2e9-12c1fc7be94a" />
+
+
 A program for **Windows, Linux and macOS** that controls **WiiM devices** (Mini, Pro, Pro Plus, Ultra, Sound, Amp,
 Amp Pro, Amp Ultra and other WiiM/LinkPlay devices) from your PC.
 
