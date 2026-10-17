@@ -64,7 +64,7 @@ sealed partial class WiimController
     internal async Task<bool> RenameDeviceAsync(string ip, string name)
     {
         string hex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(name));
-        if (!CommandSucceeded(await SendToDeviceAsync(ip, $"setHexDeviceName:{hex}").ConfigureAwait(false))) return false;
+        if (!CommandSucceeded(await SendToDeviceAsync(ip, $"setHexDeviceName:{hex}"))) return false;
         int index = _knownDevices.FindIndex(k => k.Ip == ip);
         if (index >= 0) _knownDevices[index] = _knownDevices[index] with { Name = name };
         SaveConfig();

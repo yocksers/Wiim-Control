@@ -155,7 +155,10 @@ sealed partial class WiimController
     internal static string NowPlayingLine(DeviceStatus status)
     {
         if (!status.IsPlaying || status.Title.Length == 0) return string.Empty;
-        return status.Artist.Length > 0 ? $"{status.Title} – {status.Artist}" : status.Title;
+        string artist = status.Artist.Trim();
+        return artist.Length > 0 && !artist.Equals(status.Title.Trim(), StringComparison.OrdinalIgnoreCase)
+            ? $"{status.Title} – {artist}"
+            : status.Title;
     }
 
     private void StartNowPlayingUpdates()

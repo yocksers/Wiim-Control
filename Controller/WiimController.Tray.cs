@@ -221,6 +221,11 @@ sealed partial class WiimController
 
     private void UpdateTrayStatus()
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(UpdateTrayStatus);
+            return;
+        }
         if (_tray != null) _tray.ToolTipText = TrayTooltip();
         if (_mnuDeviceStatus != null) _mnuDeviceStatus.Header = TrayText();
         if (_mnuOutputStatus != null) _mnuOutputStatus.Header = OutputStatusText();
@@ -228,6 +233,11 @@ sealed partial class WiimController
 
     internal void RefreshDeviceStatusUi()
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(RefreshDeviceStatusUi);
+            return;
+        }
         UpdateTrayStatus();
         BuildDevicesMenu();
     }
