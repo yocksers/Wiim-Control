@@ -23,7 +23,7 @@ sealed partial class WiimController
                 ? string.Create(CultureInfo.InvariantCulture, $"{seconds / 3600}:{seconds / 60 % 60:00}:{seconds % 60:00}")
                 : string.Create(CultureInfo.InvariantCulture, $"{seconds / 60}:{seconds % 60:00}");
 
-        private static bool IsNetworkSource(DeviceStatus status) => status.Mode != 99 && InputOfMode(status.Mode) == "wifi";
+        private static bool IsNetworkSource(DeviceStatus status) => IsNetworkMode(status.Mode);
 
         private Grid BuildPositionRow(string ip, out LevelSlider slider, out TextBlock elapsed, out TextBlock total)
         {
@@ -57,26 +57,28 @@ sealed partial class WiimController
 
         private async Task ToggleShuffleAsync(string ip)
         {
-            if (!_statuses.TryGetValue(ip, out var status)) return;
+            if (!_statuses.TryGetValue(TargetOf(ip), out var status)) return;
             var (shuffle, repeat) = ParseLoop(status.Loop);
             await ChangeLoopAsync(ip, LoopMode(!shuffle, repeat));
         }
 
         private async Task CycleRepeatAsync(string ip)
         {
-            if (!_statuses.TryGetValue(ip, out var status)) return;
+            if (!_statuses.TryGetValue(TargetOf(ip), out var status)) return;
             var (shuffle, repeat) = ParseLoop(status.Loop);
             await ChangeLoopAsync(ip, LoopMode(shuffle, repeat switch { 0 => 2, 2 => 1, _ => 0 }));
         }
 
         private async Task ChangeLoopAsync(string ip, int mode)
         {
-            if (_statuses.TryGetValue(ip, out var status))
+            string target = TargetOf(ip);
+            if (_statuses.TryGetValue(target, out var status))
             {
-                _statuses[ip] = status with { Loop = mode };
-                ApplyNowPlaying(ip);
+                _statuses[target] = status with { Loop = mode };
+                ApplyNowPlaying(target);
+                ApplyFollowers();
             }
-            await _owner.SetLoopModeAsync(TargetOf(ip), mode);
+            await _owner.SetLoopModeAsync(target, mode);
             await Task.Delay(600);
             if (IsVisible) await RefreshDeviceStatusesAsync();
         }
@@ -125,8 +127,10 @@ sealed partial class WiimController
         {
             foreach (var (ip, p) in _positions)
             {
-                if (!p.Playing || !_nowPlayingControls.TryGetValue(ip, out var c)) continue;
-                ShowPosition(c, p.PositionMs + (int)(DateTime.UtcNow - p.Fetched).TotalMilliseconds);
+                if (!p.Playing) continue;
+                int positionMs = p.PositionMs + (int)(DateTime.UtcNow - p.Fetched).TotalMilliseconds;
+                if (_nowPlayingControls.TryGetValue(ip, out var c)) ShowPosition(c, positionMs);
+                if (_npIp == ip && _npControls != null) ShowPosition(_npControls, positionMs);
             }
         }
 
@@ -142,7 +146,7 @@ sealed partial class WiimController
                 }
             };
             button.Classes.Add("pill");
-            ToolTip.SetTip(button, "Sleep timer: the amp stops playing when the time is up");
+            ToolTip.SetTip(button, "Sleep timer: the device stops playing when the time is up");
             button.Click += (_, _) => ShowSleepMenu(ip, button);
             _sleepLabels[ip] = label;
             return button;
@@ -169,7 +173,7 @@ sealed partial class WiimController
         {
             if (!await _owner.SetSleepTimerAsync(ip, minutes))
             {
-                await Dialogs.MessageAsync(this, "The amp didn't accept the sleep timer.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't accept the sleep timer.", _scale);
                 return;
             }
             await RefreshDeviceStatusesAsync();

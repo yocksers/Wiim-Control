@@ -37,12 +37,22 @@ sealed partial class WiimController
 
         private Control BuildLibraryPage()
         {
-            ToolTip.SetTip(_cboLibraryAmp, "The amp to play on");
+            ToolTip.SetTip(_cboLibraryAmp, "The device to play on");
             ToolTip.SetTip(_cboLibraryServer, "The music server to browse");
             var btnFind = Pill("Find servers");
             btnFind.Click += async (_, _) => await FindLibraryServersAsync(force: true);
+            var btnAddShare = Pill("Add shared folder");
+            ToolTip.SetTip(btnAddShare, "Play music from a shared network folder (SMB), for example on a NAS or another computer");
+            btnAddShare.Click += async (_, _) => await AddSharedFolderAsync();
+            ToolTip.SetTip(_btnRemoveShare, "Remove this shared folder from the list");
+            _btnRemoveShare.Click += async (_, _) => await RemoveSharedFolderAsync();
+            _btnRemoveShare.IsVisible = false;
+            var btnSqueezelite = Pill("Squeezelite…");
+            ToolTip.SetTip(btnSqueezelite, "Connect the device to a Lyrion Music Server through Squeezelite");
+            btnSqueezelite.Click += async (_, _) => await ShowSqueezeliteAsync();
             _cboLibraryServer.SelectionChanged += async (_, _) =>
             {
+                _btnRemoveShare.IsVisible = SelectedLibraryServer?.IsShare == true;
                 if (_libraryFilling || SelectedLibraryServer is not { } server) return;
                 _owner.SetLibraryServer(server.Udn);
                 await OpenLibraryRootAsync(server);
@@ -63,7 +73,8 @@ sealed partial class WiimController
             Grid.SetRow(_libraryScroll, 1);
             body.Children.Add(_libraryScroll);
 
-            var page = Page("Library", _lblLibraryStatus, [_cboLibraryAmp, _cboLibraryServer, btnFind], body, scroll: false);
+            HookRoonStatus();
+            var page = Page("Library", _lblLibraryStatus, [_cboLibraryAmp, _cboLibraryServer, btnFind, btnAddShare, _btnRemoveShare, btnSqueezelite], body, scroll: false);
             page.PropertyChanged += async (_, e) =>
             {
                 if (e.Property == IsVisibleProperty && page.IsVisible && !_librarySearched) await FindLibraryServersAsync(force: false);
@@ -71,14 +82,17 @@ sealed partial class WiimController
             return page;
         }
 
-        private static Task<BrowsePage?> BrowseLibraryAsync(MediaServer server, string id, int start, int count) =>
-            server.IsLyrion ? Lms.BrowseAsync(server, id, start, count) : Upnp.BrowseAsync(server, id, start, count);
+        private Task<BrowsePage?> BrowseLibraryAsync(MediaServer server, string id, int start, int count) =>
+            server.IsRoon ? _owner.RoonBrowseAsync(server, RoonPath, start, count)
+            : server.IsShare ? _owner.BrowseShareAsync(server, id, start, count)
+            : server.IsLyrion ? Lms.BrowseAsync(server, id, start, count)
+            : Upnp.BrowseAsync(server, id, start, count);
 
         private string? AmpOf(ComboBox combo) => (combo.SelectedItem as ComboBoxItem)?.Tag as string;
 
         private void FillAmpCombo(ComboBox combo)
         {
-            string selected = AmpOf(combo) ?? _owner._deviceIp;
+            string selected = (_followActive ? null : AmpOf(combo)) ?? _owner._deviceIp;
             combo.Items.Clear();
             foreach (var d in _owner._knownDevices) combo.Items.Add(ComboItem(d.Ip, d.Name));
             int index = _owner._knownDevices.FindIndex(d => d.Ip == selected);
@@ -94,13 +108,17 @@ sealed partial class WiimController
                 _lblLibraryStatus.Text = "Looking for music servers…";
                 var upnp = Upnp.DiscoverMediaServersAsync(TimeSpan.FromSeconds(3));
                 var lyrion = Lms.DiscoverAsync(TimeSpan.FromSeconds(3));
-                await Task.WhenAll(upnp, lyrion);
+                var roon = RoonConnection.DiscoverAsync(TimeSpan.FromSeconds(3));
+                await Task.WhenAll(upnp, lyrion, roon);
                 servers = upnp.Result.Concat(lyrion.Result)
+                    .Concat(roon.Result.Select(c => new MediaServer($"Roon · {c.Name}", $"roon:{c.UniqueId}", $"{c.Host}:{c.Port}", string.Empty,
+                        c.Host == "127.0.0.1", IsRoon: true)))
                     .OrderBy(s => s.OnThisComputer ? 0 : 1)
                     .ThenBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
                 _owner._mediaServers = servers;
             }
+            servers = _owner.ShareServers.Concat(servers).ToList();
             string selected = SelectedLibraryServer?.Udn ?? _owner.LibraryServer;
             _libraryFilling = true;
             _cboLibraryServer.Items.Clear();
@@ -108,6 +126,7 @@ sealed partial class WiimController
             int index = servers.FindIndex(s => s.Udn == selected);
             _cboLibraryServer.SelectedIndex = index >= 0 ? index : servers.Count > 0 ? 0 : -1;
             _libraryFilling = false;
+            _btnRemoveShare.IsVisible = SelectedLibraryServer?.IsShare == true;
 
             if (SelectedLibraryServer is not { } server)
             {
@@ -117,7 +136,8 @@ sealed partial class WiimController
                 _lblLibraryStatus.Text = "No music server found";
                 _libraryRows.Children.Add(Muted(
                     "No music servers were found on your network. Start a DLNA/UPnP media server, for example Windows Media Player " +
-                    "media streaming, MinimServer, Plex, Jellyfin or a NAS media server, or a Lyrion Music Server, and click Find servers."));
+                    "media streaming, MinimServer, Plex, Jellyfin or a NAS media server, a Lyrion Music Server or Roon, and click Find servers. " +
+                    "You can also click Add shared folder to play music from a shared network folder."));
                 return;
             }
             _owner.SetLibraryServer(server.Udn);
@@ -126,6 +146,7 @@ sealed partial class WiimController
 
         private async Task OpenLibraryRootAsync(MediaServer server)
         {
+            if (server.IsRoon) _owner.UseRoonCore(server.ContentDirectoryUrl);
             _libraryPath.Clear();
             _libraryPath.Add(("0", server.Name));
             await LoadLibraryFolderAsync();
@@ -133,6 +154,7 @@ sealed partial class WiimController
 
         private async Task OpenLibraryFolderAsync(MediaEntry folder, int depth)
         {
+            if (IsRoonInput(folder) && await OpenRoonInputAsync(folder, depth)) return;
             if (_libraryPath.Count > depth) _libraryPath.RemoveRange(depth, _libraryPath.Count - depth);
             _libraryPath.Add((folder.Id, folder.Title));
             await LoadLibraryFolderAsync();
@@ -149,12 +171,24 @@ sealed partial class WiimController
 
             ClearLibraryRows();
             _libraryScroll.Offset = default;
+            if (page == null && server.IsRoon && _owner.RoonStatus == RoonState.WaitingForApproval)
+            {
+                ShowRoonApprovalHint();
+                return;
+            }
+            if (page == null && server.IsShare && await AskSharedFolderLoginAsync(server))
+            {
+                await LoadLibraryFolderAsync();
+                return;
+            }
             if (page == null)
             {
                 _libraryEntries = [];
                 _libraryTotal = 0;
                 _lblLibraryStatus.Text = "Couldn't read this folder";
-                _libraryRows.Children.Add(Muted("The music server didn't answer. Check that it's running, then click Find servers."));
+                _libraryRows.Children.Add(Muted(server.IsShare
+                    ? "The shared folder couldn't be opened. Check that the computer or NAS is switched on and that the user name and password still work."
+                    : "The music server didn't answer. Check that it's running, then click Find servers."));
                 UpdateLibraryButtons();
                 return;
             }
@@ -277,7 +311,12 @@ sealed partial class WiimController
             Grid.SetColumn(text, 1);
             grid.Children.Add(text);
             Control end;
-            if (entry.IsContainer)
+            bool roon = SelectedLibraryServer?.IsRoon == true;
+            if (entry.IsContainer && roon && (IsRoonInput(entry) || !HasRoonPlay(entry)))
+            {
+                end = new PathIcon { Data = Icons.ChevronRight, Width = 20, Height = 20, Foreground = Palette.TextDim, VerticalAlignment = VerticalAlignment.Center };
+            }
+            else if (entry.IsContainer)
             {
                 var (play, _) = IconButton(Icons.Play);
                 ToolTip.SetTip(play, $"Play {entry.Title}");
@@ -288,16 +327,25 @@ sealed partial class WiimController
                     Children =
                     {
                         play,
+                        LibraryMoreButton(entry, index),
                         new PathIcon { Data = Icons.ChevronRight, Width = 20, Height = 20, Foreground = Palette.TextDim, VerticalAlignment = VerticalAlignment.Center }
                     }
                 };
             }
             else
             {
-                end = new TextBlock
+                end = new StackPanel
                 {
-                    Text = entry.Duration > TimeSpan.Zero ? FormatTime((int)entry.Duration.TotalSeconds) : string.Empty,
-                    Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0)
+                    Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = entry.Duration > TimeSpan.Zero ? FormatTime((int)entry.Duration.TotalSeconds) : string.Empty,
+                            Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0)
+                        },
+                        LibraryMoreButton(entry, index)
+                    }
                 };
             }
             Grid.SetColumn(end, 2);
@@ -337,6 +385,71 @@ sealed partial class WiimController
             icon.IsVisible = false;
         }
 
+        private Button LibraryMoreButton(MediaEntry entry, int index)
+        {
+            var (more, _) = IconButton(Icons.More);
+            ToolTip.SetTip(more, "Play now, play next or add to the queue");
+            var menu = new MenuFlyout();
+            void Add(string header, Func<Task> action)
+            {
+                var item = new MenuItem { Header = header };
+                item.Click += async (_, _) => await action();
+                menu.Items.Add(item);
+            }
+            if (SelectedLibraryServer?.IsRoon == true)
+            {
+                Add("Play now", () => RoonPlayAsync(entry, RoonPlayNow));
+                Add("Play next", () => RoonPlayAsync(entry, RoonAddNext));
+                Add("Add to queue", () => RoonPlayAsync(entry, RoonQueue));
+                Add("Start Roon Radio", () => RoonPlayAsync(entry, RoonStartRadio));
+                more.Flyout = menu;
+                return more;
+            }
+            Add("Play now", () => entry.IsContainer ? PlayLibraryContainerAsync(entry) : PlayLibraryFromAsync(index));
+            Add("Play next", () => AddLibraryToQueueAsync(entry, index, next: true));
+            Add("Add to queue", () => AddLibraryToQueueAsync(entry, index, next: false));
+            more.Flyout = menu;
+            return more;
+        }
+
+        private async Task AddLibraryToQueueAsync(MediaEntry entry, int index, bool next)
+        {
+            if (SelectedLibraryServer is not { } server) return;
+            if (AmpOf(_cboLibraryAmp) is not { } ip)
+            {
+                await Dialogs.MessageAsync(this, "Add a WiiM device on the Devices page first.", _scale);
+                return;
+            }
+            List<MediaEntry> tracks = [entry];
+            if (entry.IsContainer)
+            {
+                _lblLibraryStatus.Text = $"Loading {entry.Title}…";
+                tracks = (await BrowseLibraryAsync(server, entry.Id, 0, MaxQueueTracks))?.Entries.Where(e => e.IsAudio).ToList() ?? [];
+                if (tracks.Count == 0)
+                {
+                    UpdateLibraryStatus();
+                    await Dialogs.MessageAsync(this, $"{entry.Title} has no tracks of its own. Open it to pick an album or a track.", _scale);
+                    return;
+                }
+            }
+            string target = TargetOf(ip);
+            var added = await _owner.AddToQueueAsync(target, server, tracks, next);
+            if (added == null)
+            {
+                await PlayLibraryTracksAsync(ip, new PlaySource(server, entry.IsContainer ? entry.Id : _libraryPath[^1].Id,
+                    entry.IsContainer ? entry.Title : _libraryPath[^1].Title, entry.IsContainer ? 0 : index, entry.ArtUrl), tracks, 0, _lblLibraryStatus);
+                return;
+            }
+            if (added == false)
+            {
+                UpdateLibraryStatus();
+                await Dialogs.MessageAsync(this, "The device didn't accept the tracks.", _scale);
+                return;
+            }
+            string what = tracks.Count == 1 ? tracks[0].Title : $"{entry.Title} ({tracks.Count} tracks)";
+            _lblLibraryStatus.Text = next ? $"{what} plays next" : $"Added {what} to the queue";
+        }
+
         private async Task KeepLibraryArtAsync(Task<Bitmap?> download, int version)
         {
             var bitmap = await download;
@@ -361,14 +474,14 @@ sealed partial class WiimController
             {
                 string host = new Uri(server.ContentDirectoryUrl).Host;
                 if (!await Dialogs.ConfirmAsync(this,
-                        $"{amp} isn't connected to {server.Name}. Connect it now?\n\nSqueezelite has to be switched on for this amp in the WiiM Home app.",
+                        $"{amp} isn't connected to {server.Name}. Connect it now?\n\nSqueezelite has to be switched on for this device in the WiiM Home app.",
                         _scale)) return false;
                 status.Text = $"Connecting {amp} to {server.Name}…";
                 if (!await _owner.ConnectSqueezeliteAsync(ip, host) || !await _owner.WaitForLyrionPlayerAsync(ip, server))
                 {
                     ResetStatus(status);
                     await Dialogs.MessageAsync(this,
-                        $"{amp} didn't connect to {server.Name}. Check that Squeezelite is switched on for this amp in the WiiM Home app.", _scale);
+                        $"{amp} didn't connect to {server.Name}. Check that Squeezelite is switched on for this device in the WiiM Home app.", _scale);
                     return false;
                 }
                 result = await _owner.PlayOnLyrionAsync(ip, server, trackIds, start);
@@ -379,9 +492,9 @@ sealed partial class WiimController
             return false;
         }
 
-        private static QueueTrack ToQueueTrack(MediaEntry e) => new(e.Url, e.Title, e.Artist, e.Album, e.ArtUrl, e.Duration, e.ProtocolInfo);
+        private static QueueTrack ToQueueTrack(MediaEntry e) => QueueTrackOf(e);
 
-        private static async Task<(List<MediaEntry> Tracks, int Start)?> CollectFolderTracksAsync(MediaServer server, string folderId, int index)
+        private async Task<(List<MediaEntry> Tracks, int Start)?> CollectFolderTracksAsync(MediaServer server, string folderId, int index)
         {
             var page = await BrowseLibraryAsync(server, folderId, 0, MaxQueueTracks);
             if (page == null) return null;
@@ -393,6 +506,11 @@ sealed partial class WiimController
 
         private async Task PlayLibraryFolderAsync()
         {
+            if (SelectedLibraryServer?.IsRoon == true)
+            {
+                await RoonPlayFolderAsync();
+                return;
+            }
             int first = _libraryEntries.FindIndex(e => e.IsAudio);
             if (first >= 0) await PlayLibraryFromAsync(first);
         }
@@ -400,6 +518,11 @@ sealed partial class WiimController
         private async Task PlayLibraryFromAsync(int index)
         {
             if (SelectedLibraryServer is not { } server || _libraryPath.Count == 0) return;
+            if (server.IsRoon)
+            {
+                if (index >= 0 && index < _libraryEntries.Count) await RoonPlayAsync(_libraryEntries[index], RoonPlayNow);
+                return;
+            }
             List<MediaEntry> tracks;
             int start;
             if (_libraryEntries.Count >= _libraryTotal && _libraryEntries.Count(e => e.IsAudio) <= MaxQueueTracks)
@@ -422,6 +545,11 @@ sealed partial class WiimController
         private async Task PlayLibraryContainerAsync(MediaEntry folder)
         {
             if (SelectedLibraryServer is not { } server) return;
+            if (server.IsRoon)
+            {
+                await RoonPlayAsync(folder, RoonPlayNow);
+                return;
+            }
             _lblLibraryStatus.Text = $"Loading {folder.Title}…";
             var page = await BrowseLibraryAsync(server, folder.Id, 0, MaxQueueTracks);
             var tracks = page?.Entries.Where(e => e.IsAudio).ToList() ?? [];
@@ -442,7 +570,7 @@ sealed partial class WiimController
         {
             if (ip == null)
             {
-                await Dialogs.MessageAsync(this, "Add a Wiim amp on the Devices page first.", _scale);
+                await Dialogs.MessageAsync(this, "Add a WiiM device on the Devices page first.", _scale);
                 return false;
             }
             if (tracks.Count == 0 || _libraryPlaying) return false;
@@ -456,14 +584,14 @@ sealed partial class WiimController
             {
                 played = server.IsLyrion
                     ? await PlayOnLyrionAsync(target, server, tracks.Take(MaxQueueTracks).Select(Lms.TrackId).OfType<string>().ToList(), start, status)
-                    : await _owner.PlayTracksAsync(target, queue, start);
+                    : await _owner.PlayTracksAsync(target, queue, start, server.IsShare);
             }
             finally { _libraryPlaying = false; }
             if (!played)
             {
                 if (server.IsLyrion) return false;
                 ResetStatus(status);
-                await Dialogs.MessageAsync(this, "The amp didn't accept the tracks. Check that it's switched on and reachable.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't accept the tracks. Check that it's switched on and reachable.", _scale);
                 return false;
             }
 
@@ -475,7 +603,8 @@ sealed partial class WiimController
             detail.Add(server.Name);
             _owner.AddRecent(new RecentItem(source.FolderTitle, string.Join(" · ", detail),
                 first.ArtUrl.Length > 0 ? first.ArtUrl : source.FolderArt, DateTime.Now, null,
-                new RecentLibrary(server.Name, server.Udn, server.ContentDirectoryUrl, server.IsLyrion, source.FolderId, source.FolderIndex)));
+                new RecentLibrary(server.Name, server.Udn, server.ContentDirectoryUrl, server.IsLyrion, source.FolderId, source.FolderIndex,
+                    IsShare: server.IsShare)));
 
             string name = _owner._knownDevices.FirstOrDefault(d => d.Ip == target).Name ?? target;
             status.Text = string.Create(CultureInfo.InvariantCulture, $"Playing {first.Title} on {name}");

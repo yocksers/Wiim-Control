@@ -16,7 +16,7 @@ sealed partial class WiimController
             var state = await _owner.GetRoomFitStateAsync(_eqDeviceIp);
             if (state == null)
             {
-                await Dialogs.MessageAsync(this, "Couldn't read RoomFit from the amp.", _scale);
+                await Dialogs.MessageAsync(this, "Couldn't read RoomFit from the device.", _scale);
                 return;
             }
 
@@ -24,8 +24,8 @@ sealed partial class WiimController
             var content = new StackPanel { Width = 680, Spacing = 6 };
             content.Children.Add(new TextBlock { Text = name, Classes = { "heading" } });
             content.Children.Add(Muted(state.Enabled
-                ? "The correction the amp applies now. To see another profile, pick it in RoomFit profile first."
-                : "RoomFit is off, so the amp doesn't apply this correction now."));
+                ? "The correction the device applies now. To see another profile, pick it in RoomFit profile first."
+                : "RoomFit is off, so the device doesn't apply this correction now."));
             var channels = state.Left is { } left && state.Right is { } right
                 ? new[] { ("Left", left), ("Right", right) }
                 : [(string.Empty, state.Stereo)];

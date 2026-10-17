@@ -1,5 +1,5 @@
 #define MyAppName "Wiim Control"
-#define MyAppVersion "1.12"
+#define MyAppVersion "1.20"
 #define MyAppPublisher "Wiim Control"
 #define MyAppExeName "WiimControl.exe"
 #define MyOldAppName "Wiim Volume Control"
@@ -38,6 +38,7 @@ Type: files; Name: "{autodesktop}\{#MyOldAppName}.lnk"
 
 [Files]
 Source: "{#MyPublishDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyPublishDir}\SMBLibrary.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -27,8 +27,8 @@ sealed partial class WiimController
             backup.Click += async (_, _) => await BackupAsync();
             restore.Click += async (_, _) => await RestoreAsync();
             return Card("Backup and restore",
-                Muted("Saves Wiim Control's settings and each amp's own EQ presets, parametric EQ presets and RoomFit profiles to a file. " +
-                      "Restore them after a reset or on a new PC, or copy presets from one amp to another."),
+                Muted("Saves Wiim Control's settings and each device's own EQ presets, parametric EQ presets and RoomFit profiles to a file. " +
+                      "Restore them after a reset or on a new PC, or copy presets from one device to another."),
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0), Children = { backup, restore } },
                 _lblBackupStatus);
         }
@@ -147,7 +147,7 @@ sealed partial class WiimController
                 Text = string.Create(CultureInfo.CurrentCulture, $"Backup from {backup.Created:g} (Wiim Control {backup.Version})"),
                 Classes = { "heading" }, TextWrapping = TextWrapping.Wrap
             });
-            var settings = WrappedCheck("Wiim Control's settings: amps, hotkeys, radio favourites and all other settings. " +
+            var settings = WrappedCheck("Wiim Control's settings: devices, hotkeys, radio favourites and all other settings. " +
                                         "Wiim Control restarts to use them.", false);
             settings.IsEnabled = backup.Settings.Length > 0;
             content.Children.Add(settings);
@@ -174,7 +174,7 @@ sealed partial class WiimController
                 choices.Add(new AmpRestoreChoice(amp, equalizer, roomFit, target));
             }
             if (choices.Count > 0 && devices.Count == 0)
-                content.Children.Add(Muted("Add your amps first, or restore the settings first, to restore their presets."));
+                content.Children.Add(Muted("Add your devices first, or restore the settings first, to restore their presets."));
             if (choices.Count > 0) content.Children.Add(Muted("Presets and profiles with the same name are replaced."));
 
             if (!await Dialogs.ChooseAsync(this, new ScrollViewer { Content = content, MaxHeight = 560 }, "Restore", _scale)) return;
@@ -193,7 +193,7 @@ sealed partial class WiimController
                     var result = await _owner.RestoreAmpAsync(ip, choice.Amp, equalizer, roomFit);
                     lines.Add(result.Failed == 0
                         ? $"• {name}: {Plural(result.Restored, "preset or profile", "presets and profiles")} restored"
-                        : $"• {name}: {result.Restored} restored, {result.Failed} not accepted by the amp");
+                        : $"• {name}: {result.Restored} restored, {result.Failed} not accepted by the device");
                 }
                 ShowBackupStatus(string.Empty);
                 if (IsVisible && _eqDeviceIp.Length > 0) await RefreshEqAsync();

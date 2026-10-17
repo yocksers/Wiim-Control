@@ -1,12 +1,14 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Automation.Peers;
 using Avalonia.Input;
 using Avalonia.Media;
 
 namespace WiimControl;
 
-sealed class LevelSlider : Control
+sealed class LevelSlider : Control, IRangeSlider
 {
+    private RangeSliderPeer? _peer;
     private static readonly IPen FocusPen = new Pen(Palette.AccentHover, 2);
     private const double KnobSize = 14;
     private int _min, _max = 100, _value;
@@ -26,6 +28,17 @@ sealed class LevelSlider : Control
     public int Minimum { get => _min; set { _min = value; Value = _value; InvalidateVisual(); } }
     public int Maximum { get => _max; set { _max = value; Value = _value; InvalidateVisual(); } }
     public bool FillFromCenter { get; set; }
+
+    int IRangeSlider.SmallStep => 1;
+
+    void IRangeSlider.SetValueFromAutomation(int value)
+    {
+        int before = _value;
+        Value = value;
+        if (_value != before) ValueCommitted?.Invoke(this, EventArgs.Empty);
+    }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => _peer = new RangeSliderPeer(this, this);
     public bool IsDragging => _dragging;
 
     public bool Muted
@@ -41,8 +54,10 @@ sealed class LevelSlider : Control
         {
             int v = Math.Clamp(value, _min, _max);
             if (v == _value) return;
+            int old = _value;
             _value = v;
             InvalidateVisual();
+            _peer?.RaiseValueChanged(old, v);
             ValueChanged?.Invoke(this, EventArgs.Empty);
         }
     }

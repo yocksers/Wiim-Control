@@ -53,14 +53,63 @@ static class RadioDirectory
         }
         catch (Exception) { }
 #endif
-        try { return RegionInfo.CurrentRegion.TwoLetterISORegionName.ToUpperInvariant(); }
-        catch (Exception) { return "US"; }
+        if (OperatingSystem.IsLinux() && (CountryFromTimeZone() ?? CountryFromLocale()) is { } fromSystem) return fromSystem;
+        try
+        {
+            string region = RegionInfo.CurrentRegion.TwoLetterISORegionName.ToUpperInvariant();
+            if (region.Length == 2 && region != "IV") return region;
+        }
+        catch (Exception) { }
+        return CountryFromTimeZone() ?? CountryFromLocale() ?? "US";
     }
+
+    private static string? CountryFromTimeZone()
+    {
+        try
+        {
+            string id = TimeZoneInfo.Local.Id;
+            if (!id.Contains('/')) return null;
+            foreach (var file in new[] { "/usr/share/zoneinfo/zone.tab", "/usr/share/zoneinfo/zone1970.tab" })
+            {
+                if (!File.Exists(file)) continue;
+                foreach (var line in File.ReadLines(file))
+                {
+                    if (line.StartsWith('#')) continue;
+                    var parts = line.Split('\t');
+                    if (parts.Length < 3 || parts[2] != id) continue;
+                    string code = parts[0].Split(',')[0].Trim();
+                    if (code.Length == 2) return code.ToUpperInvariant();
+                }
+            }
+        }
+        catch (Exception) { }
+        return null;
+    }
+
+    private static string? CountryFromLocale()
+    {
+        foreach (var name in new[] { "LC_ALL", "LC_ADDRESS", "LC_MONETARY", "LC_TIME", "LC_MESSAGES", "LANG" })
+        {
+            string? value = Environment.GetEnvironmentVariable(name);
+            if (string.IsNullOrEmpty(value)) continue;
+            var match = System.Text.RegularExpressions.Regex.Match(value, "^[A-Za-z]{2,3}_([A-Za-z]{2})(?![A-Za-z])");
+            if (match.Success) return match.Groups[1].Value.ToUpperInvariant();
+        }
+        return null;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> KnownCountryNames = new(StringComparer.OrdinalIgnoreCase);
 
     public static string CountryName(string code, string fallback = "")
     {
-        try { return new RegionInfo(code).EnglishName; }
-        catch (ArgumentException) { return fallback.Length > 0 ? fallback : code; }
+        if (fallback.Length > 0 && fallback != code) KnownCountryNames.TryAdd(code, fallback);
+        try
+        {
+            string name = new RegionInfo(code).EnglishName;
+            if (name.Length > 0 && !name.Contains("Invariant", StringComparison.OrdinalIgnoreCase)) return name;
+        }
+        catch (Exception) { }
+        return KnownCountryNames.TryGetValue(code, out var known) ? known : fallback.Length > 0 ? fallback : code;
     }
 
     public static async Task<List<RadioStation>?> SearchAsync(string? name = null, string? tag = null, string? country = null, int offset = 0)

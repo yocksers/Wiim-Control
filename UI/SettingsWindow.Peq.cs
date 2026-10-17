@@ -18,7 +18,8 @@ sealed partial class WiimController
         private static readonly (PeqFilter Filter, string Label)[] PeqFilterLabels =
             [(PeqFilter.Off, "Off"), (PeqFilter.LowShelf, "Low shelf"), (PeqFilter.Peak, "Peak"), (PeqFilter.HighShelf, "High shelf")];
 
-        private readonly ComboBox _cboEqType = new() { Width = 240 };
+        private readonly Button _btnGraphicEq = Segment("Graphic EQ");
+        private readonly Button _btnParametricEq = Segment("Parametric EQ");
         private Control? _eqTypeRow;
         private Control? _geqEditor;
         private Control? _peqEditor;
@@ -39,7 +40,7 @@ sealed partial class WiimController
         private readonly HashSet<(int Channel, int Index)> _peqDirty = [];
         private readonly DispatcherTimer _peqSendTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
         private bool _peqSplit;
-        private bool _peqSending;
+        private readonly SemaphoreSlim _peqFlushGate = new(1, 1);
         private int _peqChannel;
         private int _peqSelected = -1;
 
@@ -76,7 +77,7 @@ sealed partial class WiimController
                 if (_eqLoading || (_cboPeqChannels.SelectedItem as ComboBoxItem)?.Tag is not bool split || split == _peqSplit) return;
                 await SendPendingEqBandsAsync();
                 if (!await _owner.SetPeqSplitAsync(_eqDeviceIp, _eqSource, split))
-                    await Dialogs.MessageAsync(this, "The amp didn't change the channel setting.", _scale);
+                    await Dialogs.MessageAsync(this, "The device didn't change the channel setting.", _scale);
                 _peqChannel = split ? 1 : 0;
                 await RefreshEqAsync();
             };
@@ -151,7 +152,6 @@ sealed partial class WiimController
             Grid.SetRow(scroll, 3);
             grid.Children.Add(scroll);
             var card = new Border { Child = grid, IsVisible = false };
-            card.Classes.Add("card");
 
             _eqEditControls.AddRange([_peqGraph, _cboPeqChannels, _btnPeqLeft, _btnPeqRight, btnImport, btnReset, .. _peqFilters]);
             _peqGraph.Bands = PeqEdited;
@@ -188,15 +188,15 @@ sealed partial class WiimController
             if (import.Bands.Count == 0)
             {
                 await Dialogs.MessageAsync(this, string.Join("\n\n",
-                    ["The file has no peak or shelf filters with a Q the amp can use.", .. notes]), _scale);
+                    ["The file has no peak or shelf filters with a Q the device can use.", .. notes]), _scale);
                 return;
             }
 
             var used = import.Bands.Take(PeqBandCount).ToList();
             if (import.Bands.Count > PeqBandCount)
-                notes.Add($"The file has {import.Bands.Count} usable filters; the amp has {PeqBandCount} bands, so only the first {PeqBandCount} are used.");
+                notes.Add($"The file has {import.Bands.Count} usable filters; the device has {PeqBandCount} bands, so only the first {PeqBandCount} are used.");
             if (import.Adjusted > 0)
-                notes.Add($"{import.Adjusted} filter(s) were limited to the amp's range (±12 dB, Q 0.01 to 24).");
+                notes.Add($"{import.Adjusted} filter(s) were limited to the device's range (±12 dB, Q 0.01 to 24).");
             if (import.Preamp is { } preamp && preamp != 0)
                 notes.Add(string.Create(CultureInfo.InvariantCulture,
                     $"The file's preamp of {preamp:0.0} dB isn't applied: the parametric EQ has no preamp. Lower the volume if you hear distortion."));
@@ -338,29 +338,74 @@ sealed partial class WiimController
             SelectPeqBand(_peqSelected);
         }
 
-        private void ShowEqEditor()
+        private static Button Segment(string text)
         {
-            if (_geqEditor != null) _geqEditor.IsVisible = !IsParametric;
-            if (_peqEditor != null) _peqEditor.IsVisible = IsParametric;
+            var button = new Button { Content = text };
+            button.Classes.Add("segment");
+            return button;
         }
 
-        private async Task FlushPeqAsync()
+        private Control BuildEqTypeSwitch()
         {
-            if (_peqSending) return;
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 4 };
+            grid.Children.Add(_btnGraphicEq);
+            Grid.SetColumn(_btnParametricEq, 1);
+            grid.Children.Add(_btnParametricEq);
+            _btnGraphicEq.Click += async (_, _) => await SwitchEqTypeAsync(DefaultEqPlugin);
+            _btnParametricEq.Click += async (_, _) => await SwitchEqTypeAsync(PeqPlugin);
+            ToolTip.SetTip(_btnGraphicEq, "10-band graphic EQ");
+            ToolTip.SetTip(_btnParametricEq, "Parametric EQ with filter type, frequency, gain and Q for each band");
+            var border = new Border { Child = grid, Margin = new Thickness(0, 0, 0, 14), IsVisible = false };
+            border.Classes.Add("segments");
+            return border;
+        }
+
+        private async Task SwitchEqTypeAsync(string plugin)
+        {
+            if (_eqLoading || plugin == _eqPluginUri) return;
+            await SendPendingEqBandsAsync();
+            _eqPluginUri = plugin;
+            ShowEqEditor();
+            if (_chkEqEnabled.IsChecked == true && !await _owner.SetEqTypeAsync(_eqDeviceIp, EqTarget, plugin))
+                await Dialogs.MessageAsync(this, "The device didn't switch the EQ type.", _scale);
+            await RefreshEqAsync();
+        }
+
+        private void ShowEqEditor()
+        {
+            _btnGraphicEq.Classes.Set("selected", !IsParametric);
+            _btnParametricEq.Classes.Set("selected", IsParametric);
+            var (shown, hidden) = IsParametric ? (_peqEditor, _geqEditor) : (_geqEditor, _peqEditor);
+            if (hidden != null) hidden.IsVisible = false;
+            if (shown == null || shown.IsVisible) return;
+            shown.Opacity = 0;
+            shown.IsVisible = true;
+            Dispatcher.UIThread.Post(() => shown.Opacity = 1, DispatcherPriority.Background);
+        }
+
+        private async Task<bool> FlushPeqAsync()
+        {
             _peqSendTimer.Stop();
-            if (_peqDirty.Count == 0) return;
-
-            var groups = _peqDirty.GroupBy(d => d.Channel)
-                .Select(g => (Channel: g.Key, Bands: g.Select(d => d.Index).Order().Select(i => (i, _peqChannels[g.Key][i])).ToList()))
-                .ToList();
-            _peqDirty.Clear();
-
-            _peqSending = true;
+            await _peqFlushGate.WaitAsync();
             try
             {
-                foreach (var (channel, bands) in groups) await _owner.SetPeqBandsAsync(_eqDeviceIp, _eqSource, _peqSplit, channel, bands);
+                while (_peqDirty.Count > 0)
+                {
+                    var dirty = _peqDirty.ToList();
+                    var groups = dirty.GroupBy(d => d.Channel)
+                        .Select(g => (Channel: g.Key, Bands: g.Select(d => d.Index).Order().Select(i => (i, _peqChannels[g.Key][i])).ToList()))
+                        .ToList();
+                    _peqDirty.Clear();
+                    var failed = new List<int>();
+                    foreach (var (channel, bands) in groups)
+                        if (!await _owner.SetPeqBandsAsync(_eqDeviceIp, _eqSource, _peqSplit, channel, bands)) failed.Add(channel);
+                    if (failed.Count == 0) continue;
+                    foreach (var item in dirty.Where(d => failed.Contains(d.Channel))) _peqDirty.Add(item);
+                    return false;
+                }
+                return true;
             }
-            finally { _peqSending = false; }
+            finally { _peqFlushGate.Release(); }
         }
     }
 }

@@ -33,7 +33,7 @@ sealed partial class WiimController
                     _presetHint,
                     _presetTiles,
                     Muted("Click a preset to play it, or to run a routine (for example switching the output and EQ). " +
-                          "Presets and routines are saved in the WiiM Home app; the amp doesn't allow saving them from here.")
+                          "Presets and routines are saved in the WiiM Home app; the device doesn't allow saving them from here.")
                 }
             };
             return Page("Presets", _lblPresetStatus, [_cboPresetAmp, btnRefresh], body);
@@ -41,7 +41,7 @@ sealed partial class WiimController
 
         private void LoadPresetAmps()
         {
-            string selected = SelectedPresetAmpIp ?? _owner._deviceIp;
+            string selected = (_followActive ? null : SelectedPresetAmpIp) ?? _owner._deviceIp;
             _cboPresetAmp.Items.Clear();
             foreach (var d in _owner._knownDevices) _cboPresetAmp.Items.Add(ComboItem(d.Ip, d.Name));
             int index = _owner._knownDevices.FindIndex(d => d.Ip == selected);
@@ -55,7 +55,7 @@ sealed partial class WiimController
             {
                 _lblPresetStatus.Text = string.Empty;
                 _presetTiles.Children.Clear();
-                _presetHint.Text = "Add a Wiim amp on the Devices page first.";
+                _presetHint.Text = "Add a WiiM device on the Devices page first.";
                 _presetHint.IsVisible = true;
                 return;
             }
@@ -68,12 +68,12 @@ sealed partial class WiimController
             if (presets == null)
             {
                 _lblPresetStatus.Text = "Not reachable";
-                _presetHint.Text = "Couldn't reach this amp.";
+                _presetHint.Text = "Couldn't reach this device.";
                 _presetHint.IsVisible = true;
                 return;
             }
             _lblPresetStatus.Text = $"{presets.Presets.Count} of {presets.Slots} saved";
-            _presetHint.Text = "No presets are saved on this amp yet. Save your favourite stations and playlists as presets in the " +
+            _presetHint.Text = "No presets are saved on this device yet. Save your favourite stations and playlists as presets in the " +
                                "WiiM Home app, and they'll show up here.";
             _presetHint.IsVisible = presets.Presets.Count == 0;
             for (int number = 1; number <= presets.Slots; number++)
@@ -133,7 +133,7 @@ sealed partial class WiimController
             {
                 _lblPresetStatus.Text = preset.IsRoutine ? $"Running {preset.Name}…" : $"Playing {preset.Name}…";
                 if (!await _owner.PlayPresetOnAsync(TargetOf(ip), number))
-                    await Dialogs.MessageAsync(this, "The amp didn't start the preset.", _scale);
+                    await Dialogs.MessageAsync(this, "The device didn't start the preset.", _scale);
                 await Task.Delay(1500);
                 if (IsVisible) await RefreshDeviceStatusesAsync();
             };

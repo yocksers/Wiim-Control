@@ -5,8 +5,9 @@ using Avalonia.Media;
 
 namespace WiimControl;
 
-sealed class EqSlider : Control
+sealed class EqSlider : Control, IRangeSlider
 {
+    private RangeSliderPeer? _peer;
     private static readonly IPen CenterPen = new Pen(Palette.TextDim, 1);
     private static readonly IPen FocusPen = new Pen(Palette.AccentHover, 2);
     private const double KnobSize = 16;
@@ -16,6 +17,12 @@ sealed class EqSlider : Control
     public event EventHandler? ValueChanged;
     public int Center { get; set; } = 50;
     public int Step { get; set; } = 1;
+
+    int IRangeSlider.SmallStep => Math.Max(1, Step);
+
+    void IRangeSlider.SetValueFromAutomation(int value) => Value = value;
+
+    protected override Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => _peer = new RangeSliderPeer(this, this);
 
     public int Minimum { get => _min; set { _min = value; Value = _value; InvalidateVisual(); } }
     public int Maximum { get => _max; set { _max = value; Value = _value; InvalidateVisual(); } }
@@ -27,8 +34,10 @@ sealed class EqSlider : Control
         {
             int v = Math.Clamp(value, _min, _max);
             if (v == _value) return;
+            int old = _value;
             _value = v;
             InvalidateVisual();
+            _peer?.RaiseValueChanged(old, v);
             ValueChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -51,6 +60,17 @@ sealed class EqSlider : Control
         return (int)Math.Round(raw / Step) * Step;
     }
 
+    private static readonly Color LevelLow = Color.Parse("#3DD68C");
+    private static readonly Color LevelMid = Color.Parse("#F2D24B");
+    private static readonly Color LevelHigh = Color.Parse("#F0503C");
+
+    private static IBrush LevelBrush(double x, double from, double to) => new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(x, from, RelativeUnit.Absolute),
+        EndPoint = new RelativePoint(x, to, RelativeUnit.Absolute),
+        GradientStops = { new GradientStop(LevelLow, 0), new GradientStop(LevelMid, 0.5), new GradientStop(LevelHigh, 1) }
+    };
+
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
@@ -60,7 +80,7 @@ sealed class EqSlider : Control
         double yCenter = YOf(Center), yValue = YOf(_value);
         context.DrawLine(CenterPen, new Point(cx - 9, yCenter), new Point(cx + 9, yCenter));
         if (Math.Abs(yValue - yCenter) > 0.5)
-            context.DrawRectangle(IsEffectivelyEnabled ? Palette.Accent : Palette.TextDim, null,
+            context.DrawRectangle(IsEffectivelyEnabled ? LevelBrush(cx, yCenter, yValue < yCenter ? TrackTop : TrackBottom) : Palette.TextDim, null,
                 new Rect(cx - tw / 2, Math.Min(yCenter, yValue), tw, Math.Abs(yValue - yCenter)), tw / 2, tw / 2);
 
         var knobCenter = new Point(cx, yValue);

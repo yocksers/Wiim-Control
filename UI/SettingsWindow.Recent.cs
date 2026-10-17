@@ -22,7 +22,7 @@ sealed partial class WiimController
 
         private Control BuildRecentPage()
         {
-            ToolTip.SetTip(_cboRecentAmp, "The amp to play on");
+            ToolTip.SetTip(_cboRecentAmp, "The device to play on");
             var clear = Pill("Clear");
             clear.Click += async (_, _) =>
             {
@@ -93,7 +93,7 @@ sealed partial class WiimController
                 Width = 44, Height = 44, CornerRadius = new CornerRadius(6), ClipToBounds = true, Background = Palette.Input,
                 Child = new Panel { Children = { icon, art } }
             };
-            string kind = radio ? "Radio" : item.Library!.IsLyrion ? "Lyrion" : "Library";
+            string kind = radio ? "Radio" : item.Library!.IsLyrion ? "Lyrion" : item.Library.IsShare ? "Shared folder" : "Library";
             var text = new StackPanel
             {
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0),
@@ -148,13 +148,14 @@ sealed partial class WiimController
             if (_recentPlaying) return;
             if (AmpOf(_cboRecentAmp) is not { } ip)
             {
-                await Dialogs.MessageAsync(this, "Add a Wiim amp on the Devices page first.", _scale);
+                await Dialogs.MessageAsync(this, "Add a WiiM device on the Devices page first.", _scale);
                 return;
             }
             _recentPlaying = true;
             try
             {
                 if (item.Station is { } station) await PlayRecentStationAsync(ip, station);
+                else if (item.Library is { IsRoon: true } roon) await PlayRecentRoonAsync(ip, item, roon);
                 else if (item.Library is { } library) await PlayRecentLibraryAsync(ip, item, library);
             }
             finally
@@ -170,7 +171,7 @@ sealed partial class WiimController
             if (!await _owner.PlayStationAsync(target, station))
             {
                 _lblRecentStatus.Text = string.Empty;
-                await Dialogs.MessageAsync(this, "The amp didn't start the station. Check that it's switched on and reachable.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't start the station. Check that it's switched on and reachable.", _scale);
                 return;
             }
             _owner.AddRecent(new RecentItem(station.Name, station.Detail, station.ArtUrl, DateTime.Now, station, null));
@@ -184,9 +185,12 @@ sealed partial class WiimController
         private async Task PlayRecentLibraryAsync(string ip, RecentItem item, RecentLibrary library)
         {
             _lblRecentStatus.Text = $"Loading {item.Title}…";
-            var server = new MediaServer(library.ServerName, library.ServerUdn, library.ServerUrl, string.Empty, IsLyrion: library.IsLyrion);
+            var server = new MediaServer(library.ServerName, library.ServerUdn, library.ServerUrl, string.Empty, IsLyrion: library.IsLyrion,
+                IsShare: library.IsShare);
             var collected = await CollectFolderTracksAsync(server, library.FolderId, library.FolderIndex);
-            if (collected == null)
+            if (collected == null && library.IsShare && await AskSharedFolderLoginAsync(server))
+                collected = await CollectFolderTracksAsync(server, library.FolderId, library.FolderIndex);
+            if (collected == null && !library.IsShare)
             {
                 _lblRecentStatus.Text = $"Looking for {library.ServerName}…";
                 var upnp = Upnp.DiscoverMediaServersAsync(TimeSpan.FromSeconds(3));

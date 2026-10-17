@@ -19,9 +19,9 @@ sealed partial class WiimController
         private void HookEqFileButtons()
         {
             ToolTip.SetTip(_btnEqExport, "Save this EQ to a file");
-            ToolTip.SetTip(_btnEqImport, "Load an EQ from a file, save it on the amp and use it on this input");
+            ToolTip.SetTip(_btnEqImport, "Load an EQ from a file, save it on the device and use it on this input");
             ToolTip.SetTip(_btnRoomFitExport, "Save the active RoomFit profile to a file");
-            ToolTip.SetTip(_btnRoomFitImport, "Load a RoomFit profile from a file and save it on the amp");
+            ToolTip.SetTip(_btnRoomFitImport, "Load a RoomFit profile from a file and save it on the device");
             _btnEqExport.Click += async (_, _) => await ExportEqAsync();
             _btnEqImport.Click += async (_, _) => await ImportEqAsync();
             _btnRoomFitExport.Click += async (_, _) => await ExportRoomFitAsync();
@@ -97,7 +97,7 @@ sealed partial class WiimController
             {
                 Children =
                 {
-                    new TextBlock { Text = $"The file has {choices.Count} {what}s. Pick the one to import; it's saved on the amp and {where}.",
+                    new TextBlock { Text = $"The file has {choices.Count} {what}s. Pick the one to import; it's saved on the device and {where}.",
                         TextWrapping = TextWrapping.Wrap, MaxWidth = 440 },
                     combo
                 }
@@ -108,7 +108,7 @@ sealed partial class WiimController
         private async Task<string?> ConfirmPresetNameAsync(string name, IEnumerable<string> existing, string what)
         {
             if (!existing.Contains(name)) return name;
-            int choice = await Dialogs.ButtonsAsync(this, $"There's already a {what} called “{name}” on this amp.", _scale,
+            int choice = await Dialogs.ButtonsAsync(this, $"There's already a {what} called “{name}” on this device.", _scale,
                 "Replace it", "Use another name", "Cancel");
             if (choice == 0) return name;
             if (choice != 1) return null;
@@ -130,7 +130,7 @@ sealed partial class WiimController
             var preset = await _owner.ReadCurrentEqAsync(_eqDeviceIp, _eqSource, _eqPluginUri, name);
             if (preset == null)
             {
-                await Dialogs.MessageAsync(this, "Couldn't read the EQ from the amp.", _scale);
+                await Dialogs.MessageAsync(this, "Couldn't read the EQ from the device.", _scale);
                 return;
             }
             await SavePresetFileAsync(_owner.SinglePresetFile(_eqDeviceIp, preset, IsParametric ? "parametric" : "graphic"), name,
@@ -158,7 +158,7 @@ sealed partial class WiimController
             await SendPendingEqBandsAsync();
             _lblEqSource.Text = "Importing…";
             if (!await _owner.ImportEqPresetAsync(_eqDeviceIp, _eqSource, _eqPluginUri, preset with { Name = name }))
-                await Dialogs.MessageAsync(this, "The amp didn't accept the EQ.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't accept the EQ.", _scale);
             await RefreshEqAsync();
         }
 
@@ -167,7 +167,7 @@ sealed partial class WiimController
             var profile = await _owner.ReadActiveRoomFitAsync(_eqDeviceIp);
             if (profile == null)
             {
-                await Dialogs.MessageAsync(this, "Couldn't read the active RoomFit profile from the amp.", _scale);
+                await Dialogs.MessageAsync(this, "Couldn't read the active RoomFit profile from the device.", _scale);
                 return;
             }
             await SavePresetFileAsync(_owner.SinglePresetFile(_eqDeviceIp, profile, "roomfit"), profile.Name, "RoomFit profile");
@@ -186,7 +186,7 @@ sealed partial class WiimController
             if (await ConfirmPresetNameAsync(profile.Name, existing, "RoomFit profile") is not { } name) return;
             _lblEqSource.Text = "Importing…";
             if (!await _owner.ImportRoomFitAsync(_eqDeviceIp, profile with { Name = name }))
-                await Dialogs.MessageAsync(this, "The amp didn't accept the RoomFit profile.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't accept the RoomFit profile.", _scale);
             await RefreshEqAsync();
         }
     }

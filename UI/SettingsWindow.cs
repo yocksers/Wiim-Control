@@ -5,6 +5,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace WiimControl;
@@ -20,7 +21,7 @@ sealed partial class WiimController
 
         private readonly WiimController _owner;
         private double _scale;
-        private readonly LayoutTransformControl _scaler;
+        private readonly ScaledContent _scaler;
         private Size _normalSize;
 
         private readonly TextBlock _lblDeviceName = new() { Classes = { "device" }, Margin = new Thickness(4, 18, 4, 0), TextTrimming = TextTrimming.CharacterEllipsis };
@@ -33,6 +34,7 @@ sealed partial class WiimController
         private readonly StackPanel _deviceList = new();
         private readonly ToggleSwitch _chkSuppress = new();
         private readonly ToggleSwitch _chkAutoStart = new();
+        private readonly ToggleSwitch _chkStartMinimized = new();
         private readonly ToggleSwitch _chkForwardMedia = new();
         private readonly ToggleSwitch _chkMediaControls = new();
         private readonly ToggleSwitch _chkLogStep = new();
@@ -50,6 +52,11 @@ sealed partial class WiimController
         private readonly ComboBox _cboEqPreset = new() { Width = 240, PlaceholderText = "Custom (not saved)" };
         private readonly TextBlock _lblEqSource = Subtitle();
         private readonly ComboBox _cboEqInput = new() { Width = 240 };
+        private readonly ComboBox _cboEqAmp = new() { Width = 220 };
+        private string? _comboActive;
+        private bool _followActive;
+        private readonly List<(Control Page, Func<Task> Refresh)> _devicePages = [];
+        private readonly FitRow _eqPresetChips = new();
         private readonly Dictionary<string, TextBlock> _inputLabels = new();
         private Control? _eqInputRow;
         private string? _eqInputChoice;
@@ -64,7 +71,9 @@ sealed partial class WiimController
         private List<EqBand> _eqBands = [];
         private bool _eqAvailable;
         private bool _eqLoading;
-        private bool _eqSending;
+        private readonly SemaphoreSlim _eqFlushGate = new(1, 1);
+        private bool _closeFlushing;
+        private bool _closeFlushed;
         private readonly HashSet<string> _eqCustomPresets = new();
         private readonly HashSet<string> _eqBuiltInPresets = new(StringComparer.OrdinalIgnoreCase);
         private string _eqSource = string.Empty;
@@ -133,17 +142,18 @@ sealed partial class WiimController
             Height = Math.Max(size.Height, MinHeight);
             _normalSize = new Size(Width, Height);
 
-            _scaler = new LayoutTransformControl
-            {
-                LayoutTransform = new ScaleTransform(_scale, _scale),
-                Child = BuildLayout()
-            };
+            _scaler = new ScaledContent { Scale = _scale, Child = BuildLayout() };
             Content = _scaler;
             LoadFromOwner();
 
-            KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
+            KeyDown += (_, e) =>
+            {
+                if (e.Key != Key.Escape) return;
+                if (_npIp != null) HideNowPlayingView();
+                else Close();
+            };
             _eqSendTimer.Tick += async (_, _) => await FlushEqBandsAsync();
-            _volumeSendTimer.Tick += (_, _) => FlushVolumes(force: false);
+            _volumeSendTimer.Tick += (_, _) => FlushVolumes();
             _positionTimer.Tick += (_, _) => AdvancePositions();
             _volumePollTimer.Tick += async (_, _) =>
             {
@@ -152,20 +162,25 @@ sealed partial class WiimController
                 else await RefreshVolumesAsync();
             };
             SizeChanged += (_, _) => { if (WindowState == WindowState.Normal) _normalSize = new Size(Width, Height); };
+            FitToScreen(center: false);
+            if (owner._windowMaximized) WindowState = WindowState.Maximized;
             Opened += async (_, _) =>
             {
-                FitToScreen();
-                if (owner._windowMaximized) WindowState = WindowState.Maximized;
                 _volumePollTimer.Start();
                 _positionTimer.Start();
                 await Task.WhenAll(RefreshEqAsync(), RefreshMultiroomAsync(), RefreshDeviceStatusesAsync(), RefreshAmpAsync(), RefreshPresetsAsync());
             };
-            Closing += (_, _) =>
+            Closing += async (_, e) =>
             {
-                _ = FlushEqBandsAsync();
-                _ = FlushPeqAsync();
-                FlushVolumes(force: true);
+                if (_closeFlushed) return;
+                e.Cancel = true;
+                if (_closeFlushing) return;
+                _closeFlushing = true;
                 _owner.SaveWindowState(_normalSize, WindowState == WindowState.Maximized);
+                var flush = FlushBeforeCloseAsync();
+                await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(3)));
+                _closeFlushed = true;
+                Close();
             };
             Closed += (_, _) =>
             {
@@ -174,6 +189,7 @@ sealed partial class WiimController
                 _volumeSendTimer.Stop();
                 _volumePollTimer.Stop();
                 _positionTimer.Stop();
+                _npSpinTimer.Stop();
                 ClearLibraryRows();
                 ClearRadioResults();
                 ClearRecentRows();
@@ -187,7 +203,7 @@ sealed partial class WiimController
         {
             double scale = percent / 100.0, ratio = scale / _scale;
             _scale = scale;
-            _scaler.LayoutTransform = new ScaleTransform(scale, scale);
+            _scaler.Scale = scale;
             MinWidth = 960 * scale;
             MinHeight = 640 * scale;
             if (WindowState != WindowState.Normal) return;
@@ -196,9 +212,9 @@ sealed partial class WiimController
             FitToScreen();
         }
 
-        private void FitToScreen()
+        private void FitToScreen(bool center = true)
         {
-            var screen = Screens.ScreenFromVisual(this) ?? Screens.Primary;
+            var screen = (center ? Screens.ScreenFromVisual(this) : Screens.ScreenFromPoint(Position)) ?? Screens.Primary;
             if (screen == null) return;
             double scaling = screen.Scaling;
             double maxWidth = screen.WorkingArea.Width / scaling, maxHeight = screen.WorkingArea.Height / scaling;
@@ -206,6 +222,7 @@ sealed partial class WiimController
             MinHeight = Math.Min(MinHeight, maxHeight);
             Width = Math.Min(Width, maxWidth);
             Height = Math.Min(Height, maxHeight);
+            if (!center) return;
             Position = new PixelPoint(
                 screen.WorkingArea.X + (int)((maxWidth - Width) * scaling / 2),
                 screen.WorkingArea.Y + (int)((maxHeight - Height) * scaling / 2));
@@ -322,11 +339,19 @@ sealed partial class WiimController
             var libraryPage = BuildLibraryPage();
             var radioPage = BuildRadioPage();
             var recentPage = BuildRecentPage();
+            var queuePage = BuildQueuePage();
             var eqPage = BuildEqPage();
             var volumePage = BuildVolumePage();
+            var outputPage = BuildOutputPage();
+            var inputsPage = BuildInputsPage();
+            var subwooferPage = BuildSubwooferPage();
             var ampPage = BuildAmpPage();
             var hotkeysPage = BuildHotkeysPage();
             var generalPage = BuildGeneralPage();
+            _devicePages.AddRange([
+                (presetsPage, RefreshPresetsAsync), (volumePage, RefreshAmpVolumeAsync), (outputPage, () => RefreshOutputAsync()),
+                (inputsPage, () => RefreshInputsAsync()), (subwooferPage, () => RefreshSubwooferAsync())
+            ]);
 
             var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 0) };
             brand.Children.Add(new TextBlock { Text = "Wiim Control", Classes = { "small" } });
@@ -343,19 +368,29 @@ sealed partial class WiimController
             sidebarItems.Children.Add(SectionLabel("Music"));
             sidebarItems.Children.Add(Nav("Library", Icons.Library, libraryPage));
             sidebarItems.Children.Add(Nav("Radio", Icons.Radio, radioPage));
+            sidebarItems.Children.Add(Nav("Queue", Icons.Queue, queuePage));
             sidebarItems.Children.Add(Nav("Recent", Icons.History, recentPage));
             sidebarItems.Children.Add(SectionLabel("Sound"));
             sidebarItems.Children.Add(Nav("Equalizer", Icons.Equalizer, eqPage));
             sidebarItems.Children.Add(Nav("Volume", Icons.Volume, volumePage));
+            sidebarItems.Children.Add(Nav("Output", Icons.Output, outputPage));
+            sidebarItems.Children.Add(Nav("Inputs", Icons.Input, inputsPage));
+            sidebarItems.Children.Add(Nav("Subwoofer", Icons.Speaker, subwooferPage));
             sidebarItems.Children.Add(SectionLabel("Settings"));
-            sidebarItems.Children.Add(Nav("Amp settings", Icons.Wrench, ampPage));
+            sidebarItems.Children.Add(Nav("Device settings", Icons.Wrench, ampPage));
             sidebarItems.Children.Add(Nav("Hotkeys", Icons.Keyboard, hotkeysPage));
             sidebarItems.Children.Add(Nav("General", Icons.Settings, generalPage));
 
+            var coffee = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 12, 0, 0),
+                Children = { CoffeeButton(), WiimButton() }
+            };
+            DockPanel.SetDock(coffee, Dock.Bottom);
             var sidebar = new Border
             {
                 Background = Palette.Sidebar, Width = 250, Padding = new Thickness(12, 16),
-                Child = new ScrollViewer { Content = sidebarItems }
+                Child = new DockPanel { Children = { coffee, new ScrollViewer { Content = sidebarItems } } }
             };
 
             var root = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
@@ -363,7 +398,7 @@ sealed partial class WiimController
             Grid.SetColumn(_content, 1);
             root.Children.Add(_content);
             ShowPage(devicesPage);
-            return root;
+            return new Panel { Children = { root, BuildNowPlayingOverlay() } };
         }
 
         private static TextBlock SectionLabel(string text) => new()
@@ -423,7 +458,7 @@ sealed partial class WiimController
             };
             btnAdd.Click += async (_, _) =>
             {
-                var ip = await Dialogs.PromptAsync(this, "Enter the Wiim Amp's IP address:", string.Empty, _scale);
+                var ip = await Dialogs.PromptAsync(this, "Enter the WiiM device's IP address:", string.Empty, _scale);
                 if (string.IsNullOrWhiteSpace(ip)) return;
                 _owner.AddManualDevice(ip);
                 LoadFromOwner();
@@ -439,6 +474,34 @@ sealed partial class WiimController
             _ = RefreshDeviceStatusesAsync();
         });
 
+        private async Task RenameDeviceAsync(KnownDevice device)
+        {
+            string? name = await Dialogs.PromptAsync(this,
+                $"New name for {device.Name}. The device keeps it, so the WiiM Home app, AirPlay and other apps show it too:", device.Name, _scale);
+            name = name?.Trim();
+            if (string.IsNullOrEmpty(name) || name == device.Name) return;
+            if (name.Length > MaxDeviceNameLength)
+            {
+                await Dialogs.MessageAsync(this, $"Please use at most {MaxDeviceNameLength} characters.", _scale);
+                return;
+            }
+            if (!await _owner.RenameDeviceAsync(device.Ip, name))
+            {
+                await Dialogs.MessageAsync(this, $"{device.Name} didn't accept the new name. Check that it's switched on and reachable.", _scale);
+                return;
+            }
+            LoadFromOwner();
+            _ = RefreshDeviceStatusesAsync();
+            _ = RefreshMultiroomAsync();
+        }
+
+        private void MoveDeviceCard(KnownDevice device, int offset)
+        {
+            if (!_owner.MoveDevice(device, offset)) return;
+            LoadFromOwner();
+            _ = RefreshDeviceStatusesAsync();
+        }
+
         private void RebuildDeviceCards()
         {
             _volumeControls.Clear();
@@ -447,13 +510,24 @@ sealed partial class WiimController
             _sleepLabels.Clear();
             _positions.Clear();
             var cards = new List<Control>();
-            foreach (var dev in _owner._knownDevices)
+            var devices = _owner._knownDevices.ToList();
+            for (int position = 0; position < devices.Count; position++)
             {
-                var d = dev;
+                var d = devices[position];
                 bool active = d.Ip == _owner._deviceIp;
 
                 var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
                 title.Children.Add(new TextBlock { Text = d.Name, Classes = { "device" } });
+                var (rename, renameIcon) = IconButton(Icons.Edit);
+                renameIcon.Width = renameIcon.Height = 14;
+                rename.Width = rename.Height = 24;
+                rename.Padding = new Thickness(0);
+                rename.MinHeight = 0;
+                rename.Margin = new Thickness(-6, 0, -4, 0);
+                rename.VerticalAlignment = VerticalAlignment.Center;
+                ToolTip.SetTip(rename, "Rename this device");
+                rename.Click += async (_, _) => await RenameDeviceAsync(d);
+                title.Children.Add(rename);
                 if (active)
                     title.Children.Add(new TextBlock { Text = "●  Active", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center });
                 if (_owner.FirmwareUpdateFor(d.Ip) is { } update)
@@ -464,7 +538,10 @@ sealed partial class WiimController
                 }
                 var info = new StackPanel();
                 info.Children.Add(title);
-                info.Children.Add(new TextBlock { Text = d.Ip, Classes = { "muted" }, Margin = new Thickness(0, 4, 0, 0) });
+                info.Children.Add(new TextBlock
+                {
+                    Text = _owner.ModelOf(d.Ip) is { Length: > 0 } model ? $"{model}  ·  {d.Ip}" : d.Ip, Classes = { "muted" }, Margin = new Thickness(0, 4, 0, 0)
+                });
                 if (GroupDescription(d.Ip) is { } group)
                     info.Children.Add(new TextBlock { Text = group.Text, Foreground = group.Brush, Margin = new Thickness(0, 4, 0, 0) });
 
@@ -484,12 +561,24 @@ sealed partial class WiimController
                 else
                 {
                     var use = Pill("Use this device", accent: true);
-                    use.Click += (_, _) => { _owner.SwitchDevice(d); ReloadSoon(refreshEq: true); };
+                    use.Click += (_, _) => _owner.SwitchDevice(d);
                     actions.Children.Add(use);
                 }
                 var remove = Pill("Remove");
                 remove.Click += (_, _) => { _owner.RemoveDevice(d); ReloadSoon(refreshEq: active); };
                 actions.Children.Add(remove);
+                if (devices.Count > 1)
+                {
+                    var (up, _) = IconButton(Icons.ArrowUp);
+                    var (down, _) = IconButton(Icons.ArrowDown);
+                    ToolTip.SetTip(up, "Move up");
+                    ToolTip.SetTip(down, "Move down");
+                    up.IsEnabled = position > 0;
+                    down.IsEnabled = position < devices.Count - 1;
+                    up.Click += (_, _) => MoveDeviceCard(d, -1);
+                    down.Click += (_, _) => MoveDeviceCard(d, 1);
+                    actions.Children.Insert(0, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Children = { up, down } });
+                }
 
                 var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto") };
                 grid.Children.Add(info);
@@ -516,6 +605,7 @@ sealed partial class WiimController
             _lblDeviceCount.Text = $"{n} device{(n == 1 ? "" : "s")}";
             foreach (var ip in _volumeControls.Keys) ApplyVolume(ip);
             foreach (var ip in _nowPlayingControls.Keys) ApplyNowPlaying(ip);
+            foreach (var ip in _channelButtons.Keys) ApplyChannel(ip);
         }
 
         private Button InputButton(string ip)
@@ -530,7 +620,7 @@ sealed partial class WiimController
                 }
             };
             button.Classes.Add("pill");
-            ToolTip.SetTip(button, "Choose the amp's input");
+            ToolTip.SetTip(button, "Choose the device's input");
             button.Click += async (_, _) => await ShowInputMenuAsync(ip, button);
             _inputLabels[ip] = label;
             return button;
@@ -543,7 +633,7 @@ sealed partial class WiimController
             button.IsEnabled = true;
             if (inputs == null)
             {
-                await Dialogs.MessageAsync(this, "Couldn't get the inputs from the amp. Check that it's switched on and reachable.", _scale);
+                await Dialogs.MessageAsync(this, "Couldn't get the inputs from the device. Check that it's switched on and reachable.", _scale);
                 return;
             }
             string? current = _statuses.TryGetValue(ip, out var status) ? InputOfMode(status.Mode) : null;
@@ -566,13 +656,13 @@ sealed partial class WiimController
         {
             if (!await _owner.SwitchInputAsync(ip, input))
             {
-                await Dialogs.MessageAsync(this, "The amp didn't switch the input. Check that it's switched on and reachable.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't switch the input. Check that it's switched on and reachable.", _scale);
                 return;
             }
             if (_inputLabels.TryGetValue(ip, out var label)) label.Text = _owner.InputName(ip, input);
             await Task.Delay(1500);
             await RefreshDeviceStatusesAsync();
-            if (ip == _owner._deviceIp && _eqInputChoice == null) await RefreshEqAsync();
+            if (ip == EqIp && _eqInputChoice == null) await RefreshEqAsync();
         }
 
         private Grid BuildVolumeRow(string ip)
@@ -594,12 +684,16 @@ sealed partial class WiimController
             mute.Click += async (_, _) => await ToggleDeviceMuteAsync(ip);
             _volumeControls[ip] = new VolumeControls(slider, value, mute, muteIcon);
 
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 10, 0, 0) };
+            var channel = BuildChannelButton(ip);
+            channel.Margin = new Thickness(12, 0, 0, 0);
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), Margin = new Thickness(0, 10, 0, 0) };
             row.Children.Add(mute);
             Grid.SetColumn(slider, 1);
             row.Children.Add(slider);
             Grid.SetColumn(value, 2);
             row.Children.Add(value);
+            Grid.SetColumn(channel, 3);
+            row.Children.Add(channel);
             return row;
         }
 
@@ -629,15 +723,26 @@ sealed partial class WiimController
             }
         }
 
-        private void FlushVolumes(bool force)
+        private void FlushVolumes()
         {
             foreach (var (ip, volume) in _pendingVolumes.ToList())
             {
-                if (!force && _volumeSending.Contains(ip)) continue;
+                if (_volumeSending.Contains(ip)) continue;
                 _pendingVolumes.Remove(ip);
                 _ = SendVolumeAsync(ip, volume);
             }
             if (_pendingVolumes.Count == 0) _volumeSendTimer.Stop();
+        }
+
+        private async Task FlushBeforeCloseAsync()
+        {
+            await SendPendingEqBandsAsync();
+            FlushVolumes();
+            while (_volumeSending.Count > 0 || _pendingVolumes.Count > 0)
+            {
+                await Task.Delay(30);
+                FlushVolumes();
+            }
         }
 
         private async Task SendVolumeAsync(string ip, int volume)
@@ -652,6 +757,7 @@ sealed partial class WiimController
             {
                 _volumeSending.Remove(ip);
                 _volumeTouched[ip] = DateTime.UtcNow;
+                if (_pendingVolumes.ContainsKey(ip)) FlushVolumes();
             }
         }
 
@@ -715,6 +821,7 @@ sealed partial class WiimController
                     else _volumes.Remove(ip);
                     ApplyVolume(ip);
                 }
+                ApplyFollowers();
             }
             finally
             {
@@ -725,6 +832,12 @@ sealed partial class WiimController
         private Grid BuildNowPlayingRow(string ip)
         {
             var art = new ArtworkView { VerticalAlignment = VerticalAlignment.Center };
+            art.Tapped += (_, _) => { if (art.Bitmap != null) ShowNowPlayingView(ip); };
+            art.BitmapChanged += () =>
+            {
+                art.Cursor = art.Bitmap != null ? new Cursor(StandardCursorType.Hand) : null;
+                ToolTip.SetTip(art, art.Bitmap != null ? "Show the artwork full size" : null);
+            };
             var title = new TextBlock { Classes = { "heading" }, TextTrimming = TextTrimming.CharacterEllipsis };
             var artist = new TextBlock { Classes = { "muted" }, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0) };
             var detail = new TextBlock { Classes = { "dim", "small" }, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
@@ -762,6 +875,11 @@ sealed partial class WiimController
             return row;
         }
 
+        private void ApplyFollowers()
+        {
+            foreach (var ip in _nowPlayingControls.Keys.Where(ip => TargetOf(ip) != ip).ToList()) ApplyNowPlaying(ip);
+        }
+
         private void ApplyNowPlaying(string ip)
         {
             if (_inputLabels.TryGetValue(ip, out var inputLabel))
@@ -769,7 +887,12 @@ sealed partial class WiimController
                     : InputOfMode(known.Mode) is { } input ? _owner.InputName(ip, input)
                     : SourceName(known.Mode) is { Length: > 0 } name ? name
                     : "Input";
-            if (!_nowPlayingControls.TryGetValue(ip, out var c)) return;
+            if (_nowPlayingControls.TryGetValue(ip, out var card)) ApplyNowPlayingTo(ip, card);
+            if (_npIp == ip && _npControls != null) ApplyNowPlayingTo(ip, _npControls);
+        }
+
+        private void ApplyNowPlayingTo(string ip, NowPlayingControls c)
+        {
             if (!_statuses.TryGetValue(ip, out var status))
             {
                 c.Title.Text = _volumes.Count == 0 && _statuses.Count == 0 ? "Loading…" : "Not reachable";
@@ -783,10 +906,15 @@ sealed partial class WiimController
                 return;
             }
 
+            string leaderIp = TargetOf(ip);
+            var leaderStatus = leaderIp != ip ? _statuses.GetValueOrDefault(leaderIp) : null;
+            bool following = leaderStatus != null;
+            if (leaderStatus != null) status = leaderStatus;
             string source = status.Mode == 41 && status.BluetoothName.Length > 0
                 ? $"Bluetooth  ·  {status.BluetoothName}"
                 : ServiceName(status);
-            if (source.Length == 0 && InputOfMode(status.Mode) is { } inputMode && inputMode != "wifi") source = _owner.InputName(ip, inputMode);
+            if (source.Length == 0 && InputOfMode(status.Mode) is { } inputMode && inputMode != "wifi") source = _owner.InputName(leaderIp, inputMode);
+            if (following) source = source.Length > 0 ? $"With {DeviceName(leaderIp)}  ·  {source}" : $"With {DeviceName(leaderIp)}";
             c.Title.Text = status.Title.Length > 0 ? status.Title
                 : status.IsPlaying ? (source.Length > 0 ? source : "Playing")
                 : "Not playing";
@@ -804,17 +932,25 @@ sealed partial class WiimController
             }
         }
 
+        private const int LossyMaxKbps = 400;
+
+        private static bool IsLossless(DeviceStatus status) =>
+            status.SampleRate >= 44100 && status.BitDepth >= 16 && status.BitRate > LossyMaxKbps;
+
         private static string Quality(DeviceStatus status)
         {
             var parts = new List<string>();
             if (status.SampleRate > 0) parts.Add((status.SampleRate / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " kHz");
             if (status.SampleRate > 0 && status.BitDepth > 0) parts.Add($"{status.BitDepth}-bit");
             if (status.BitRate > 0) parts.Add($"{status.BitRate} kbps");
+            if (IsLossless(status)) parts.Add("Lossless");
             return string.Join("  ·  ", parts);
         }
 
         internal bool IsShowingArtwork(Avalonia.Media.Imaging.Bitmap bitmap) =>
             _nowPlayingControls.Values.Any(c => ReferenceEquals(c.Art.Bitmap, bitmap)) ||
+            (_npControls != null && ReferenceEquals(_npControls.Art.Bitmap, bitmap)) ||
+            ReferenceEquals(_npCover.Source, bitmap) ||
             _presetImages.Any(i => ReferenceEquals(i.Source, bitmap));
 
         private async Task LoadArtworkAsync(ArtworkView view, string url)
@@ -837,7 +973,7 @@ sealed partial class WiimController
             _cboAmp.SelectionChanged += async (_, _) => { if (!_loading) await RefreshAmpAsync(); };
             var btnRefresh = Pill("Refresh");
             btnRefresh.Click += async (_, _) => await RefreshAmpAsync();
-            return Page("Amp settings", _lblAmpStatus, [_cboAmp, btnRefresh], _ampList);
+            return Page("Device settings", _lblAmpStatus, [_cboAmp, btnRefresh], _ampList);
         }
 
         private async Task RefreshAmpAsync(bool quiet = false)
@@ -846,14 +982,14 @@ sealed partial class WiimController
             if (ip == null)
             {
                 _lblAmpStatus.Text = string.Empty;
-                SetRows(_ampList, [Muted("Add a Wiim amp on the Devices page first.")]);
+                SetRows(_ampList, [Muted("Add a WiiM device on the Devices page first.")]);
                 return;
             }
             if (!quiet) _lblAmpStatus.Text = "Loading…";
-            var settings = await _owner.GetAmpSettingsAsync(ip);
+            var settings = await _owner.GetAmpSettingsAsync(ip, _screenInputIp == ip ? _screenInput : null);
             if (ip != SelectedAmpIp) return;
             _lblAmpStatus.Text = settings == null ? "Not reachable" : string.Empty;
-            SetRows(_ampList, settings == null ? [Muted("Couldn't reach this amp.")] : BuildAmpCards(ip, settings));
+            SetRows(_ampList, settings == null ? [Muted("Couldn't reach this device.")] : BuildAmpCards(ip, settings));
         }
 
         private async Task ChangeAmpAsync(Func<Task<bool>> change)
@@ -866,7 +1002,7 @@ sealed partial class WiimController
                 ok = await change();
             }
             finally { _ampGate.Release(); }
-            if (!ok) await Dialogs.MessageAsync(this, "The amp didn't accept the change.", _scale);
+            if (!ok) await Dialogs.MessageAsync(this, "The device didn't accept the change.", _scale);
             if (_ampGate.CurrentCount == 0) return;
             await RefreshAmpAsync(quiet: true);
         }
@@ -911,65 +1047,82 @@ sealed partial class WiimController
             _ => $"Page {page}"
         };
 
-        private List<Control> BuildScreenUiRows(string ip, ScreenUi ui)
-        {
-            var rows = new List<Control>();
-            ScreenView? View(string key) => ui.Views.TryGetValue(key, out var view) ? view : null;
-
-            if (ui.Clock24 is bool clock24)
-                rows.Add(AmpToggle("24-hour clock", clock24, on => _owner.SetScreenBehaviorAsync(ip, ui.InputKey, "clock_24_hours", on ? 1 : 0, false)));
-            if (View("clock_view") is { Choices.Count: > 1 } clock)
-                rows.Add(AmpChoice("Clock style", StyleChoices(clock), clock.Value, v => _owner.SetScreenViewAsync(ip, ui.InputKey, ("clock_view", v))));
-            if (View("standby_view") is { Choices.Count: > 1 } standby)
-                rows.Add(AmpChoice("Standby screen", StyleChoices(standby), standby.Value, v => _owner.SetScreenViewAsync(ip, ui.InputKey, ("standby_view", v))));
-            if (ui.StandbyScreenOff is bool standbyOff)
-                rows.Add(AmpToggle("Turn the screen off in standby", standbyOff,
-                    on => _owner.SetScreenBehaviorAsync(ip, ui.InputKey, "standby_turn_off_screen", on ? 1 : 0, false)));
-
-            if (View("main_music_view") is { Choices.Count: > 1 } main)
-                rows.Add(AmpChoice("Now playing layout", StyleChoices(main), main.Value, v => _owner.SetScreenViewAsync(ip, ui.InputKey, ("main_music_view", v))));
-            if (View("sub_music_view") is { } second)
-            {
-                if (second.Choices.Count > 1)
-                    rows.Add(AmpChoice("Second page", second.Choices.Select(p => (p, SecondPageName(p))), second.Value, page =>
-                    {
-                        var values = new List<(string, int)> { ("sub_music_view", page) };
-                        if (SecondPageStyleKey(page) is { } styleKey && View(styleKey) is { } style) values.Add((styleKey, style.Value));
-                        return _owner.SetScreenViewAsync(ip, ui.InputKey, values.ToArray());
-                    }));
-                if (SecondPageStyleKey(second.Value) is { } key && View(key) is { Choices.Count: > 1 } pageStyle)
-                    rows.Add(AmpChoice($"{SecondPageName(second.Value)} style", StyleChoices(pageStyle), pageStyle.Value,
-                        v => _owner.SetScreenViewAsync(ip, ui.InputKey, (key, v))));
-            }
-            if (ui.StartPage is int startPage)
-                rows.Add(AmpChoice("Show first when playing", [(0, "Now playing"), (1, "Second page")], startPage,
-                    v => _owner.SetScreenBehaviorAsync(ip, ui.InputKey, "playing_default_page", v, true)));
-            if (ui.Input != null)
-                rows.Add(Muted($"The layout and page settings are for the current input ({_owner.InputName(ip, ui.Input)}). " +
-                               "The amp keeps them separately for each input, like the WiiM Home app."));
-            return rows;
-        }
-
         private Control BuildWallpaperPicker(string ip, WallpaperInfo info)
         {
             var tiles = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
-            tiles.Children.Add(Muted("Loading the backgrounds from the amp…"));
+            tiles.Children.Add(Muted("Loading the backgrounds from the device…"));
             _ = LoadWallpaperTilesAsync(ip, info, tiles);
+            var upload = Pill(info.MaxNumber > 1 ? "Add your own pictures…" : "Use your own picture…");
+            ToolTip.SetTip(upload, $"Upload pictures from this computer. They're cropped to fit the screen ({info.Width} × {info.Height}).");
+            upload.Click += async (_, _) => await AddOwnWallpapersAsync(ip, info);
+            var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            header.Children.Add(new TextBlock { Text = "Background", VerticalAlignment = VerticalAlignment.Center });
+            Grid.SetColumn(upload, 1);
+            header.Children.Add(upload);
             return new StackPanel
             {
                 Margin = new Thickness(0, 12, 0, 0),
                 Children =
                 {
-                    new TextBlock { Text = "Background" },
+                    header,
                     Muted(info.MaxNumber > 1
-                        ? "Click a background to use it. Ctrl+click to choose more than one."
+                        ? $"Click a background to use it. Ctrl+click to choose more than one (up to {info.MaxNumber}); they take turns on the screen."
                         : "Click a background to use it."),
                     tiles
                 }
             };
         }
 
-        private static bool IsBuiltInWallpaper(string name) => name.StartsWith("home_bg_", StringComparison.OrdinalIgnoreCase);
+        private async Task AddOwnWallpapersAsync(string ip, WallpaperInfo info)
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Choose pictures for the screen", AllowMultiple = info.MaxNumber > 1,
+                FileTypeFilter = [new FilePickerFileType("Pictures") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.bmp", "*.webp", "*.gif"] }, FilePickerFileTypes.All]
+            });
+            if (files.Count == 0) return;
+            if (files.Count > info.MaxNumber)
+            {
+                await Dialogs.MessageAsync(this, $"The device can show up to {info.MaxNumber} backgrounds. Pick fewer pictures.", _scale);
+                return;
+            }
+            var kept = info.MaxNumber > 1 ? info.Current.Skip(Math.Max(0, info.Current.Count + files.Count - info.MaxNumber)).ToList() : [];
+            if (info.Current.Except(kept).Any(n => !IsBuiltInWallpaper(n)) && !await Dialogs.ConfirmAsync(this,
+                    "Adding these pictures replaces a picture you uploaded before. The device deletes uploaded pictures when they're no " +
+                    "longer used, so it will be gone. Continue?", _scale)) return;
+            var uploaded = new List<string>();
+            var failed = new List<string>();
+            foreach (var file in files)
+            {
+                _lblAmpStatus.Text = $"Uploading {file.Name}…";
+                byte[]? jpeg = null;
+                try
+                {
+                    await using var stream = await file.OpenReadAsync();
+                    using var memory = new MemoryStream();
+                    await stream.CopyToAsync(memory);
+                    var data = memory.ToArray();
+                    jpeg = await Task.Run(() => PrepareWallpaper(data, info.Width, info.Height));
+                }
+                catch (Exception) { }
+                string? name = jpeg != null ? await _owner.UploadWallpaperAsync(ip, jpeg) : null;
+                if (name != null) uploaded.Add(name);
+                else failed.Add(file.Name);
+            }
+            _lblAmpStatus.Text = string.Empty;
+            if (uploaded.Count > 0)
+            {
+                await Task.Delay(1000);
+                var current = kept.Concat(uploaded).ToList();
+                if (current.Count > info.MaxNumber) current = current.Skip(current.Count - info.MaxNumber).ToList();
+                await ChangeAmpAsync(() => _owner.SetWallpapersAsync(ip, info, current));
+            }
+            if (failed.Count > 0)
+                await Dialogs.MessageAsync(this, (failed.Count == 1 ? $"{failed[0]} couldn't" : $"{failed.Count} pictures couldn't") +
+                    " be uploaded. Check that it's a picture file (JPEG, PNG, BMP, WebP or GIF) and that the device is reachable.", _scale);
+        }
+
+        private static bool IsBuiltInWallpaper(string name) => IsBuiltInWallpaperName(name);
 
         private async Task LoadWallpaperTilesAsync(string ip, WallpaperInfo info, WrapPanel tiles)
         {
@@ -977,7 +1130,7 @@ sealed partial class WiimController
             tiles.Children.Clear();
             if (thumbnails.Count == 0)
             {
-                tiles.Children.Add(Muted("Couldn't load the backgrounds from the amp."));
+                tiles.Children.Add(Muted("Couldn't load the backgrounds from the device."));
                 return;
             }
             foreach (var (name, thumbnail) in thumbnails)
@@ -992,7 +1145,7 @@ sealed partial class WiimController
                         ? new Image { Source = thumbnail, Stretch = Stretch.UniformToFill }
                         : new TextBlock
                         {
-                            Text = "Picture missing on the amp", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0), Classes = { "muted", "small" }, TextAlignment = TextAlignment.Center,
+                            Text = "Picture missing on the device", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0), Classes = { "muted", "small" }, TextAlignment = TextAlignment.Center,
                             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
                         }
                 };
@@ -1010,7 +1163,7 @@ sealed partial class WiimController
                     if (current.SequenceEqual(info.Current)) return;
                     var removedUploads = info.Current.Where(n => !IsBuiltInWallpaper(n) && !current.Contains(n)).ToList();
                     if (removedUploads.Count > 0 && !await Dialogs.ConfirmAsync(this,
-                            "This removes a picture you uploaded yourself. The amp deletes uploaded pictures when they're no longer " +
+                            "This removes a picture you uploaded yourself. The device deletes uploaded pictures when they're no longer " +
                             "used, so it will be gone and has to be uploaded again in the WiiM Home app. Continue?", _scale)) return;
                     await ChangeAmpAsync(() => _owner.SetWallpapersAsync(ip, info, current));
                 };
@@ -1037,41 +1190,17 @@ sealed partial class WiimController
         private List<Control> BuildAmpCards(string ip, AmpSettings s)
         {
             var cards = new List<Control>();
-            if (s.Device is { } device) cards.Add(BuildDeviceCard(device));
+            if (s.Device is { } device) cards.Add(BuildDeviceCard(ip, device, s.AutoUpdate));
 
-            var volumeRows = new List<Control>();
-            if (s.MaxVolume is int maxVolume)
+            var soundRows = new List<Control>();
+            if (s.PromptSounds is bool promptSounds)
             {
-                var slider = AmpSlider(1, 100, maxVolume, v => v.ToString(), false, out var row);
-                slider.ValueCommitted += async (_, _) => await ChangeAmpAsync(() => _owner.SetMaxVolumeAsync(ip, slider.Value));
-                volumeRows.Add(LabeledRow("Maximum volume", row));
+                var prompts = AmpToggle("Prompt sounds", promptSounds, on => _owner.SetPromptSoundsAsync(ip, on));
+                ToolTip.SetTip(prompts, "The device's sounds and voice prompts, for example when Bluetooth connects. Important prompts always play.");
+                soundRows.Add(prompts);
             }
-            if (s.Balance is double balance)
-            {
-                var slider = AmpSlider(-100, 100, (int)Math.Round(balance * 100), BalanceText, true, out var row);
-                slider.ValueCommitted += async (_, _) => await ChangeAmpAsync(() => _owner.SetBalanceAsync(ip, slider.Value / 100.0));
-                volumeRows.Add(LabeledRow("Balance", row));
-            }
-            if (s.Fade is bool fade)
-                volumeRows.Add(AmpToggle("Fade in and out when playback starts or stops", fade, on => _owner.SetFadeAsync(ip, on)));
-            if (volumeRows.Count > 0) cards.Add(Card("Volume", volumeRows.ToArray()));
+            if (soundRows.Count > 0) cards.Add(Card("Sound", soundRows.ToArray()));
 
-            var soundRows = new List<Control> { LabeledRow("Output", Info(OutputName(s.OutputHardware))) };
-            if (s.FilterMode is string mode && s.Filters.Count > 0)
-            {
-                var combo = new ComboBox { Width = 360 };
-                foreach (var f in s.Filters) combo.Items.Add(ComboItem(f.Index, f.Name));
-                combo.SelectedIndex = s.Filters.FindIndex(f => f.Index == s.Filter);
-                combo.SelectionChanged += async (_, _) =>
-                {
-                    if ((combo.SelectedItem as ComboBoxItem)?.Tag is int index)
-                        await ChangeAmpAsync(() => _owner.SetDigitalFilterAsync(ip, mode, index));
-                };
-                soundRows.Add(LabeledRow("Digital filter", combo));
-            }
-            cards.Add(Card("Sound", soundRows.ToArray()));
-
-            if (s.Subwoofer is { } sub) cards.Add(BuildSubwooferCard(ip, sub));
 
             var lightRows = new List<Control>();
             if (s.StatusLight is bool statusLight)
@@ -1083,53 +1212,14 @@ sealed partial class WiimController
                     mode => _owner.SetVolumeLightModeAsync(ip, mode)));
             if (lightRows.Count > 0) cards.Add(Card("Lights and buttons", lightRows.ToArray()));
 
-            if (s.Screen is { } screen)
-            {
-                var screenRows = new List<Control>();
-                var screenOn = new ToggleSwitch { IsChecked = screen.On };
-                var autoBrightness = new ToggleSwitch { IsChecked = screen.AutoBrightness };
-                var brightness = new Stepper { Minimum = 1, Maximum = Math.Max(10, screen.Brightness), HorizontalAlignment = HorizontalAlignment.Right };
-                brightness.Value = Math.Max(1, screen.Brightness);
-                Task<bool> ApplyScreen() =>
-                    _owner.SetScreenAsync(ip, screen, screenOn.IsChecked == true, autoBrightness.IsChecked == true, brightness.Value);
-                screenOn.IsCheckedChanged += async (_, _) => await ChangeAmpAsync(ApplyScreen);
-                autoBrightness.IsCheckedChanged += async (_, _) => await ChangeAmpAsync(ApplyScreen);
-                brightness.ValueChanged += async (_, _) => await ChangeAmpAsync(ApplyScreen);
-                screenRows.Add(ToggleRow("Screen on", screenOn));
-                screenRows.Add(ToggleRow("Automatic brightness", autoBrightness));
-                screenRows.Add(LabeledRow("Screen brightness", brightness));
-                if (s.ScreenUi is { } ui) screenRows.AddRange(BuildScreenUiRows(ip, ui));
-                if (s.Wallpapers is { } wallpapers) screenRows.Add(BuildWallpaperPicker(ip, wallpapers));
-                cards.Add(Card("Screen", screenRows.ToArray()));
-            }
+            if (s.Screen is { } screen) cards.Add(BuildScreenCard(ip, screen, s.ScreenUi, s.Wallpapers));
 
-            if (s.Inputs is { Count: > 0 } inputs)
-            {
-                var inputRows = new List<Control>
-                {
-                    Muted("Choose which inputs are shown when you pick an input or an EQ input. This is saved on the amp, " +
-                          "so the WiiM Home app shows the same inputs.")
-                };
-                foreach (var input in inputs)
-                {
-                    string inputMode = input.Mode;
-                    if (inputMode == "wifi")
-                    {
-                        inputRows.Add(LabeledRow(_owner.InputName(ip, inputMode), Info("Always shown")));
-                        continue;
-                    }
-                    var row = AmpToggle(_owner.InputName(ip, inputMode), input.Shown, async shown =>
-                    {
-                        bool ok = await _owner.SetInputShownAsync(ip, inputMode, shown);
-                        if (ok && ip == _owner._deviceIp) _ = RefreshEqAsync();
-                        return ok;
-                    });
-                    inputRows.Add(row);
-                }
-                cards.Add(Card("Inputs", inputRows.ToArray()));
-            }
 
-            if (s.Squeezelite is { } squeezelite) cards.Add(BuildSqueezeliteCard(ip, squeezelite));
+            if (s.Network is { } network)
+            {
+                cards.Add(BuildNetworkCard(ip, network));
+                if (network.StandbySeconds is int standby && standby > 0) cards.Add(BuildStandbyCard(ip, standby));
+            }
             if (s.Alarms is { Count: > 0 } alarms) cards.Add(BuildAlarmsCard(ip, alarms));
             return cards;
         }
@@ -1165,9 +1255,14 @@ sealed partial class WiimController
         private async Task RefreshMultiroomAsync()
         {
             _lblGroupStatus.Text = "Checking…";
+            var delay = RefreshGroupDelayAsync();
+            var homeTheater = RefreshHomeTheaterAsync();
             _multiroom = await _owner.GetMultiroomSnapshotAsync();
             RebuildMultiroom();
             RebuildDeviceCards();
+            await RefreshChannelsAsync();
+            await delay;
+            await homeTheater;
         }
 
         private string DeviceName(string ip) => _owner._knownDevices.FirstOrDefault(d => d.Ip == ip).Name ?? ip;
@@ -1197,12 +1292,12 @@ sealed partial class WiimController
 
             if (snapshot == null)
             {
-                cards.Add(Muted("Checking which amps are linked…"));
+                cards.Add(Muted("Checking which devices are linked…"));
             }
             else if (devices.Count < 2)
             {
                 _lblGroupStatus.Text = "Not grouped";
-                cards.Add(Card("Only one amp", Muted("Add another Wiim amp on the Devices page to play music in sync.")));
+                cards.Add(Card("Only one device", Muted("Add another WiiM device on the Devices page to play music in sync.")));
             }
             else
             {
@@ -1214,13 +1309,15 @@ sealed partial class WiimController
                 foreach (var otherLeader in snapshot.LeaderOf.Values.Distinct().Where(l => l != leaderIp))
                     cards.Add(BuildOtherGroupCard(snapshot, otherLeader));
             }
+            if (devices.Count > 1) cards.Add(HomeTheaterCard());
+            if (devices.Count > 0) cards.Add(GroupDelayCard());
             SetRows(_groupList, cards);
         }
 
         private Border BuildLeaderChoiceCard(List<KnownDevice> devices)
         {
             var combo = new ComboBox { Width = 320 };
-            combo.Items.Add(ComboItem(string.Empty, $"Controlled amp ({DeviceName(_owner._deviceIp)})"));
+            combo.Items.Add(ComboItem(string.Empty, $"Controlled device ({DeviceName(_owner._deviceIp)})"));
             foreach (var d in devices) combo.Items.Add(ComboItem(d.Ip, d.Name));
             int index = devices.FindIndex(d => d.Ip == _owner._groupLeaderIp);
             combo.SelectedIndex = index >= 0 ? index + 1 : 0;
@@ -1230,7 +1327,7 @@ sealed partial class WiimController
                 _owner.SetGroupLeader(ip);
                 Dispatcher.UIThread.Post(RebuildMultiroom);
             };
-            return Card("Group leader", LabeledRow("Leader", combo), Muted("Linked amps play whatever the leader plays."));
+            return Card("Group leader", LabeledRow("Leader", combo), Muted("Linked devices play whatever the leader plays."));
         }
 
         private Border BuildLeaderGroupCard(MultiroomSnapshot snapshot, string leaderIp, List<KnownDevice> devices)
@@ -1315,7 +1412,7 @@ sealed partial class WiimController
             _groupBusy = false;
             _groupList.IsEnabled = true;
             if (!ok)
-                await Dialogs.MessageAsync(this, "The amp didn't accept the request. Check that the amps are switched on and reachable.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't accept the request. Check that the devices are switched on and reachable.", _scale);
             await RefreshMultiroomAsync();
         }
 
@@ -1329,56 +1426,42 @@ sealed partial class WiimController
             _btnEqRename.Click += async (_, _) => await RenameEqPresetAsync();
             _btnEqDelete.Click += async (_, _) => await DeleteEqPresetAsync();
             HookEqFileButtons();
+            HookQuickPresetButton();
             var presetButtons = new StackPanel
             {
                 Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
-                Children = { _btnEqSaveCurrent, _btnEqSave, _btnEqRename, _btnEqDelete, _btnEqExport, _btnEqImport }
+                Children = { _btnEqSaveCurrent, _btnEqSave, _btnEqRename, _btnEqDelete, _btnEqExport, _btnEqImport, _btnEqQuick }
             };
-            var presetRow = new StackPanel
+            var presetPicker = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 4, 0, 2) };
+            _eqPresetChips.VerticalAlignment = VerticalAlignment.Center;
+            _eqPresetChips.Margin = new Thickness(0, 0, 8, 0);
+            presetPicker.Children.Add(_eqPresetChips);
+            Grid.SetColumn(_cboEqPreset, 1);
+            _cboEqPreset.VerticalAlignment = VerticalAlignment.Center;
+            presetPicker.Children.Add(_cboEqPreset);
+            _cboEqPreset.SelectionChanged += (_, _) => UpdatePresetChips();
+            _eqTypeRow = BuildEqTypeSwitch();
+            _eqInputRow = new StackPanel
             {
-                Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
-                Children = { presetButtons, _cboEqPreset }
+                Orientation = Orientation.Horizontal, Spacing = 10, IsVisible = false,
+                Children = { new TextBlock { Text = "Input", Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) }, _cboEqInput }
             };
-            var presetButtonsBelow = new Panel { Margin = new Thickness(0, 8, 0, 0), IsVisible = false };
-            _cboEqType.Items.Add(ComboItem(DefaultEqPlugin, "Graphic EQ (10 bands)"));
-            _cboEqType.Items.Add(ComboItem(PeqPlugin, "Parametric EQ"));
-            _cboEqType.SelectedIndex = 0;
-            _eqTypeRow = LabeledRow("Type", _cboEqType);
-            _eqTypeRow.IsVisible = false;
-            _eqInputRow = LabeledRow("Input", _cboEqInput);
-            _eqInputRow.IsVisible = false;
-            _roomFitRow = new StackPanel
+            var eqRow = LabeledRow("Enable EQ", new StackPanel
             {
-                IsVisible = false,
-                Children =
-                {
-                    ToggleRow("RoomFit room correction", _chkRoomFit),
-                    LabeledRow("RoomFit profile", new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal, Spacing = 8, Children = { _btnRoomFitExport, _btnRoomFitImport, _btnRoomFitCurve, _cboRoomFit }
-                    })
-                }
-            };
+                Orientation = Orientation.Horizontal, Spacing = 8, Children = { _chkEqEnabled, _eqInputRow }
+            });
+            ToolTip.SetTip(_cboEqInput, "The input whose EQ is shown. Each input has its own EQ.");
+            _chkRoomFit.VerticalAlignment = _chkEqEnabled.VerticalAlignment = VerticalAlignment.Center;
+            _roomFitRow = LabeledRow("RoomFit room correction", new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                Children = { _chkRoomFit, _btnRoomFitExport, _btnRoomFitImport, _btnRoomFitCurve, _cboRoomFit }
+            });
+            _roomFitRow.IsVisible = false;
             _btnRoomFitCurve.Click += async (_, _) => await ShowRoomFitCurveAsync();
             ToolTip.SetTip(_roomFitRow, "Measured with the WiiM Home app. Applies to every input, on top of the EQ.");
-            var topCard = Card(null, _roomFitRow, ToggleRow("Enable EQ", _chkEqEnabled), _eqInputRow, _eqTypeRow, LabeledRow("Preset", presetRow),
-                presetButtonsBelow);
-            topCard.SizeChanged += (_, e) =>
-            {
-                bool narrow = e.NewSize.Width < 900;
-                if (narrow == presetButtonsBelow.IsVisible) return;
-                if (narrow)
-                {
-                    presetRow.Children.Remove(presetButtons);
-                    presetButtonsBelow.Children.Add(presetButtons);
-                }
-                else
-                {
-                    presetButtonsBelow.Children.Remove(presetButtons);
-                    presetRow.Children.Insert(0, presetButtons);
-                }
-                presetButtonsBelow.IsVisible = narrow;
-            };
+            ToolTip.SetTip(_cboRoomFit, "The RoomFit profile that's used");
+            var topCard = Card(null, _roomFitRow, eqRow, LabeledRow("Preset", presetButtons), presetPicker);
 
             var table = new Grid
             {
@@ -1420,16 +1503,22 @@ sealed partial class WiimController
             eqGrid.Children.Add(table);
             Grid.SetRow(bottom, 1);
             eqGrid.Children.Add(bottom);
-            var eqCard = new Border { Child = eqGrid, Margin = new Thickness(0) };
-            eqCard.Classes.Add("card");
+            var eqCard = new Border { Child = eqGrid, Transitions = [FadeIn()] };
             _geqEditor = eqCard;
             _peqEditor = BuildPeqEditor();
+            _peqEditor.Transitions = [FadeIn()];
 
             var body = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
             body.Children.Add(topCard);
+            var editorGrid = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+            editorGrid.Children.Add(_eqTypeRow);
             var editors = new Panel { Children = { eqCard, _peqEditor } };
             Grid.SetRow(editors, 1);
-            body.Children.Add(editors);
+            editorGrid.Children.Add(editors);
+            var editorCard = new Border { Child = editorGrid, Margin = new Thickness(0) };
+            editorCard.Classes.Add("card");
+            Grid.SetRow(editorCard, 1);
+            body.Children.Add(editorCard);
 
             _eqEditControls.Add(_cboEqPreset);
             _eqEditControls.AddRange(_eqSliders);
@@ -1448,16 +1537,6 @@ sealed partial class WiimController
             {
                 if (_eqLoading || (_cboEqInput.SelectedItem as ComboBoxItem)?.Tag is not string input || input == _eqSource) return;
                 _eqInputChoice = input;
-                await RefreshEqAsync();
-            };
-            _cboEqType.SelectionChanged += async (_, _) =>
-            {
-                if (_eqLoading || (_cboEqType.SelectedItem as ComboBoxItem)?.Tag is not string plugin || plugin == _eqPluginUri) return;
-                await SendPendingEqBandsAsync();
-                _eqPluginUri = plugin;
-                ShowEqEditor();
-                if (_chkEqEnabled.IsChecked == true && !await _owner.SetEqTypeAsync(_eqDeviceIp, EqTarget, plugin))
-                    await Dialogs.MessageAsync(this, "The amp didn't switch the EQ type.", _scale);
                 await RefreshEqAsync();
             };
             _cboEqPreset.SelectionChanged += async (_, _) =>
@@ -1485,8 +1564,12 @@ sealed partial class WiimController
 
             _chkEqEnabled.IsEnabled = false;
             UpdateEqEnabledState();
-            return Page("Equalizer", _lblEqSource, [btnRefresh], body, scroll: false);
+            ToolTip.SetTip(_cboEqAmp, "The device whose EQ is shown");
+            _cboEqAmp.SelectionChanged += async (_, _) => { if (!_loading) await RefreshEqAsync(); };
+            return Page("Equalizer", _lblEqSource, [_cboEqAmp, btnRefresh], body, scroll: false);
         }
+
+        private static Avalonia.Animation.DoubleTransition FadeIn() => new() { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) };
 
         private static string FormatEqDb(int value) =>
             ((value - 50) / 4.0).ToString("+0.0;-0.0;0", System.Globalization.CultureInfo.InvariantCulture);
@@ -1495,11 +1578,24 @@ sealed partial class WiimController
 
         private string EqTarget => _eqLegacy ? string.Empty : _eqSource;
 
+        private string EqIp => AmpOf(_cboEqAmp) ?? _owner._deviceIp;
+
+        private void FillEqAmpCombo()
+        {
+            string? chosen = AmpOf(_cboEqAmp);
+            string selected = chosen == null || _followActive ? _owner._deviceIp : chosen;
+            _cboEqAmp.Items.Clear();
+            foreach (var d in _owner._knownDevices) _cboEqAmp.Items.Add(ComboItem(d.Ip, d.Name));
+            int index = _owner._knownDevices.FindIndex(d => d.Ip == selected);
+            _cboEqAmp.SelectedIndex = index >= 0 ? index : _cboEqAmp.Items.Count > 0 ? 0 : -1;
+        }
+
         private void UpdateEqEnabledState()
         {
             bool editable = _eqAvailable && _chkEqEnabled.IsChecked == true;
             foreach (var c in _eqEditControls) c.IsEnabled = editable;
-            _cboEqType.IsEnabled = _cboEqInput.IsEnabled = _eqAvailable;
+            _eqPresetChips.IsEnabled = editable;
+            _btnGraphicEq.IsEnabled = _btnParametricEq.IsEnabled = _cboEqInput.IsEnabled = _eqAvailable;
             UpdatePeqRowStates();
             bool customSelected = SelectedEqPreset is { } name && _eqCustomPresets.Contains(name);
             _btnEqSave.IsEnabled = _btnEqSaveCurrent.IsEnabled = editable;
@@ -1530,15 +1626,7 @@ sealed partial class WiimController
             }
         }
 
-        private async Task SendPendingEqBandsAsync()
-        {
-            while (_eqSending || _eqDirtyBands.Count > 0 || _peqSending || _peqDirty.Count > 0)
-            {
-                await FlushEqBandsAsync();
-                await FlushPeqAsync();
-                if (_eqSending || _peqSending) await Task.Delay(50);
-            }
-        }
+        private async Task<bool> SendPendingEqBandsAsync() => await FlushEqBandsAsync() & await FlushPeqAsync();
 
         private async Task<bool> IsValidPresetNameAsync(string name)
         {
@@ -1562,21 +1650,21 @@ sealed partial class WiimController
             }
             await SendPendingEqBandsAsync();
             if (!await _owner.SaveEqPresetAsync(_eqDeviceIp, name, EqTarget, _eqPluginUri, replacing: true))
-                await Dialogs.MessageAsync(this, "The amp didn't save the preset.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't save the preset.", _scale);
             await RefreshEqAsync();
         }
 
         private async Task SaveEqPresetAsync()
         {
             string suggestion = BaseCustomPreset ?? string.Empty;
-            string? name = await Dialogs.PromptAsync(this, "Save the current EQ on the amp as a preset named:", suggestion, _scale);
+            string? name = await Dialogs.PromptAsync(this, "Save the current EQ on the device as a preset named:", suggestion, _scale);
             if (string.IsNullOrEmpty(name) || !await IsValidPresetNameAsync(name)) return;
             bool replacing = _eqCustomPresets.Contains(name);
             if (replacing && !await Dialogs.ConfirmAsync(this, $"Replace the preset \"{name}\" with the current EQ?", _scale)) return;
 
             await SendPendingEqBandsAsync();
             if (!await _owner.SaveEqPresetAsync(_eqDeviceIp, name, EqTarget, _eqPluginUri, replacing))
-                await Dialogs.MessageAsync(this, "The amp didn't save the preset.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't save the preset.", _scale);
             await RefreshEqAsync();
         }
 
@@ -1591,7 +1679,7 @@ sealed partial class WiimController
                 return;
             }
             if (!await _owner.RenameEqPresetAsync(_eqDeviceIp, oldName, name, _eqPluginUri))
-                await Dialogs.MessageAsync(this, "The amp didn't rename the preset.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't rename the preset.", _scale);
             else if (_eqBasePreset == oldName) _eqBasePreset = name;
             await RefreshEqAsync();
         }
@@ -1599,30 +1687,33 @@ sealed partial class WiimController
         private async Task DeleteEqPresetAsync()
         {
             if (SelectedEqPreset is not { } name || !_eqCustomPresets.Contains(name)) return;
-            if (!await Dialogs.ConfirmAsync(this, $"Delete the preset \"{name}\" from the amp?", _scale)) return;
+            if (!await Dialogs.ConfirmAsync(this, $"Delete the preset \"{name}\" from the device?", _scale)) return;
             if (!await _owner.DeleteEqPresetAsync(_eqDeviceIp, name, _eqPluginUri))
-                await Dialogs.MessageAsync(this, "The amp didn't delete the preset.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't delete the preset.", _scale);
             await RefreshEqAsync();
         }
 
-        private async Task FlushEqBandsAsync()
+        private async Task<bool> FlushEqBandsAsync()
         {
-            if (_eqSending) return;
             _eqSendTimer.Stop();
-            if (_eqDirtyBands.Count == 0) return;
-
-            var bands = _eqDirtyBands.Order()
-                .Select(i => new EqBand(i, EqBandParam(i), _eqSliders[i].Value))
-                .ToList();
-            _eqDirtyBands.Clear();
-
-            _eqSending = true;
+            await _eqFlushGate.WaitAsync();
             try
             {
-                if (_eqLegacy) await _owner.SetEqBandsAsync(_eqDeviceIp, bands);
-                else await _owner.SetGeqBandsAsync(_eqDeviceIp, _eqSource, bands);
+                while (_eqDirtyBands.Count > 0)
+                {
+                    var indices = _eqDirtyBands.Order().ToList();
+                    var bands = indices.Select(i => new EqBand(i, EqBandParam(i), _eqSliders[i].Value)).ToList();
+                    _eqDirtyBands.Clear();
+                    bool ok = _eqLegacy
+                        ? await _owner.SetEqBandsAsync(_eqDeviceIp, bands)
+                        : await _owner.SetGeqBandsAsync(_eqDeviceIp, _eqSource, bands);
+                    if (ok) continue;
+                    foreach (int index in indices) _eqDirtyBands.Add(index);
+                    return false;
+                }
+                return true;
             }
-            finally { _eqSending = false; }
+            finally { _eqFlushGate.Release(); }
         }
 
         private string EqBandParam(int index)
@@ -1637,7 +1728,7 @@ sealed partial class WiimController
             await FlushPeqAsync();
             int version = ++_eqRefreshVersion;
             _lblEqSource.Text = "Loading…";
-            string ip = _owner._deviceIp;
+            string ip = EqIp;
             string? inputChoice = ip == _eqDeviceIp ? _eqInputChoice : null;
             var currentTask = _owner.GetEqStateAsync(ip);
             var modesTask = _owner.GetEqSourceModesAsync(ip);
@@ -1679,16 +1770,15 @@ sealed partial class WiimController
             _eqAvailable = state != null;
             _eqSource = source;
             _eqPluginUri = plugin;
-            string baseKey = $"{_owner._deviceIp}|{source}|{plugin}";
+            string baseKey = $"{ip}|{source}|{plugin}";
             if (presetName.Length > 0) _eqBasePreset = presetName;
             else if (baseKey != _eqBaseKey) _eqBasePreset = null;
             _eqBaseKey = baseKey;
             _cboEqInput.Items.Clear();
             foreach (var input in inputs)
-                _cboEqInput.Items.Add(ComboItem(input, input == currentInput ? $"{_owner.InputName(_owner._deviceIp, input)}  (current)" : _owner.InputName(_owner._deviceIp, input)));
+                _cboEqInput.Items.Add(ComboItem(input, input == currentInput ? $"{_owner.InputName(ip, input)}  (current)" : _owner.InputName(ip, input)));
             _cboEqInput.SelectedIndex = inputs.IndexOf(source);
             if (_eqInputRow != null) _eqInputRow.IsVisible = !legacy && inputs.Count > 0;
-            _cboEqType.SelectedIndex = plugin == PeqPlugin ? 1 : 0;
             if (_eqTypeRow != null) _eqTypeRow.IsVisible = peq != null;
             _eqCustomPresets.Clear();
             _eqCustomPresets.UnionWith(presets.Custom);
@@ -1697,6 +1787,7 @@ sealed partial class WiimController
             _cboEqPreset.Items.Clear();
             foreach (var p in presets.Custom) _cboEqPreset.Items.Add(ComboItem(p, $"{p}  (custom)"));
             foreach (var p in presets.BuiltIn) _cboEqPreset.Items.Add(ComboItem(p, p));
+            SetPresetLists(presets.Custom, presets.BuiltIn);
             if (state != null)
             {
                 var names = presets.Custom.Concat(presets.BuiltIn).ToList();
@@ -1713,7 +1804,7 @@ sealed partial class WiimController
                     var slider = _eqSliders[b.Index];
                     slider.Value = Math.Clamp(b.Value, slider.Minimum, slider.Maximum);
                 }
-                _lblEqSource.Text = legacy && state.Source.Length > 0 ? $"Input: {_owner.InputName(_owner._deviceIp, state.Source)}" : string.Empty;
+                _lblEqSource.Text = legacy && state.Source.Length > 0 ? $"Input: {_owner.InputName(ip, state.Source)}" : string.Empty;
             }
             else
             {
@@ -1744,7 +1835,7 @@ sealed partial class WiimController
             var keysCard = Card("Volume keys",
                 LabeledRow("Step size", _numStep),
                 ToggleRow("Logarithmic step (finer at low volume)", _chkLogStep),
-                ToggleRow("Volume keys also change linked amps", _chkGroupVolume));
+                ToggleRow("Volume keys also change linked devices", _chkGroupVolume));
 
             foreach (var c in Enum.GetValues<OsdCorner>()) _cboCorner.Items.Add(ComboItem(c, OsdCornerLabel(c)));
             foreach (int ms in DurationChoices) _cboDuration.Items.Add(ComboItem(ms, OsdDurationLabel(ms)));
@@ -1769,15 +1860,68 @@ sealed partial class WiimController
             var overlayCard = Card("Volume overlay", LabeledRow("Position", _cboCorner), LabeledRow("Duration", _cboDuration),
                 LabeledRow("Size", _cboOsdScale));
 
-            return Page("Volume", null, [], new StackPanel { Children = { keysCard, overlayCard } });
+            var cards = new StackPanel { Children = { keysCard, overlayCard } };
+            var page = Page("Volume", null, [], cards);
+            cards.Children.Insert(0, BuildAmpVolumeCard(page));
+            return page;
+        }
+
+        private static Control CoffeeButton()
+        {
+            var badge = new Border
+            {
+                Width = 44, Height = 44, CornerRadius = new CornerRadius(22), Background = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Cursor = new Cursor(StandardCursorType.Hand), Opacity = 0.85,
+                Child = new Image
+                {
+                    Source = new Avalonia.Media.Imaging.Bitmap(AssetLoader.Open(new Uri("avares://WiimControl/Assets/bmc.png"))),
+                    Height = 28, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            };
+            ToolTip.SetTip(badge, "Buy me a coffee");
+            badge.PointerEntered += (_, _) => badge.Opacity = 1;
+            badge.PointerExited += (_, _) => badge.Opacity = 0.85;
+            badge.Tapped += (_, _) => OpenUrl("https://buymeacoffee.com/yockser");
+            return badge;
+        }
+
+        private static Control WiimButton()
+        {
+            var badge = new Border
+            {
+                Width = 44, Height = 44, CornerRadius = new CornerRadius(22), ClipToBounds = true, Background = Brushes.Black,
+                Cursor = new Cursor(StandardCursorType.Hand), Opacity = 0.85,
+                Child = new Image
+                {
+                    Source = new Avalonia.Media.Imaging.Bitmap(AssetLoader.Open(new Uri("avares://WiimControl/Assets/wiim.png"))),
+                    Stretch = Stretch.UniformToFill
+                }
+            };
+            ToolTip.SetTip(badge, "WiiM website");
+            badge.PointerEntered += (_, _) => badge.Opacity = 1;
+            badge.PointerExited += (_, _) => badge.Opacity = 0.85;
+            badge.Tapped += (_, _) => OpenUrl("https://www.wiimhome.com/");
+            return badge;
         }
 
         private Control BuildGeneralPage()
         {
             _chkSuppress.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetSuppress(_chkSuppress.IsChecked == true); };
             _chkAutoStart.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetAutoStartSetting(_chkAutoStart.IsChecked == true); };
+            _chkStartMinimized.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetStartMinimized(_chkStartMinimized.IsChecked == true); };
+            ToolTip.SetTip(_chkStartMinimized, OperatingSystem.IsMacOS()
+                ? "Start in the menu bar without opening this window. Starting Wiim Control again while it runs opens the window."
+                : "Start in the tray without opening this window. Starting Wiim Control again while it runs opens the window.");
+            string startMinimizedLabel = OperatingSystem.IsMacOS() ? "Start minimized (in the menu bar)" : "Start minimized (in the tray)";
             _chkMediaControls.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetMediaControls(_chkMediaControls.IsChecked == true); };
-            ToolTip.SetTip(_chkMediaControls, "Shows the track in the media pop-up next to the Windows volume, with play/pause, next and previous for the amp.");
+            ToolTip.SetTip(_chkMediaControls, OperatingSystem.IsWindows()
+                ? "Shows the track in the media pop-up next to the Windows volume, with play/pause, next and previous for the device."
+                : OperatingSystem.IsMacOS()
+                    ? "Shows the track in Now Playing in Control Center and the menu bar, with play/pause, next, previous and the position bar for the device."
+                    : "Shows the track in the desktop's media controls (MPRIS), with play/pause, next, previous and the position bar for the device.");
+            var mediaControlsRow = ToggleRow($"Show the device in the {MediaControlsName}", _chkMediaControls);
             _chkForwardMedia.IsCheckedChanged += async (_, _) =>
             {
                 if (_loading) return;
@@ -1792,8 +1936,9 @@ sealed partial class WiimController
                 cards.Children.Add(Card("Behavior",
                     ToggleRow("Suppress Windows volume OSD", _chkSuppress),
                     ToggleRow(AutoStart.Label, _chkAutoStart),
+                    ToggleRow(startMinimizedLabel, _chkStartMinimized),
                     ToggleRow("Forward media keys (play/pause/next/prev) to Wiim", _chkForwardMedia),
-                    ToggleRow("Show the amp in the Windows media controls", _chkMediaControls)));
+                    mediaControlsRow));
 
                 var btnClear = Pill("Allow all outputs");
                 btnClear.Margin = new Thickness(0, 8, 0, 0);
@@ -1803,12 +1948,14 @@ sealed partial class WiimController
             }
             else if (OperatingSystem.IsLinux())
             {
-                cards.Children.Add(Card("Behavior", ToggleRow(AutoStart.Label, _chkAutoStart)));
+                cards.Children.Add(Card("Behavior", ToggleRow(AutoStart.Label, _chkAutoStart), ToggleRow(startMinimizedLabel, _chkStartMinimized),
+                    mediaControlsRow));
                 cards.Children.Add(BuildLinuxShortcutsCard());
             }
             else
             {
-                cards.Children.Add(Card("Behavior", ToggleRow(AutoStart.Label, _chkAutoStart)));
+                cards.Children.Add(Card("Behavior", ToggleRow(AutoStart.Label, _chkAutoStart), ToggleRow(startMinimizedLabel, _chkStartMinimized),
+                    mediaControlsRow));
                 cards.Children.Add(Card("Volume and media keys",
                     Muted("macOS doesn't let apps take over the volume keys. Set your own shortcuts on the Hotkeys page, " +
                           "or run these commands from the Shortcuts app or Automator:"),
@@ -2000,9 +2147,20 @@ sealed partial class WiimController
         private void UpdatePortalStatus() => Dispatcher.UIThread.Post(() =>
             _lblPortalStatus.Text = _owner._linuxShortcuts?.Status ?? "Not available");
 
+        internal void OnActiveDeviceChanged() => ReloadSoon(refreshEq: true);
+
+        private void RefreshVisibleDevicePages()
+        {
+            foreach (var (page, refresh) in _devicePages)
+                if (page.IsVisible) _ = refresh();
+        }
+
         private void LoadFromOwner()
         {
             _loading = true;
+            _followActive = _comboActive != _owner._deviceIp;
+            bool activeChanged = _followActive && _comboActive != null;
+            _comboActive = _owner._deviceIp;
 
             var current = _owner._knownDevices.FirstOrDefault(d => d.Ip == _owner._deviceIp);
             _lblDeviceName.Text = current.Name ?? "No device";
@@ -2012,6 +2170,7 @@ sealed partial class WiimController
 
             _chkSuppress.IsChecked = _owner._suppress;
             _chkAutoStart.IsChecked = IsAutoStartEnabled();
+            _chkStartMinimized.IsChecked = _owner._startMinimized;
             _chkForwardMedia.IsChecked = _owner._forwardMediaKeys;
             _chkMediaControls.IsChecked = _owner._mediaControls;
             _chkPortal.IsChecked = _owner._linuxPortalShortcuts;
@@ -2020,7 +2179,7 @@ sealed partial class WiimController
             _chkGroupVolume.IsChecked = _owner._groupVolumeKeys;
             UpdatePortalStatus();
 
-            string selectedAmp = SelectedAmpIp ?? _owner._deviceIp;
+            string selectedAmp = (_followActive ? null : SelectedAmpIp) ?? _owner._deviceIp;
             _cboAmp.Items.Clear();
             foreach (var d in _owner._knownDevices) _cboAmp.Items.Add(ComboItem(d.Ip, d.Name));
             int ampIndex = _owner._knownDevices.FindIndex(d => d.Ip == selectedAmp);
@@ -2029,6 +2188,13 @@ sealed partial class WiimController
             FillAmpCombo(_cboLibraryAmp);
             FillAmpCombo(_cboRadioAmp);
             FillAmpCombo(_cboRecentAmp);
+            FillAmpCombo(_cboQueueAmp);
+            FillAmpCombo(_cboVolumeAmp);
+            FillAmpCombo(_cboSubAmp);
+            FillAmpCombo(_cboOutputAmp);
+            FillAmpCombo(_cboInputsAmp);
+            FillAmpCombo(_cboDelayAmp);
+            FillEqAmpCombo();
             _cboCorner.SelectedItem = _cboCorner.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is OsdCorner c && c == _owner._osdCorner);
             _cboDuration.SelectedItem = _cboDuration.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is int ms && ms == _owner._osdDurationMs);
             if (_cboDuration.SelectedIndex < 0 && _cboDuration.Items.Count > 0) _cboDuration.SelectedIndex = 2;
@@ -2053,6 +2219,8 @@ sealed partial class WiimController
             RebuildHotkeys();
 
             _loading = false;
+            _followActive = false;
+            if (activeChanged) Dispatcher.UIThread.Post(RefreshVisibleDevicePages);
         }
     }
 }

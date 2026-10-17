@@ -28,6 +28,8 @@ sealed class ArtworkView : Border
 
     public string ImageUrl { get; set; } = string.Empty;
 
+    public event Action? BitmapChanged;
+
     public Bitmap? Bitmap
     {
         get => _image.Source as Bitmap;
@@ -36,6 +38,7 @@ sealed class ArtworkView : Border
             _image.Source = value;
             _image.IsVisible = value != null;
             _placeholder.IsVisible = value == null;
+            BitmapChanged?.Invoke();
         }
     }
 }

@@ -8,6 +8,7 @@ static class AutoStart
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "WiimControl";
     private const string LegacyRunValueName = "WiimVolumeControl";
+    public const string MinimizedArgument = "--minimized";
 
     public static string Label =>
         OperatingSystem.IsWindows() ? "Start with Windows" : OperatingSystem.IsMacOS() ? "Start at login" : "Start when I log in";
@@ -53,22 +54,30 @@ static class AutoStart
 
     public static void MigrateLegacy()
     {
-        if (!OperatingSystem.IsWindows()) return;
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
-            if (key?.GetValue(LegacyRunValueName) == null) return;
-            key.DeleteValue(LegacyRunValueName, false);
-            key.SetValue(RunValueName, $"\"{ExecutablePath}\"");
+            if (OperatingSystem.IsWindows())
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
+                if (key?.GetValue(LegacyRunValueName) != null)
+                {
+                    key.DeleteValue(LegacyRunValueName, false);
+                    key.SetValue(RunValueName, WindowsCommand);
+                }
+            }
+            if (IsEnabled()) SetEnabled(true);
         }
         catch (Exception) { }
     }
+
+    private static string WindowsCommand => $"\"{ExecutablePath}\" {MinimizedArgument}";
 
     [SupportedOSPlatform("windows")]
     private static bool IsEnabledWindows()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
-        return key?.GetValue(RunValueName) as string == $"\"{ExecutablePath}\"";
+        return key?.GetValue(RunValueName) is string command &&
+               (command == WindowsCommand || command == $"\"{ExecutablePath}\"");
     }
 
     [SupportedOSPlatform("windows")]
@@ -76,7 +85,7 @@ static class AutoStart
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true)
             ?? Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
-        if (enabled) key.SetValue(RunValueName, $"\"{ExecutablePath}\"");
+        if (enabled) key.SetValue(RunValueName, WindowsCommand);
         else         key.DeleteValue(RunValueName, false);
     }
 
@@ -89,7 +98,7 @@ static class AutoStart
             "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
             "<plist version=\"1.0\">\n<dict>\n" +
             "  <key>Label</key>\n  <string>com.wiimcontrol.app</string>\n" +
-            $"  <key>ProgramArguments</key>\n  <array>\n    <string>{path}</string>\n  </array>\n" +
+            $"  <key>ProgramArguments</key>\n  <array>\n    <string>{path}</string>\n    <string>{MinimizedArgument}</string>\n  </array>\n" +
             "  <key>RunAtLoad</key>\n  <true/>\n" +
             "</dict>\n</plist>\n");
     }
@@ -101,7 +110,7 @@ static class AutoStart
             "[Desktop Entry]\n" +
             "Type=Application\n" +
             "Name=Wiim Control\n" +
-            $"Exec=\"{ExecutablePath}\"\n" +
+            $"Exec=\"{ExecutablePath}\" {MinimizedArgument}\n" +
             "Icon=wiim-control\n" +
             "X-GNOME-Autostart-enabled=true\n" +
             "Terminal=false\n");

@@ -87,13 +87,13 @@ static class Didl
         return root.ToString(SaveOptions.DisableFormatting);
     }
 
-    public static string QueueContext(string name, IReadOnlyList<QueueTrack> tracks, int startIndex, bool radio)
+    public static string QueueContext(string name, IReadOnlyList<QueueTrack> tracks, int startIndex, bool radio, string source = "UPnPServer")
     {
         var list = new XElement("PlayList",
             new XElement("ListName", name),
             new XElement("ListInfo",
                 radio ? new XElement("Radio", 1) : null,
-                new XElement("SourceName", "UPnPServer"),
+                new XElement("SourceName", source),
                 new XElement("TrackNumber", tracks.Count),
                 new XElement("SearchUrl", ""),
                 new XElement("Quality", 0),

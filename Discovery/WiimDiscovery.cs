@@ -108,11 +108,7 @@ static class WiimDiscovery
         {
             while (true)
             {
-                var receiveTask = client.ReceiveAsync();
-                var finished = await Task.WhenAny(receiveTask, Task.Delay(Timeout.Infinite, token));
-                if (finished != receiveTask) return;
-
-                var result = await receiveTask;
+                var result = await client.ReceiveAsync(token);
                 var text = Encoding.ASCII.GetString(result.Buffer);
                 var locationLine = text.Split("\r\n")
                     .FirstOrDefault(l => l.StartsWith("location:", StringComparison.OrdinalIgnoreCase));

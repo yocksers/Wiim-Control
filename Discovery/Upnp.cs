@@ -25,24 +25,30 @@ static class Upnp
             new XElement(SoapNs + "Body",
                 new XElement(u + action, new XAttribute(XNamespace.Xmlns + "u", u),
                     args.Select(a => new XElement(a.Name, a.Value)))));
-        using var request = new HttpRequestMessage(HttpMethod.Post, controlUrl)
+        string body = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" + envelope.ToString(SaveOptions.DisableFormatting);
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            Content = new StringContent("<?xml version=\"1.0\" encoding=\"utf-8\"?>" + envelope.ToString(SaveOptions.DisableFormatting),
-                Encoding.UTF8, "text/xml")
-        };
-        request.Content.Headers.ContentType!.CharSet = "\"utf-8\"";
-        request.Headers.TryAddWithoutValidation("SOAPACTION", $"\"{service}#{action}\"");
-        try
-        {
-            using var response = await Http.SendAsync(request).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return null;
-            var doc = XDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-            return doc.Descendants().FirstOrDefault(e => e.Name.LocalName == action + "Response");
+            using var request = new HttpRequestMessage(HttpMethod.Post, controlUrl) { Content = new StringContent(body, Encoding.UTF8, "text/xml") };
+            request.Content.Headers.ContentType!.CharSet = "\"utf-8\"";
+            request.Headers.TryAddWithoutValidation("SOAPACTION", $"\"{service}#{action}\"");
+            request.Headers.ConnectionClose = true;
+            try
+            {
+                using var response = await Http.SendAsync(request).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode) return null;
+                var doc = XDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+                return doc.Descendants().FirstOrDefault(e => e.Name.LocalName == action + "Response");
+            }
+            catch (Exception ex) when (attempt == 0 && ex is HttpRequestException or IOException)
+            {
+                await Task.Delay(200).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
-        catch (Exception)
-        {
-            return null;
-        }
+        return null;
     }
 
     public static async Task<List<MediaServer>> DiscoverMediaServersAsync(TimeSpan timeout)

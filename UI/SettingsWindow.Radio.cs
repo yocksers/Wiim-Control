@@ -37,7 +37,7 @@ sealed partial class WiimController
 
         private Control BuildRadioPage()
         {
-            ToolTip.SetTip(_cboRadioAmp, "The amp to play on");
+            ToolTip.SetTip(_cboRadioAmp, "The device to play on");
             var btnSearch = Pill("Search", accent: true);
             btnSearch.Click += async (_, _) => await SearchRadioAsync();
             _txtRadioSearch.KeyDown += async (_, e) =>
@@ -69,6 +69,7 @@ sealed partial class WiimController
                 Children =
                 {
                     Card(null, searchRow, RadioSection("Browse"), browse, RadioSection("Genres"), genres),
+                    BuildStreamCard(),
                     Card(null, _lblRadioResults, _radioResults, _btnRadioMore,
                         Muted("Stations come from radio-browser.info, a free directory run by the community. " +
                               "Click the star next to a station to keep it in Favourites."))
@@ -323,7 +324,7 @@ sealed partial class WiimController
         {
             if (AmpOf(_cboRadioAmp) is not { } ip)
             {
-                await Dialogs.MessageAsync(this, "Add a Wiim amp on the Devices page first.", _scale);
+                await Dialogs.MessageAsync(this, "Add a WiiM device on the Devices page first.", _scale);
                 return;
             }
             if (_radioPlaying) return;
@@ -336,7 +337,7 @@ sealed partial class WiimController
             if (!played)
             {
                 _lblRadioStatus.Text = string.Empty;
-                await Dialogs.MessageAsync(this, "The amp didn't start the station. Check that it's switched on and reachable.", _scale);
+                await Dialogs.MessageAsync(this, "The device didn't start the station. Check that it's switched on and reachable.", _scale);
                 return;
             }
             _owner.AddRecent(new RecentItem(station.Name, station.Detail, station.ArtUrl, DateTime.Now, station, null));

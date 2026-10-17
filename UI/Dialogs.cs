@@ -16,9 +16,9 @@ static class Dialogs
             CanResize = false,
             ShowInTaskbar = false,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
-            Content = new LayoutTransformControl
+            Content = new ScaledContent
             {
-                LayoutTransform = new ScaleTransform(scale, scale),
+                Scale = scale,
                 Child = new Border { Padding = new Thickness(20, 18), Child = content }
             }
         };
@@ -145,8 +145,8 @@ static class Dialogs
     {
         if (devices.Count == 0)
         {
-            var ip = await PromptAsync(null, "No Wiim devices found automatically.\nEnter your Wiim Amp IP address:", string.Empty, scale);
-            return string.IsNullOrWhiteSpace(ip) ? null : new KnownDevice("Wiim Amp", ip, string.Empty);
+            var ip = await PromptAsync(null, "No Wiim devices found automatically.\nEnter your WiiM device's IP address:", string.Empty, scale);
+            return string.IsNullOrWhiteSpace(ip) ? null : new KnownDevice("WiiM device", ip, string.Empty);
         }
 
         KnownDevice? answer = null;
@@ -172,7 +172,7 @@ static class Dialogs
         await ShowAsync(window, null, () => true);
 
         if (!manual) return answer;
-        var manualIp = await PromptAsync(null, "Enter your Wiim Amp IP address:", string.Empty, scale);
-        return string.IsNullOrWhiteSpace(manualIp) ? null : new KnownDevice("Wiim Amp", manualIp, string.Empty);
+        var manualIp = await PromptAsync(null, "Enter your WiiM device's IP address:", string.Empty, scale);
+        return string.IsNullOrWhiteSpace(manualIp) ? null : new KnownDevice("WiiM device", manualIp, string.Empty);
     }
 }

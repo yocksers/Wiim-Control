@@ -26,7 +26,7 @@ sealed class VolumeOsdWindow : Window
         TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = BarWidth, Margin = new Thickness(0, 10, 0, 0)
     };
     private readonly DispatcherTimer _hideTimer = new();
-    private readonly LayoutTransformControl _scaler = new();
+    private readonly ScaledContent _scaler = new();
     private OsdCorner _corner;
     private double _scale = 1;
 
@@ -83,10 +83,10 @@ sealed class VolumeOsdWindow : Window
     private void Present(OsdCorner corner, int durationMs, double scale)
     {
         _corner = corner;
-        if (_scale != scale || _scaler.LayoutTransform == null)
+        if (_scale != scale || _scaler.Scale != scale)
         {
             _scale = scale;
-            _scaler.LayoutTransform = new ScaleTransform(scale, scale);
+            _scaler.Scale = scale;
         }
         if (!IsVisible) Show();
         Reposition();
