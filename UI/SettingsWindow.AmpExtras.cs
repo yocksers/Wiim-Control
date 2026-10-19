@@ -54,10 +54,6 @@ sealed partial class WiimController
                 if (auto.Months > 0 && auto.PausedUntil is { } until)
                     rows.Add(Muted($"Automatic updates are paused until {until:d}. No periodic updates are installed before then."));
             }
-            var restart = Pill("Restart");
-            ToolTip.SetTip(restart, "Restarts the device. It stops playing and is back after about a minute.");
-            restart.Click += async (_, _) => await RestartDeviceAsync(ip);
-            rows.Add(LabeledRow("Restart device", restart));
             var restore = Pill("Restore…");
             restore.Click += async (_, _) => await RestoreFactoryAsync(ip);
             rows.Add(LabeledRow("Restore factory settings", restore));

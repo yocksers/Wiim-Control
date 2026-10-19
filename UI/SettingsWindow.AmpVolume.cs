@@ -10,6 +10,7 @@ sealed partial class WiimController
         private readonly StackPanel _ampVolumeRows = new();
         private readonly SemaphoreSlim _ampVolumeGate = new(1, 1);
         private int _ampVolumeVersion;
+        private readonly Panel _dynamicBassHost = new();
 
         private Border BuildAmpVolumeCard(Control page)
         {
@@ -19,7 +20,7 @@ sealed partial class WiimController
             {
                 if (e.Property == IsVisibleProperty && page.IsVisible) await RefreshAmpVolumeAsync();
             };
-            return Card("Device volume", LabeledRow("Device", _cboVolumeAmp), _ampVolumeRows);
+            return Card("Device volume", _ampVolumeRows);
         }
 
         private async Task RefreshAmpVolumeAsync()
@@ -31,11 +32,31 @@ sealed partial class WiimController
                 return;
             }
             if (_ampVolumeRows.Children.Count == 0) SetRows(_ampVolumeRows, [Muted("Loading…")]);
-            var settings = await _owner.GetVolumeSettingsAsync(ip);
+            var settingsTask = _owner.GetVolumeSettingsAsync(ip);
+            var bassTask = _owner.GetDynamicBassAsync(ip);
+            await Task.WhenAll(settingsTask, bassTask);
             if (version != _ampVolumeVersion) return;
+            var settings = settingsTask.Result;
+            ShowDynamicBass(ip, bassTask.Result);
             var rows = settings == null ? [Muted("Couldn't reach this device.")] : AmpVolumeRows(ip, settings);
             if (rows.Count == 0) rows.Add(Muted("This device has no volume settings."));
             SetRows(_ampVolumeRows, rows);
+        }
+
+        private void ShowDynamicBass(string ip, DynamicBassInfo? bass)
+        {
+            _dynamicBassHost.Children.Clear();
+            if (bass == null) return;
+            var slider = AmpSlider(bass.Min, bass.Max, bass.Level, v => v > 0 ? $"+{v} dB" : $"{v} dB", false, out var row);
+            slider.ValueCommitted += async (_, _) =>
+            {
+                int level = Math.Clamp(bass.Min + (int)Math.Round((slider.Value - bass.Min) / (double)bass.Step) * bass.Step, bass.Min, bass.Max);
+                if (!await _owner.SetDynamicBassAsync(ip, level))
+                    await Dialogs.MessageAsync(this, "The device didn't accept the change.", _scale);
+                await RefreshAmpVolumeAsync();
+            };
+            _dynamicBassHost.Children.Add(Card("Dynamic Bass", LabeledRow("Bass boost", row),
+                Muted("Extra bass from the device's own speakers. RoomFit switches it off while it measures and turns it back on afterwards.")));
         }
 
         private List<Control> AmpVolumeRows(string ip, AmpSettings s)

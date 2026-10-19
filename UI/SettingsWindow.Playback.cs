@@ -11,17 +11,11 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly Dictionary<string, TextBlock> _sleepLabels = new();
         private readonly Dictionary<string, (int PositionMs, DateTime Fetched, bool Playing)> _positions = new();
         private readonly DispatcherTimer _positionTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
         private string TargetOf(string ip) =>
             _multiroom != null && _multiroom.LeaderOf.TryGetValue(ip, out var leader) ? leader : ip;
-
-        private static string FormatTime(int seconds) =>
-            seconds >= 3600
-                ? string.Create(CultureInfo.InvariantCulture, $"{seconds / 3600}:{seconds / 60 % 60:00}:{seconds % 60:00}")
-                : string.Create(CultureInfo.InvariantCulture, $"{seconds / 60}:{seconds % 60:00}");
 
         private static bool IsNetworkSource(DeviceStatus status) => IsNetworkMode(status.Mode);
 
@@ -104,9 +98,6 @@ sealed partial class WiimController
                 ShowPosition(c, status.PositionMs);
             }
             else _positions.Remove(ip);
-
-            if (_sleepLabels.TryGetValue(ip, out var sleep))
-                sleep.Text = status.SleepSeconds > 0 ? $"Sleep · {(status.SleepSeconds + 59) / 60} min" : "Sleep";
         }
 
         private static void SetActive(PathIcon icon, bool active)
@@ -132,51 +123,6 @@ sealed partial class WiimController
                 if (_nowPlayingControls.TryGetValue(ip, out var c)) ShowPosition(c, positionMs);
                 if (_npIp == ip && _npControls != null) ShowPosition(_npControls, positionMs);
             }
-        }
-
-        private Button SleepButton(string ip)
-        {
-            var label = new TextBlock { Text = "Sleep", VerticalAlignment = VerticalAlignment.Center };
-            var button = new Button
-            {
-                Content = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal, Spacing = 6,
-                    Children = { label, new PathIcon { Data = Icons.ChevronDown, Width = 12, Height = 12 } }
-                }
-            };
-            button.Classes.Add("pill");
-            ToolTip.SetTip(button, "Sleep timer: the device stops playing when the time is up");
-            button.Click += (_, _) => ShowSleepMenu(ip, button);
-            _sleepLabels[ip] = label;
-            return button;
-        }
-
-        private void ShowSleepMenu(string ip, Button button)
-        {
-            int current = _statuses.TryGetValue(ip, out var status) ? status.SleepSeconds : 0;
-            var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-            var off = new MenuItem { Header = "Off", ToggleType = MenuItemToggleType.Radio, IsChecked = current == 0 };
-            off.Click += async (_, _) => await SetSleepAsync(ip, 0);
-            menu.Items.Add(off);
-            foreach (int minutes in SleepChoices)
-            {
-                var item = new MenuItem { Header = $"{minutes} minutes", ToggleType = MenuItemToggleType.Radio };
-                int m = minutes;
-                item.Click += async (_, _) => await SetSleepAsync(ip, m);
-                menu.Items.Add(item);
-            }
-            menu.ShowAt(button);
-        }
-
-        private async Task SetSleepAsync(string ip, int minutes)
-        {
-            if (!await _owner.SetSleepTimerAsync(ip, minutes))
-            {
-                await Dialogs.MessageAsync(this, "The device didn't accept the sleep timer.", _scale);
-                return;
-            }
-            await RefreshDeviceStatusesAsync();
         }
     }
 }

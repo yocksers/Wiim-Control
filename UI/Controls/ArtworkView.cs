@@ -28,6 +28,17 @@ sealed class ArtworkView : Border
 
     public string ImageUrl { get; set; } = string.Empty;
 
+    public StreamGeometry PlaceholderIcon
+    {
+        get => _placeholder.Data as StreamGeometry ?? Icons.Music;
+        set => _placeholder.Data = value;
+    }
+
+    public double PlaceholderSize
+    {
+        set => _placeholder.Width = _placeholder.Height = value;
+    }
+
     public event Action? BitmapChanged;
 
     public Bitmap? Bitmap

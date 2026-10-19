@@ -12,9 +12,9 @@ sealed partial class WiimController
         {
             var rows = new List<Control>
             {
-                Muted(paired.Count == 0
-                    ? "Connect a WiiM Sub Pro to this device, wired with an RCA cable or wireless over Wi-Fi."
-                    : "The WiiM Sub Pro connected to this device.")
+                Muted(paired.Count > 0 ? "The WiiM Sub Pro connected to this device."
+                    : hasSubOutput ? "Connect a WiiM Sub Pro to this device, wired with an RCA cable or wireless over Wi-Fi."
+                    : "Connect a WiiM Sub Pro to this device, wireless over Wi-Fi.")
             };
             foreach (var sub in paired)
             {

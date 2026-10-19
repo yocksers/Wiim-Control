@@ -6,4 +6,5 @@ interface IOutputDeviceMonitor : IDisposable
     bool IsCurrentDeviceEnabled();
     void SetEnabledDevices(IEnumerable<string> deviceIds);
     event Action<bool>? StatusChanged;
+    event Action? DefaultDeviceChanged;
 }

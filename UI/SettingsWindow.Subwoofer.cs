@@ -12,16 +12,38 @@ sealed partial class WiimController
         private readonly SemaphoreSlim _subGate = new(1, 1);
         private int _subVersion;
 
+        private const string SectionHighPass = "High-pass filter";
+        private const string SectionSubOut = "Sub out";
+
+        private sealed record SubwooferState(string Ip, bool Reachable, SubwooferInfo? Sub, HighPassFilter? HighPass, List<PairedSub>? WiimSubs,
+            bool WiredOutput)
+        {
+            public bool SubAvailable => WiredOutput || WiimSubs?.Any(s => s.Online) == true;
+        }
+
+        private string _subSection = SectionSubOut;
+        private SubwooferState? _subCache;
+
         private Control BuildSubwooferPage()
         {
             ToolTip.SetTip(_cboSubAmp, "The device whose subwoofer settings are shown");
             _cboSubAmp.SelectionChanged += async (_, _) => { if (!_loading) await RefreshSubwooferAsync(); };
             var refresh = Pill("Refresh");
             refresh.Click += async (_, _) => await RefreshSubwooferAsync();
-            var page = Page("Subwoofer", _lblSubStatus, [_cboSubAmp, refresh], _subRows);
+            var page = Page(SectionSubOut, _lblSubStatus, [_cboSubAmp, refresh], _subRows);
+            _sectionHandlers[page] = section =>
+            {
+                _subSection = section;
+                FillSubwooferCombo(followActive: false);
+                bool cached = _subCache != null && _subCache.Ip == AmpOf(_cboSubAmp);
+                SetRows(_subRows, cached ? SubwooferCards(_subCache!) : []);
+                if (page.IsVisible) _ = RefreshSubwooferAsync(quiet: cached);
+            };
             page.PropertyChanged += async (_, e) =>
             {
-                if (e.Property == IsVisibleProperty && page.IsVisible) await RefreshSubwooferAsync();
+                if (e.Property != IsVisibleProperty || !page.IsVisible) return;
+                await CheckSubwooferDevicesAsync();
+                await RefreshSubwooferAsync(quiet: _subCache?.Ip == AmpOf(_cboSubAmp));
             };
             return page;
         }
@@ -31,27 +53,79 @@ sealed partial class WiimController
             int version = ++_subVersion;
             if (AmpOf(_cboSubAmp) is not { } ip)
             {
-                SetRows(_subRows, [Muted("Add a WiiM device on the Devices page first.")]);
+                _lblSubStatus.Text = string.Empty;
+                SetRows(_subRows, [Muted(_owner._knownDevices.Count == 0 ? "Add a WiiM device on the Devices page first."
+                    : _subSection == SectionHighPass ? "None of your devices has a high-pass filter."
+                    : "None of your devices has a subwoofer output or can pair a WiiM subwoofer.")]);
                 return;
             }
             if (!quiet) _lblSubStatus.Text = "Loading…";
-            var (reachable, sub, highPass, wiimSubs) = await _owner.GetSubwooferAsync(ip);
+            var (reachable, sub, highPass, wiimSubs, wired) = await _owner.GetSubwooferAsync(ip);
             if (version != _subVersion) return;
             _lblSubStatus.Text = reachable ? string.Empty : "Not reachable";
-            var cards = new List<Control>();
-            if (!reachable) cards.Add(Muted("Couldn't reach this device."));
-            else
+            var state = new SubwooferState(ip, reachable, sub, highPass, wiimSubs, wired);
+            if (reachable) _subCache = state;
+            SetRows(_subRows, SubwooferCards(state));
+        }
+
+        private List<Control> SubwooferCards(SubwooferState state)
+        {
+            if (!state.Reachable) return [Muted("Couldn't reach this device.")];
+            const string noSubOut = "This device has no subwoofer output. The WiiM Amp, Amp Pro, Amp Ultra and Ultra have one.";
+            string? waiting = state.SubAvailable ? null
+                : state.WiimSubs is { Count: > 0 } ? "Your WiiM subwoofer is offline. These settings can be changed again when it's back."
+                : "This device has no subwoofer output of its own. These settings are used with a WiiM subwoofer: pair one under Sub out to change them.";
+            if (_subSection == SectionHighPass)
             {
-                if (wiimSubs != null) cards.Add(BuildWiimSubCard(ip, wiimSubs, sub != null));
-                if (sub == null)
-                    cards.Add(Muted("This device has no subwoofer output. The WiiM Amp, Amp Pro, Amp Ultra and Ultra have one."));
-                else
-                {
-                    cards.Add(BuildSubwooferCard(ip, sub));
-                    if (highPass != null) cards.Add(BuildHighPassCard(ip, highPass, sub.Enabled && sub.Plugged));
-                }
+                if (state.HighPass == null) return [Muted("This device doesn't have a high-pass filter.")];
+                bool subActive = state.SubAvailable && state.Sub is { Enabled: true, Plugged: true };
+                return [BuildHighPassCard(state.Ip, state.HighPass, subActive)];
             }
-            SetRows(_subRows, cards);
+            List<Control> cards;
+            if (!state.WiredOutput && state.WiimSubs != null)
+            {
+                cards = !state.SubAvailable
+                    ? [Muted(state.WiimSubs.Count > 0
+                        ? "Your WiiM subwoofer is offline. Its settings are shown here again when it's back."
+                        : "This device has no subwoofer output of its own, but it can use a wireless WiiM Sub Pro. Pair one below; " +
+                          "its settings are shown here once it's connected.")]
+                    : state.Sub != null ? [BuildSubwooferCard(state.Ip, state.Sub)] : [];
+            }
+            else cards = state.Sub != null ? WithWaiting(BuildSubwooferCard(state.Ip, state.Sub), waiting) : [Muted(noSubOut)];
+            if (state.WiimSubs != null) cards.Add(BuildWiimSubCard(state.Ip, state.WiimSubs, state.WiredOutput));
+            return cards;
+        }
+
+        private static List<Control> WithWaiting(Control card, string? waiting)
+        {
+            if (waiting == null) return [card];
+            card.IsEnabled = false;
+            card.Opacity = 0.5;
+            return [Muted(waiting), card];
+        }
+
+        private async Task CheckSubwooferDevicesAsync()
+        {
+            var devices = _owner._knownDevices.ToList();
+            if (devices.All(d => _owner.SubwooferSupport(d.Ip) != null && _owner.HighPassSupport(d.Ip) != null)) return;
+            await Task.WhenAll(devices.Select(d => _owner.CheckSubwooferSupportAsync(d.Ip)));
+            FillSubwooferCombo(followActive: false);
+        }
+
+        private void FillSubwooferCombo(bool followActive)
+        {
+            var devices = _owner._knownDevices
+                .Where(d => (_subSection == SectionHighPass ? _owner.HighPassSupport(d.Ip) : _owner.SubwooferSupport(d.Ip)) != false).ToList();
+            string? selected = (followActive ? null : AmpOf(_cboSubAmp)) ?? _owner._deviceIp;
+            if (!devices.Any(d => d.Ip == selected))
+                selected = devices.Any(d => d.Ip == _owner._deviceIp) ? _owner._deviceIp : devices.Select(d => d.Ip).FirstOrDefault();
+            bool wasLoading = _loading;
+            _loading = true;
+            _cboSubAmp.Items.Clear();
+            foreach (var d in devices) _cboSubAmp.Items.Add(ComboItem(d.Ip, d.Name));
+            int index = devices.FindIndex(d => d.Ip == selected);
+            _cboSubAmp.SelectedIndex = index >= 0 ? index : _cboSubAmp.Items.Count > 0 ? 0 : -1;
+            _loading = wasLoading;
         }
 
         private async Task ChangeSubAsync(Func<Task<bool>> change)
@@ -130,8 +204,8 @@ sealed partial class WiimController
             {
                 Muted(subwooferActive
                     ? "A subwoofer is connected, so the subwoofer crossover filters the bass for the main speakers instead."
-                    : "Keeps the deepest bass away from the main speakers, so they play cleaner and stay better controlled when the music gets loud. " +
-                      "Useful when no subwoofer is connected.")
+                    : "Stops the amplifier sending the deepest bass to the main speakers, which they can't play anyway. They play cleaner and " +
+                      "stay better controlled when the music gets loud.")
             };
             var toggle = SubToggle("High-pass filter", filter.Enabled, on => _owner.SetHighPassEnabledAsync(ip, on));
             var frequency = new ComboBox { Width = 120 };

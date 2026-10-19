@@ -1,9 +1,5 @@
 # Wiim Control
 
-<img width="575" height="357" alt="image" src="https://github.com/user-attachments/assets/915ca154-748e-436e-a3fa-fcb541a17915" />
-<img width="570" height="362" alt="image" src="https://github.com/user-attachments/assets/7ed78cc4-af41-4113-b2e9-12c1fc7be94a" />
-
-
 A program for **Windows, Linux and macOS** that controls **WiiM devices** (Mini, Pro, Pro Plus, Ultra, Sound, Amp,
 Amp Pro, Amp Ultra and other WiiM/LinkPlay devices) from your PC.
 
@@ -12,11 +8,17 @@ Amp Pro, Amp Ultra and other WiiM/LinkPlay devices) from your PC.
 **Keyboard and tray**
 - The volume and media keys control the active WiiM device, with an optional on-screen volume overlay.
 - Your own hotkeys that work in every program, a sleep timer, and a tray menu with presets, device switching and more.
-- Shows the device in the system's media controls (Windows, Linux MPRIS, macOS Now Playing).
+- Shows the device in the system's media controls (Windows, Linux MPRIS, macOS Now Playing), with optional song
+  notifications showing the cover and title when the song changes.
+- Windows and Linux: play everything you hear on the computer on a WiiM device with the cast button on its card (or
+  the tray menu), in full quality with about a second of delay. On Linux this needs `parec` (the pulseaudio-utils
+  package, also used with PipeWire).
 
 **Devices and playback**
 - Finds your devices automatically (rename and reorder them as you like) and shows what each one plays, with play/pause, next/previous, position, volume,
-  input switching and presets. Click the artwork for a full-window view, optionally as a spinning vinyl record.
+  input switching and presets. Click the artwork for a full-window view, optionally as a spinning vinyl record, or open
+  a resizable mini player that can pop up by itself when the device switches to Wi-Fi. The cover of what's playing
+  can also be shown blurred as the window's background.
 - Plays from DLNA/UPnP servers, shared network folders (SMB), Lyrion Music Server, Roon, internet radio and network streams,
   with Queue and Recent pages.
 - Multiroom: link devices, choose the group leader, set left/right channels, home theater (center and surround speakers)
@@ -24,7 +26,7 @@ Amp Pro, Amp Ultra and other WiiM/LinkPlay devices) from your PC.
 
 **Sound and device settings**
 - Graphic and parametric EQ with presets, quick buttons, REW/AutoEQ import, export and RoomFit.
-- Volume limit, knob and remote steps, balance, fade, headroom and audio channel.
+- Volume limit, knob and remote steps, balance, fade, headroom, audio channel and Dynamic Bass (on devices that have it).
 - Output switching (including USB DAC, Bluetooth and DLNA out), digital filter, input settings and subwoofer settings,
   including WiiM Sub Pro pairing.
 - Network, standby, alarms, lights, prompt sounds, automatic updates, restart, and the Amp Ultra screen with your own
@@ -63,6 +65,8 @@ To do what you ask it to, Wiim Control connects to:
 - **Music servers and shared folders** on your local network that you use (DLNA/UPnP, Lyrion, Roon and SMB). To play
   from a shared folder, its address, user name and password are sent to the WiiM device, which reads the files itself.
 - **Internet streams you enter**, which the device plays directly.
+- **Your WiiM device, to your computer**, only while you play the computer's sound on it: the device fetches the sound
+  from Wiim Control over your local network. Windows may ask once to allow this.
 - **[radio-browser.info](https://www.radio-browser.info/)**, to search for radio stations.
 - **Websites that host album art and station logos**, to show the pictures.
 - **GitHub**, to check for and download new versions (can be switched off on the General page).

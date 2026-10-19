@@ -64,6 +64,12 @@
     <Style Selector="Border.card.active">
       <Setter Property="Background" Value="#474747" />
     </Style>
+    <Style Selector="Window.artwork Border.card">
+      <Setter Property="Background" Value="#D02A2A2A" />
+    </Style>
+    <Style Selector="Window.artwork Border.card.active">
+      <Setter Property="Background" Value="#D0474747" />
+    </Style>
 
     <Style Selector="Button.pill">
       <Setter Property="Background" Value="#3A3A3A" />
@@ -172,6 +178,43 @@
       <Setter Property="Background" Value="#25254A" />
     </Style>
     <Style Selector="Button.nav.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2C2C55" />
+    </Style>
+
+    <Style Selector="ScrollViewer.menu /template/ ScrollBar">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="ScrollViewer.menu:pointerover /template/ ScrollBar">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
+    <Style Selector="Border.navgroup">
+      <Setter Property="Background" Value="#2A2A2A" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="Margin" Value="0,0,12,0" />
+    </Style>
+    <Style Selector="Window.artwork Border.navgroup">
+      <Setter Property="Background" Value="#D02A2A2A" />
+    </Style>
+    <Style Selector="Border.navseparator">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="#3A3A3A" />
+      <Setter Property="Margin" Value="52,0,0,0" />
+    </Style>
+    <Style Selector="Border.navgroup Button.nav">
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Border.navgroup Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#363636" />
+    </Style>
+    <Style Selector="Border.navgroup Button.nav.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#2C2C55" />
     </Style>
 

@@ -19,7 +19,6 @@ sealed partial class WiimController
             _delayCard = Card("Group audio delay",
                 Muted("How much each input is delayed when the device plays in a group, so all devices stay in sync. " +
                       "A lower delay keeps the sound in step with the picture, but too low can make some devices lose sound."),
-                LabeledRow("Device", _cboDelayAmp),
                 _delayRows);
             return _delayCard;
         }

@@ -29,6 +29,7 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
     public bool IsCurrentDeviceEnabled() => CheckDefaultDevice();
 
     public event Action<bool>? StatusChanged;
+    public event Action? DefaultDeviceChanged;
 
     public OutputDeviceMonitor(IEnumerable<string>? enabledDeviceIds = null)
     {
@@ -107,6 +108,7 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
     {
         if (flow == eRender && role == eMultimedia)
         {
+            DefaultDeviceChanged?.Invoke();
             var active = CheckDefaultDevice();
             if (active != _outputActive)
             {

@@ -24,13 +24,19 @@ sealed partial class WiimController
         {
             var backup = Pill("Back up…");
             var restore = Pill("Restore…");
+            var report = Pill("Device report…");
             backup.Click += async (_, _) => await BackupAsync();
             restore.Click += async (_, _) => await RestoreAsync();
+            report.Click += async (_, _) => await SaveDeviceReportAsync(report);
+            ToolTip.SetTip(report, "Saves how your WiiM devices answer Wiim Control. No personal or identifiable details are included, such as network " +
+                                   "names, addresses, device names or what's playing, and nothing on the devices is changed.");
             return Card("Backup and restore",
                 Muted("Saves Wiim Control's settings and each device's own EQ presets, parametric EQ presets and RoomFit profiles to a file. " +
                       "Restore them after a reset or on a new PC, or copy presets from one device to another."),
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0), Children = { backup, restore } },
-                _lblBackupStatus);
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0), Children = { backup, restore, report } },
+                Muted("Device report is only needed if you're asked for it, to help improve Wiim Control for WiiM models the developer doesn't own. " +
+                      "No personal or identifiable details are shared."),
+                _lblBackupStatus, _lblReportStatus);
         }
 
         private static string Plural(int count, string one, string many) =>

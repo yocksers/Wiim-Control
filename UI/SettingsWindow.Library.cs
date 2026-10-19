@@ -47,9 +47,6 @@ sealed partial class WiimController
             ToolTip.SetTip(_btnRemoveShare, "Remove this shared folder from the list");
             _btnRemoveShare.Click += async (_, _) => await RemoveSharedFolderAsync();
             _btnRemoveShare.IsVisible = false;
-            var btnSqueezelite = Pill("Squeezelite…");
-            ToolTip.SetTip(btnSqueezelite, "Connect the device to a Lyrion Music Server through Squeezelite");
-            btnSqueezelite.Click += async (_, _) => await ShowSqueezeliteAsync();
             _cboLibraryServer.SelectionChanged += async (_, _) =>
             {
                 _btnRemoveShare.IsVisible = SelectedLibraryServer?.IsShare == true;
@@ -63,18 +60,21 @@ sealed partial class WiimController
             _btnLibraryMore.Margin = new Thickness(0, 10, 0, 0);
             _btnLibraryMore.HorizontalAlignment = HorizontalAlignment.Center;
 
+            _cboLibraryAmp.SelectionChanged += (_, _) => { if (!_loading) _ = RefreshLibraryServiceAsync(); };
             var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 12) };
             top.Children.Add(_libraryCrumbs);
             Grid.SetColumn(_btnLibraryPlayAll, 1);
             top.Children.Add(_btnLibraryPlayAll);
             _libraryScroll.Content = new StackPanel { Children = { _libraryRows, _btnLibraryMore } };
-            var body = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+            var body = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
+            body.Children.Add(_libraryServiceHost);
+            Grid.SetRow(top, 1);
             body.Children.Add(top);
-            Grid.SetRow(_libraryScroll, 1);
+            Grid.SetRow(_libraryScroll, 2);
             body.Children.Add(_libraryScroll);
 
             HookRoonStatus();
-            var page = Page("Library", _lblLibraryStatus, [_cboLibraryAmp, _cboLibraryServer, btnFind, btnAddShare, _btnRemoveShare, btnSqueezelite], body, scroll: false);
+            var page = Page("Library", _lblLibraryStatus, [_cboLibraryAmp, _cboLibraryServer, btnFind, btnAddShare, _btnRemoveShare], body, scroll: false, subtitleBelow: true);
             page.PropertyChanged += async (_, e) =>
             {
                 if (e.Property == IsVisibleProperty && page.IsVisible && !_librarySearched) await FindLibraryServersAsync(force: false);
@@ -130,6 +130,7 @@ sealed partial class WiimController
 
             if (SelectedLibraryServer is not { } server)
             {
+                _ = RefreshLibraryServiceAsync();
                 ClearLibraryRows();
                 _libraryPath.Clear();
                 UpdateLibraryCrumbs();
@@ -147,6 +148,7 @@ sealed partial class WiimController
         private async Task OpenLibraryRootAsync(MediaServer server)
         {
             if (server.IsRoon) _owner.UseRoonCore(server.ContentDirectoryUrl);
+            _ = RefreshLibraryServiceAsync();
             _libraryPath.Clear();
             _libraryPath.Add(("0", server.Name));
             await LoadLibraryFolderAsync();
@@ -473,15 +475,27 @@ sealed partial class WiimController
             if (result == LyrionPlayResult.NotConnected)
             {
                 string host = new Uri(server.ContentDirectoryUrl).Host;
-                if (!await Dialogs.ConfirmAsync(this,
-                        $"{amp} isn't connected to {server.Name}. Connect it now?\n\nSqueezelite has to be switched on for this device in the WiiM Home app.",
-                        _scale)) return false;
+                bool switchedOff = await _owner.GetStreamServiceActiveAsync(ip, SqueezeliteService) == false;
+                if (!await Dialogs.ConfirmAsync(this, switchedOff
+                        ? $"Squeezelite is switched off on {amp}, so it can't play from {server.Name}. Switch it on and connect now?"
+                        : $"{amp} isn't connected to {server.Name}. Connect it now?", _scale)) return false;
                 status.Text = $"Connecting {amp} to {server.Name}…";
-                if (!await _owner.ConnectSqueezeliteAsync(ip, host) || !await _owner.WaitForLyrionPlayerAsync(ip, server))
+                if (switchedOff)
+                {
+                    if (!await _owner.SetStreamServiceActiveAsync(ip, SqueezeliteService, true))
+                    {
+                        ResetStatus(status);
+                        await Dialogs.MessageAsync(this, $"{amp} didn't switch Squeezelite on.", _scale);
+                        return false;
+                    }
+                    await Task.Delay(ServiceSettleTime);
+                }
+                bool connected = await _owner.ConnectSqueezeliteAsync(ip, host) && await _owner.WaitForLyrionPlayerAsync(ip, server);
+                _ = RefreshLibraryServiceAsync();
+                if (!connected)
                 {
                     ResetStatus(status);
-                    await Dialogs.MessageAsync(this,
-                        $"{amp} didn't connect to {server.Name}. Check that Squeezelite is switched on for this device in the WiiM Home app.", _scale);
+                    await Dialogs.MessageAsync(this, $"{amp} didn't connect to {server.Name}.", _scale);
                     return false;
                 }
                 result = await _owner.PlayOnLyrionAsync(ip, server, trackIds, start);
