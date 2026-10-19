@@ -27,6 +27,7 @@ sealed partial class WiimController
         RefreshDeviceStatusUi();
         SaveConfig();
         _ = RefreshNowPlayingAsync();
+        SyncPcAudioUi();
         _settingsWindow?.OnActiveDeviceChanged();
     }
 
@@ -86,6 +87,8 @@ sealed partial class WiimController
     internal void RemoveDevice(KnownDevice d)
     {
         _knownDevices.RemoveAll(k => k.Ip == d.Ip);
+        CloseMiniPlayer(d.Ip);
+        if (IsPlayingPcAudio(d.Ip)) StopPcAudio();
         if (d.Ip == _deviceIp && _knownDevices.Count > 0)
         {
             SwitchDevice(_knownDevices[0]);
@@ -119,6 +122,7 @@ sealed partial class WiimController
             if (moved >= 0)
             {
                 bool wasActive = _knownDevices[moved].Ip == _deviceIp;
+                MoveMiniPlayerPlacement(_knownDevices[moved].Ip, d.Ip);
                 _knownDevices[moved] = _knownDevices[moved] with { Ip = d.Ip };
                 if (wasActive) _deviceIp = d.Ip;
                 changed = true;

@@ -11,8 +11,10 @@ sealed partial class WiimController
     internal string EffectiveGroupLeader =>
         _groupLeaderIp.Length > 0 && _knownDevices.Any(d => d.Ip == _groupLeaderIp) ? _groupLeaderIp : _deviceIp;
 
-    private string PlaybackTarget =>
-        _multiroomCache != null && _multiroomCache.LeaderOf.TryGetValue(_deviceIp, out var leader) ? leader : _deviceIp;
+    private string PlaybackTarget => PlaybackTargetOf(_deviceIp);
+
+    internal string PlaybackTargetOf(string ip) =>
+        _multiroomCache != null && _multiroomCache.LeaderOf.TryGetValue(ip, out var leader) ? leader : ip;
 
     private async Task<string?> SendToDeviceAsync(string ip, string command)
     {
@@ -31,6 +33,17 @@ sealed partial class WiimController
 
     internal string? ModelOf(string ip) => _deviceModels.GetValueOrDefault(ip);
 
+    private static readonly string[] ScreenProjects = ["WiiM_Ultra", "WiiM_Amp_Ultra", "WiiM_Sound", "WiiM_Bar"];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _deviceProjects = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _screensSeen = new();
+
+    internal static bool IsScreenProject(string? project) =>
+        project is { Length: > 0 } && ScreenProjects.Any(p => project.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
+    internal bool HasScreen(string ip) => _screensSeen.ContainsKey(ip) || IsScreenProject(_deviceProjects.GetValueOrDefault(ip));
+
+    internal void NoteScreen(string ip) => _screensSeen[ip] = true;
+
     internal async Task<MultiroomSnapshot> GetMultiroomSnapshotAsync()
     {
         var devices = _knownDevices.ToList();
@@ -48,7 +61,11 @@ sealed partial class WiimController
         {
             if (r.Status == null && r.Slaves == null) continue;
             online.Add(r.Device.Ip);
-            if (JsonField(r.Status, "project") is { Length: > 0 } project) _deviceModels[r.Device.Ip] = ModelName(project);
+            if (JsonField(r.Status, "project") is { Length: > 0 } project)
+            {
+                _deviceModels[r.Device.Ip] = ModelName(project);
+                _deviceProjects[r.Device.Ip] = project;
+            }
             var uuid = NormalizeUuid(JsonField(r.Status, "uuid") ?? r.Device.Uuid);
             if (uuid.Length > 0) uuids[r.Device.Ip] = uuid;
         }

@@ -38,6 +38,10 @@ sealed partial class WiimController
             if (key == "checkupdates")    _checkUpdates = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "startminimized")  _startMinimized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "nowplayingvinyl") _nowPlayingVinyl = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "miniplayerauto")  _miniPlayerAuto = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "miniplayers")     ParseMiniPlayerPlacements(val);
+            if (key == "tracktoasts")     _trackToasts = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "artworkbackground") _artworkBackground = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "skippedversion")  _skippedVersion = val;
             if (key == "hiddeneqpresets") ParseNameSet(_hiddenEqPresets, val);
             if (key == "rooncore")       _roonCore = val;
@@ -50,6 +54,7 @@ sealed partial class WiimController
             if (key == "linuxportalshortcuts") _linuxPortalShortcuts = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "hotkeys")         ParseHotkeys(val);
             if (key == "windowmaximized") _windowMaximized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "sidebarhidden")   _sidebarHidden = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "windowsize" && val.Split('x') is [var w, var h] &&
                 int.TryParse(w, out int width) && int.TryParse(h, out int height) && width > 0 && height > 0)
                 _windowSize = new Avalonia.Size(width, height);
@@ -80,13 +85,15 @@ sealed partial class WiimController
                 $"ip={_deviceIp}", $"deviceUuid={_deviceUuid}", $"logStep={_logStep}",
                 $"forwardMediaKeys={_forwardMediaKeys}", $"mediaControls={_mediaControls}", $"groupVolumeKeys={_groupVolumeKeys}", $"groupLeader={_groupLeaderIp}",
                 $"linuxPortalShortcuts={_linuxPortalShortcuts}", $"hotkeys={SerializeHotkeys()}",
-                $"windowSize={(_windowSize is { } size ? $"{(int)size.Width}x{(int)size.Height}" : "")}", $"windowMaximized={_windowMaximized}",
+                $"windowSize={(_windowSize is { } size ? $"{(int)size.Width}x{(int)size.Height}" : "")}", $"windowMaximized={_windowMaximized}", $"sidebarHidden={_sidebarHidden}",
                 $"uiScale={_uiScalePercent}",
                 $"suppressWindowsOSD={_suppress}", $"volumeStep={_volumeStep}",
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
                 $"enabledOutputs={string.Join('|', _enabledOutputIds)}",
                 $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}", $"recent={SerializeRecent()}",
                 $"checkUpdates={_checkUpdates}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingVinyl={_nowPlayingVinyl}",
+                $"miniPlayerAuto={_miniPlayerAuto}",
+                $"miniPlayers={SerializeMiniPlayerPlacements()}", $"trackToasts={_trackToasts}", $"artworkBackground={_artworkBackground}",
                 $"hiddenEqPresets={string.Join('\u0001', _hiddenEqPresets)}", $"hiddenPeqPresets={string.Join('\u0001', _hiddenPeqPresets)}",
                 $"roonCore={_roonCore}", $"roonTokens={SerializeRoonTokens()}", $"sharedFolders={SerializeSharedFolders()}",
                 $"knownDevices={string.Join('\u0002', _knownDevices.Select(d => string.Join('\u0001', d.Name, d.Ip, d.Uuid)))}"
@@ -152,6 +159,12 @@ sealed partial class WiimController
     {
         _windowSize = size;
         _windowMaximized = maximized;
+        SaveConfig();
+    }
+
+    private void SetSidebarHidden(bool hidden)
+    {
+        _sidebarHidden = hidden;
         SaveConfig();
     }
 

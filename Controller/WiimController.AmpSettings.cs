@@ -169,17 +169,18 @@ sealed partial class WiimController
         };
     }
 
-    internal async Task<(bool Reachable, SubwooferInfo? Info, HighPassFilter? HighPass, List<PairedSub>? WiimSubs)> GetSubwooferAsync(string ip)
+    internal async Task<(bool Reachable, SubwooferInfo? Info, HighPassFilter? HighPass, List<PairedSub>? WiimSubs, bool WiredOutput)> GetSubwooferAsync(string ip)
     {
         var statusEx = SendToDeviceAsync(ip, "getStatusEx");
         var sub = SendToDeviceAsync(ip, "getSubLPF");
         var highPass = SendToDeviceAsync(ip, "getMainProtect");
         var wiimSubs = GetPairedSubsAsync(ip);
         await Task.WhenAll(statusEx, sub, highPass, wiimSubs).ConfigureAwait(false);
-        if (statusEx.Result == null) return (false, null, null, null);
+        if (statusEx.Result == null) return (false, null, null, null, false);
         string? project = JsonField(statusEx.Result, "project");
-        var info = ParseSubwoofer(sub.Result, HasSubwooferOutput(project));
-        return (true, info, info != null ? ParseHighPassFilter(highPass.Result) : null, IsWiimSub(project) ? null : wiimSubs.Result);
+        bool wired = HasSubwooferOutput(project);
+        var info = ParseSubwoofer(sub.Result, wired);
+        return (true, info, ParseHighPassFilter(highPass.Result), IsWiimSub(project) ? null : wiimSubs.Result, wired);
     }
 
     internal async Task<bool> SetMaxVolumeAsync(string ip, int maxVolume) =>

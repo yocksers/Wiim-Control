@@ -31,6 +31,7 @@ sealed partial class WiimController : IDisposable
     private string           _groupLeaderIp = string.Empty;
     private Avalonia.Size?   _windowSize;
     private bool             _windowMaximized;
+    private bool             _sidebarHidden;
     private int              _uiScalePercent = 100;
     private bool             _linuxPortalShortcuts;
     private bool            _suppress    = true;
@@ -100,6 +101,7 @@ sealed partial class WiimController : IDisposable
 
             if (_outputMonitor != null)
             {
+                _outputMonitor.DefaultDeviceChanged += () => Dispatcher.UIThread.Post(OnDefaultOutputChanged);
                 _outputMonitor.StatusChanged += _ => Dispatcher.UIThread.Post(() =>
                 {
                     UpdateTrayStatus();
@@ -156,6 +158,8 @@ sealed partial class WiimController : IDisposable
     internal void Exit()
     {
         _settingsWindow?.Close();
+        CloseMiniPlayers();
+        StopPcAudio();
         _lifetime.Shutdown();
     }
 
@@ -168,6 +172,8 @@ sealed partial class WiimController : IDisposable
         _linuxShortcuts?.Dispose();
         _tray?.Dispose();
         _osd?.Close();
+        _trackToast?.Close();
+        StopPcAudio();
         _nowPlayingTimer.Stop();
         _firmwareTimer.Stop();
         _updateTimer.Stop();

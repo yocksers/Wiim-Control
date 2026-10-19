@@ -33,6 +33,41 @@ sealed partial class WiimController
         static string Text(JsonNode? node) => node?.ToString() ?? string.Empty;
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subwooferSupport = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _highPassSupport = new();
+
+    internal bool? SubwooferSupport(string ip) => _subwooferSupport.TryGetValue(ip, out bool supported) ? supported : null;
+
+    internal bool? HighPassSupport(string ip) => _highPassSupport.TryGetValue(ip, out bool supported) ? supported : null;
+
+    internal static bool HasHighPassCapability(string? acousticCapability)
+    {
+        try { return JsonNode.Parse(acousticCapability ?? string.Empty) is JsonObject root && root["MainProtect"] is JsonObject; }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) { return false; }
+    }
+
+    internal static bool HasSubwooferCapability(string? acousticCapability)
+    {
+        try { return JsonNode.Parse(acousticCapability ?? string.Empty) is JsonObject root && root["SubLPF"] is JsonObject; }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) { return false; }
+    }
+
+    internal async Task<bool?> CheckSubwooferSupportAsync(string ip)
+    {
+        if (_subwooferSupport.TryGetValue(ip, out bool known)) return known;
+        var status = SendToDeviceAsync(ip, "getStatusEx");
+        var capability = SendToDeviceAsync(ip, "GetAcousticCapability");
+        var pairing = SendToDeviceAsync(ip, "multiroom:subwooferGetPairInfo");
+        var highPass = SendToDeviceAsync(ip, "getMainProtect");
+        await Task.WhenAll(status, capability, pairing, highPass).ConfigureAwait(false);
+        if (status.Result == null) return null;
+        string? project = JsonField(status.Result, "project");
+        _highPassSupport[ip] = !IsWiimSub(project) && (ParseHighPassFilter(highPass.Result) != null || HasHighPassCapability(capability.Result));
+        if (IsWiimSub(project)) return _subwooferSupport[ip] = false;
+        bool supported = HasSubwooferOutput(project) || HasSubwooferCapability(capability.Result) || ParsePairedSubs(pairing.Result) != null;
+        return _subwooferSupport[ip] = supported;
+    }
+
     internal async Task<List<PairedSub>?> GetPairedSubsAsync(string ip) =>
         ParsePairedSubs(await SendToDeviceAsync(ip, "multiroom:subwooferGetPairInfo").ConfigureAwait(false));
 

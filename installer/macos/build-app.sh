@@ -17,6 +17,27 @@ if ! command -v codesign >/dev/null 2>&1 && [ -z "${RCODESIGN:-}" ]; then
   chmod +x "$RCODESIGN"
 fi
 
+u32() { od -An -tu4 -j "$2" -N4 "$1" | tr -d ' '; }
+
+set_macho_uuid() {
+  local file="$1" hex off ncmds cmd size i
+  hex="$(printf '%s' "$2" | sha1sum | cut -c1-32)"
+  hex="${hex:0:12}5${hex:13:3}$(printf '%x' $(( (0x${hex:16:1} & 3) | 8 )))${hex:17:15}"
+  ncmds="$(u32 "$file" 16)"
+  off=32
+  for ((i = 0; i < ncmds; i++)); do
+    cmd="$(u32 "$file" "$off")"
+    size="$(u32 "$file" $((off + 4)))"
+    if [ "$cmd" = 27 ]; then
+      local bytes=""
+      for ((i = 0; i < 32; i += 2)); do bytes+="\\x${hex:i:2}"; done
+      printf "$bytes" | dd of="$file" bs=1 seek=$((off + 8)) conv=notrunc status=none
+      return
+    fi
+    off=$((off + size))
+  done
+}
+
 for ARCH in arm64 x64; do
   WORK="$(mktemp -d)"
   APP="$WORK/Wiim Control.app"
@@ -27,6 +48,7 @@ for ARCH in arm64 x64; do
   sed "s/VERSION/$VERSION/g" "$SRC/installer/macos/Info.plist" > "$APP/Contents/Info.plist"
   cp "$SRC/installer/macos/logo.icns" "$APP/Contents/Resources/logo.icns"
   chmod +x "$APP/Contents/MacOS/WiimControl"
+  set_macho_uuid "$APP/Contents/MacOS/WiimControl" "com.wiimcontrol.app-$ARCH"
 
   if command -v codesign >/dev/null 2>&1; then
     if [ -n "${MACOS_SIGNING_IDENTITY:-}" ]; then
@@ -37,6 +59,7 @@ for ARCH in arm64 x64; do
   else
     find "$APP/Contents/MacOS" -type f \( -name "*.dylib" -o -name WiimControl -o -name createdump \) -print0 |
       while IFS= read -r -d '' file; do "$RCODESIGN" sign "$file" >/dev/null; done
+    "$RCODESIGN" sign "$APP" >/dev/null
   fi
 
   ZIP="$OUT/WiimControl-$VERSION-macos-$ARCH.zip"

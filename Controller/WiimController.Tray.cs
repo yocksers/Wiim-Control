@@ -140,6 +140,7 @@ sealed partial class WiimController
         _mnuPresets.Opening += async (_, _) => await UpdatePresetNamesAsync();
         menu.Add(Submenu("Presets", _mnuPresets));
         menu.Add(BuildSleepMenu());
+        if (PcAudioSupported) menu.Add(BuildPcAudioMenuItem());
 
         menu.Add(MenuAction("Test connection…", async () =>
         {
@@ -186,7 +187,12 @@ sealed partial class WiimController
         try
         {
             var window = new SettingsWindow(this);
-            window.Closed += (_, _) => { if (_settingsWindow == window) _settingsWindow = null; };
+            window.Closed += (_, _) =>
+            {
+                if (_settingsWindow != window) return;
+                _settingsWindow = null;
+                UpdateNowPlayingInterval();
+            };
             _settingsWindow = window;
             window.Show();
         }
