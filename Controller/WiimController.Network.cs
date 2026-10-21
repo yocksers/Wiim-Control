@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace WiimControl;
 
-sealed record NetworkSettings(string? Band, string? Roam, string? Ipv6, string? Dns, string? PowerMode);
+sealed record NetworkSettings(string? Band, string? Roam, string? Ipv6, string? Dns, string? PowerMode, string? StaticIp = null);
 
 sealed partial class WiimController
 {
@@ -15,8 +15,9 @@ sealed partial class WiimController
         var ipv6 = SendToDeviceAsync(ip, "getIPV6Enable");
         var dns = SendToDeviceAsync(ip, "getNetworkPreferDNS");
         var power = SendToDeviceAsync(ip, "getPowerModeTime");
-        await Task.WhenAll(band, roam, ipv6, dns, power).ConfigureAwait(false);
-        return new NetworkSettings(band.Result, roam.Result, ipv6.Result, dns.Result, power.Result);
+        var staticIp = SendToDeviceAsync(ip, "getStaticIpInfo");
+        await Task.WhenAll(band, roam, ipv6, dns, power, staticIp).ConfigureAwait(false);
+        return new NetworkSettings(band.Result, roam.Result, ipv6.Result, dns.Result, power.Result, staticIp.Result);
     }
 
     private static bool? ParseFlag(string? reply) => reply?.Trim() switch { "1" => true, "0" => false, _ => null };
@@ -45,7 +46,8 @@ sealed partial class WiimController
         return new NetworkInfo(isWired, HexText(Field("essid")) ?? Field("essid"), isWired ? wired : wireless,
             Number("RSSI"), Field("BSSID"), Number("wlanDataRate"), Number("wlanSnr"), Number("wlanFreq"), Number("WifiChannel"),
             ParseFlag(settings.Band), ParseFlag(settings.Roam), ParseFlag(settings.Ipv6),
-            dnsKnown ? (dns == "0.0.0.0" ? string.Empty : dns) : null, standby);
+            dnsKnown ? (dns == "0.0.0.0" ? string.Empty : dns) : null, standby,
+            ParseIpConfig(settings.StaticIp, isWired, isWired ? wired : wireless));
     }
 
     internal static string SignalName(int rssi) => rssi switch

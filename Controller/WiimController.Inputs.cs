@@ -10,6 +10,7 @@ sealed partial class WiimController
         "wifi" => "Wi-Fi",
         "line-in" => "Line in",
         "line-in2" => "Line in 2",
+        "auxin" => "Aux in",
         "optical" => "Optical",
         "co-axial" or "coaxial" => "Coaxial",
         "bluetooth" => "Bluetooth",
@@ -19,6 +20,25 @@ sealed partial class WiimController
         "pcusb" or "usb" => "USB",
         _ => input
     };
+
+    internal static bool IsSameInput(string? a, string? b)
+    {
+        static string Plain(string? input) => input?.ToLowerInvariant() switch { "auxin" => "line-in", var other => other ?? string.Empty };
+        return a != null && b != null && Plain(a) == Plain(b);
+    }
+
+    private static readonly (int Bit, string Mode)[] PlmInputs = [(1, "line-in"), (2, "bluetooth"), (4, "optical"), (6, "co-axial"), (8, "line-in2")];
+
+    internal static List<InputVisibility>? InputsFromPlmSupport(string? statusEx)
+    {
+        string? mask = JsonField(statusEx, "plm_support");
+        if (mask == null) return null;
+        mask = mask.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? mask[2..] : mask;
+        if (!long.TryParse(mask, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out long bits)) return null;
+        var inputs = new List<InputVisibility> { new("wifi", true) };
+        inputs.AddRange(PlmInputs.Where(p => (bits >> p.Bit & 1) == 1).Select(p => new InputVisibility(p.Mode, true)));
+        return inputs;
+    }
 
     internal static string? InputOfMode(int mode) => mode switch
     {
@@ -59,7 +79,8 @@ sealed partial class WiimController
     internal async Task<List<string>?> GetInputsAsync(string ip)
     {
         var inputs = await GetInputVisibilityAsync(ip).ConfigureAwait(false)
-            ?? ParseInputs(await SendToDeviceAsync(ip, "getAudioInputCapbility").ConfigureAwait(false));
+            ?? ParseInputs(await SendToDeviceAsync(ip, "getAudioInputCapbility").ConfigureAwait(false))
+            ?? InputsFromPlmSupport(await SendToDeviceAsync(ip, "getStatusEx").ConfigureAwait(false));
         return inputs?.Where(i => i.Shown).Select(i => i.Mode).ToList();
     }
 

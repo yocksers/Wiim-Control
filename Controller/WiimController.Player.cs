@@ -24,7 +24,12 @@ sealed partial class WiimController
         }
     }
 
-    internal Task PlayPresetAsync(int preset) => SendPlayerCommandAsync(PlaybackTarget, $"MCUKeyShortClick:{preset}");
+    internal async Task PlayPresetAsync(int preset)
+    {
+        string target = PlaybackTarget;
+        if (BlockedByLock(_deviceIp, target)) return;
+        await SendPlayerCommandAsync(target, $"MCUKeyShortClick:{preset}");
+    }
 
     internal async Task SendMediaCommandAsync(string action)
     {
@@ -34,14 +39,43 @@ sealed partial class WiimController
             _           => action
         };
         string target = PlaybackTarget;
+        if (BlockedByLock(_deviceIp, target)) return;
         if (await TryExternalCommandAsync(target, wiimCmd).ConfigureAwait(false)) return;
         await SendPlayerCommandAsync(target, $"setPlayerCmd:{wiimCmd}").ConfigureAwait(false);
     }
 
-    internal async Task<int> TestConnectionAsync()
+    internal async Task<string> TestConnectionAsync()
     {
-        using var resp = await _http.GetAsync($"https://{_deviceIp}/httpapi.asp?command=getPlayerStatus");
-        return (int)resp.StatusCode;
+        string ip = _deviceIp;
+        try
+        {
+            string statusEx = await _http.GetStringAsync($"https://{ip}/httpapi.asp?command=getStatusEx");
+            string name = JsonField(statusEx, "DeviceName") is { Length: > 0 } deviceName ? deviceName : AmpName(ip);
+            string model = JsonField(statusEx, "project") is { Length: > 0 } project ? $" ({ModelName(project)})" : string.Empty;
+            return $"Connected to {name}{model} at {ip}.";
+        }
+        catch (Exception ex)
+        {
+            return ConnectionProblem(ip, ex, OperatingSystem.IsMacOS());
+        }
+    }
+
+    internal static string ConnectionProblem(string ip, Exception ex, bool mac)
+    {
+        var socket = ex as System.Net.Sockets.SocketException ?? ex.InnerException as System.Net.Sockets.SocketException;
+        const string MacHint = " On a Mac, also check System Settings → Privacy & Security → Local Network and make sure Wiim Control is allowed.";
+        return socket?.SocketErrorCode switch
+        {
+            System.Net.Sockets.SocketError.HostUnreachable or System.Net.Sockets.SocketError.NetworkUnreachable =>
+                $"This computer can't reach {ip}. Check that the device is switched on and on the same network." + (mac ? MacHint : string.Empty),
+            System.Net.Sockets.SocketError.ConnectionRefused => $"{ip} refused the connection. Check that the address belongs to a WiiM device.",
+            System.Net.Sockets.SocketError.HostNotFound or System.Net.Sockets.SocketError.NoData => $"{ip} wasn't found on the network. Check the address.",
+            System.Net.Sockets.SocketError.TimedOut => $"{ip} didn't answer in time. Check that the device is switched on and on the same network.",
+            _ when ex is TaskCanceledException or TimeoutException =>
+                $"{ip} didn't answer in time. Check that the device is switched on and on the same network." + (mac ? MacHint : string.Empty),
+            _ when ex is HttpRequestException { StatusCode: { } code } => $"{ip} answered, but with an error (HTTP {(int)code}). It may not be a WiiM device.",
+            _ => $"Couldn't connect to {ip}: {ex.Message}"
+        };
     }
 
     private async Task<(int Volume, bool Muted)?> GetPlayerStatusAsync(string ip)
@@ -95,7 +129,7 @@ sealed partial class WiimController
     private async Task ChangeVolumeAsync(int direction)
     {
         string ip = _deviceIp;
-        if (string.IsNullOrEmpty(ip)) return;
+        if (string.IsNullOrEmpty(ip) || BlockedByLock(ip)) return;
         if (!await _volumeGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false)) return;
         try
         {
@@ -115,12 +149,12 @@ sealed partial class WiimController
         if (delta == 0) return;
         string leader = PlaybackTarget;
         string ownAddress = _multiroomCache?.AddressOf(_deviceIp) ?? _deviceIp;
-        if (leader != _deviceIp && await GetDeviceVolumeAsync(leader).ConfigureAwait(false) is { } leaderVolume)
+        if (leader != _deviceIp && !IsDeviceLocked(leader) && await GetDeviceVolumeAsync(leader).ConfigureAwait(false) is { } leaderVolume)
             await SendToDeviceAsync(leader, $"setPlayerCmd:vol:{Math.Clamp(leaderVolume.Volume + delta, 0, 100)}").ConfigureAwait(false);
         var json = await SendToDeviceAsync(leader, "multiroom:getSlaveList").ConfigureAwait(false);
         foreach (var (ip, volume) in ParseSlaveVolumes(json))
         {
-            if (ip == _deviceIp || ip == ownAddress) continue;
+            if (ip == _deviceIp || ip == ownAddress || IsDeviceLocked(ip)) continue;
             await SendToDeviceAsync(leader, $"multiroom:SlaveVolume:{ip}:{Math.Clamp(volume + delta, 0, 100)}").ConfigureAwait(false);
         }
     }
@@ -128,7 +162,7 @@ sealed partial class WiimController
     private async Task MuteGroupAsync(bool muted)
     {
         string leader = PlaybackTarget;
-        if (leader != _deviceIp)
+        if (leader != _deviceIp && !IsDeviceLocked(leader))
             await SendToDeviceAsync(leader, $"setPlayerCmd:mute:{(muted ? 1 : 0)}").ConfigureAwait(false);
         await SendToDeviceAsync(leader, $"setPlayerCmd:slave_mute:{(muted ? "mute" : "unmute")}").ConfigureAwait(false);
     }
@@ -136,7 +170,7 @@ sealed partial class WiimController
     private async Task ToggleMuteAsync()
     {
         string ip = _deviceIp;
-        if (string.IsNullOrEmpty(ip)) return;
+        if (string.IsNullOrEmpty(ip) || BlockedByLock(ip)) return;
         if (!await _volumeGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false)) return;
         try
         {
@@ -171,17 +205,21 @@ sealed partial class WiimController
         catch { return; }
 
         var match = found.FirstOrDefault(d => SameDeviceId(d.Uuid, _deviceUuid));
-        if (match.Ip is null || match.Ip == _deviceIp) return;
+        if (match.Ip is null) return;
 
-        string oldIp = _deviceIp;
-        _deviceIp = match.Ip;
-        _consecutiveFailures = 0;
-        for (int i = 0; i < _knownDevices.Count; i++)
-            if (_knownDevices[i].Ip == oldIp || SameDeviceId(_knownDevices[i].Uuid, _deviceUuid))
-                _knownDevices[i] = _knownDevices[i] with { Ip = match.Ip };
-        SaveConfig();
-
-        Avalonia.Threading.Dispatcher.UIThread.Post(RefreshDeviceStatusUi);
-        Notify($"WiiM device reconnected at {match.Ip}");
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (match.Ip == _deviceIp) return;
+            string oldIp = _deviceIp;
+            _consecutiveFailures = 0;
+            if (_knownDevices.Any(k => k.Ip == oldIp)) RelocateDevice(oldIp, match.Ip);
+            else _deviceIp = match.Ip;
+            for (int i = 0; i < _knownDevices.Count; i++)
+                if (SameDeviceId(_knownDevices[i].Uuid, _deviceUuid) && _knownDevices[i].Ip != match.Ip)
+                    _knownDevices[i] = _knownDevices[i] with { Ip = match.Ip };
+            SaveConfig();
+            RefreshDeviceStatusUi();
+            Notify($"WiiM device reconnected at {match.Ip}");
+        });
     }
 }

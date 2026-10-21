@@ -29,10 +29,10 @@ sealed partial class WiimController
         "title", "artist", "album", "uri", "url", "albumarturi", "picurl", "pic_url", "art", "ip", "ipv4", "ipv6", "eth0", "eth1", "apcli0",
         "wlan0", "gateway", "dns", "server", "host", "hostname", "connected_server", "default_server", "target_server", "discover_list",
         "password", "psk", "pass", "key", "token", "email", "account", "user", "username", "devicename", "groupname", "group_name",
-        "friendlyname", "bt_name", "hostname"
+        "friendlyname", "bt_name", "hostname", "language", "date", "time"
     };
 
-    private static readonly string[] PersonalKeyParts = ["mac", "uuid", "ssid"];
+    private static readonly string[] PersonalKeyParts = ["mac", "uuid", "ssid", "timezone"];
 
     private static readonly HashSet<string> CommandsWithPersonalNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -41,6 +41,7 @@ sealed partial class WiimController
     };
     private static readonly Regex Ipv4 = new(@"\b(?:\d{1,3}\.){3}\d{1,3}\b", RegexOptions.Compiled);
     private static readonly Regex MacAddress = new(@"\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b", RegexOptions.Compiled);
+    private static readonly Regex OwnPicture = new(@"\b[0-9A-Fa-f]{8,}\.(?:jpe?g|png|bmp|gif)\b", RegexOptions.Compiled);
     private static readonly Regex LongId = new(@"\b(?:[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{24,})\b",
         RegexOptions.Compiled);
 
@@ -54,6 +55,7 @@ sealed partial class WiimController
     {
         foreach (var name in knownNames.Where(n => n.Length >= 3))
             text = text.Replace(name, "(device name)", StringComparison.OrdinalIgnoreCase);
+        text = OwnPicture.Replace(text, "(own picture)");
         return LongId.Replace(MacAddress.Replace(Ipv4.Replace(text, "0.0.0.0"), "00:00:00:00:00:00"), "(id)");
     }
 

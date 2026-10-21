@@ -112,14 +112,17 @@ sealed partial class WiimController
         return string.Empty;
     }
 
+    private const int AlexaMode = 3;
+
     internal static string ServiceName(DeviceStatus status)
     {
         if (status.SourceLabel.Length > 0) return status.SourceLabel;
-        if (SourceName(status.Mode) is { Length: > 0 } source) return source;
+        string fromArt = string.Empty;
         if (Uri.TryCreate(status.ArtUrl, UriKind.Absolute, out var uri))
-            foreach (var (host, name) in ServiceHosts)
-                if (uri.Host.Contains(host, StringComparison.OrdinalIgnoreCase)) return name;
-        return string.Empty;
+            fromArt = ServiceHosts.FirstOrDefault(s => uri.Host.Contains(s.Host, StringComparison.OrdinalIgnoreCase)).Name ?? string.Empty;
+        if (status.Mode == AlexaMode && fromArt.Length > 0) return $"Alexa · {fromArt}";
+        if (SourceName(status.Mode) is { Length: > 0 } source) return source;
+        return fromArt;
     }
 
     private static readonly Dictionary<string, string> ModelNames = new(StringComparer.OrdinalIgnoreCase)
@@ -167,7 +170,8 @@ sealed partial class WiimController
             if (DateTime.TryParseExact(Field("Release"), "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var released))
                 firmware += $" ({released:d})";
             return new DeviceInfo(ModelName(Field("project")), firmware, Temperature("temperature_cpu"), Temperature("temperature_tmp102"),
-                ParseFirmwareUpdate(statusEx), Field("ssid"), Field("MAC"), Field("uuid"));
+                ParseFirmwareUpdate(statusEx), Field("ssid"), Field("MAC"), Field("uuid"), Field("project"),
+                int.TryParse(Field("ModuleColorNumber"), out int color) ? color : null);
         }
         catch (JsonException) { return null; }
     }

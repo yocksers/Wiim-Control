@@ -61,13 +61,14 @@ sealed partial class WiimController
 
     private void OnMediaSessionVolume(int volume) => Dispatcher.UIThread.Post(async () =>
     {
-        if (_deviceIp.Length == 0) return;
+        if (_deviceIp.Length == 0 || BlockedByLock(_deviceIp)) return;
         await SetDeviceVolumeAsync(_deviceIp, volume);
         await RefreshNowPlayingAsync();
     });
 
     private void OnMediaSessionSeek(int seconds) => Dispatcher.UIThread.Post(async () =>
     {
+        if (BlockedByLock(_deviceIp, PlaybackTarget)) return;
         await SeekAsync(PlaybackTarget, seconds);
         await RefreshNowPlayingAsync();
     });

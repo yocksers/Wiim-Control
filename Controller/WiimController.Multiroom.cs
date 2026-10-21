@@ -44,6 +44,11 @@ sealed partial class WiimController
 
     internal void NoteScreen(string ip) => _screensSeen[ip] = true;
 
+    internal bool IsRoundScreen(string ip, ScreenUi ui) =>
+        ScreenPreviews.IsRoundProject(_deviceProjects.GetValueOrDefault(ip)) ||
+        (ui.Views.TryGetValue("main_music_view", out var main) && main.Choices.Any(c => c >= 7)) ||
+        (ui.Views.TryGetValue("sub_music_view", out var second) && second.Choices.Any(c => c is >= 4 and <= 6));
+
     internal async Task<MultiroomSnapshot> GetMultiroomSnapshotAsync()
     {
         var devices = _knownDevices.ToList();

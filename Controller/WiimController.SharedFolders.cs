@@ -165,7 +165,17 @@ sealed partial class WiimController
         catch (SocketException) { return host; }
     }
 
+    private const string GuestUser = "guest";
+
     private static async Task<(T? Result, ShareProblem? Error)> WithShareAsync<T>(SharedFolder folder, Func<ISMBFileStore, T?> work) where T : class
+    {
+        var result = await TryShareAsync(folder, work).ConfigureAwait(false);
+        if (folder.User.Length > 0 || result.Error is not { LoginRefused: true }) return result;
+        var guest = await TryShareAsync(folder with { User = GuestUser, Password = string.Empty }, work).ConfigureAwait(false);
+        return guest.Error == null ? guest : result;
+    }
+
+    private static async Task<(T? Result, ShareProblem? Error)> TryShareAsync<T>(SharedFolder folder, Func<ISMBFileStore, T?> work) where T : class
     {
         var client = new SMB2Client((int)ShareTimeout.TotalMilliseconds / 2);
         var task = Task.Run(() => UseShare(folder, work, client));
@@ -178,6 +188,10 @@ sealed partial class WiimController
         }
         return await task.ConfigureAwait(false);
     }
+
+    internal static string ShareDeniedMessage(SharedFolder folder) => folder.User.Length == 0
+        ? $"{folder.Host} doesn't let guests open {folder.Share}. Enter the user name and password for it, the same ones you use in the WiiM Home app."
+        : $"{folder.Host} didn't let {folder.User} open {folder.Share}. Check the user name and password. Some computers and NAS drives treat an unknown user name as a guest instead of saying it's wrong.";
 
     private static (T? Result, ShareProblem? Error) UseShare<T>(SharedFolder folder, Func<ISMBFileStore, T?> work, SMB2Client client) where T : class
     {
@@ -195,12 +209,16 @@ sealed partial class WiimController
                     ? new ShareProblem(folder.User.Length == 0
                         ? $"{folder.Host} needs a user name and password."
                         : $"{folder.Host} didn't accept the user name or password.", true)
+                    : status == NTStatus.STATUS_LOGON_TYPE_NOT_GRANTED
+                        ? new ShareProblem($"{folder.Host} doesn't let {folder.User} sign in over the network. On Windows, check that the account isn't listed under \"Deny access to this computer from the network\" in Local Security Policy.", true)
+                    : status == NTStatus.STATUS_ACCOUNT_DISABLED
+                        ? new ShareProblem($"The {folder.User} account on {folder.Host} is switched off.", true)
                     : new ShareProblem($"Couldn't sign in to {folder.Host} ({status}).", false));
             loggedIn = true;
             var store = client.TreeConnect(folder.Share, out status);
             if (store == null || status != NTStatus.STATUS_SUCCESS)
                 return (null, status == NTStatus.STATUS_BAD_NETWORK_NAME ? new ShareProblem($"{folder.Host} has no shared folder called {folder.Share}.", false)
-                    : status == NTStatus.STATUS_ACCESS_DENIED ? new ShareProblem($"This user can't open {folder.Share} on {folder.Host}.", true)
+                    : status == NTStatus.STATUS_ACCESS_DENIED ? new ShareProblem(ShareDeniedMessage(folder), true)
                     : new ShareProblem($"Couldn't open {folder.Share} on {folder.Host} ({status}).", false));
             try { return (work(store), null); }
             finally { store.Disconnect(); }

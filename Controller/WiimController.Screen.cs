@@ -15,6 +15,7 @@ sealed partial class WiimController
         "hdmi" => "hdmi",
         "phono" => "phono",
         "co-axial" or "coaxial" => "coaxial",
+        "auxin" => "auxIn",
         _ => null
     };
 
@@ -41,6 +42,7 @@ sealed partial class WiimController
             int.TryParse(JsonField(statusTask.Result, "mode"), out int mode);
             var inputConfigs = root["input_config"] as JsonObject;
             string? playingKey = UiInputKey(InputOfMode(mode));
+            if (playingKey == "lineIn" && inputConfigs?["lineIn"] is not JsonObject && inputConfigs?["auxIn"] is JsonObject) playingKey = "auxIn";
             if (playingKey != null && inputConfigs?[playingKey] is not JsonObject) playingKey = null;
             var realInputs = inputsTask.Result?.Select(i => UiInputKey(i.Mode)).OfType<string>().ToHashSet();
             var inputKeys = inputConfigs?.Select(p => p.Key).Where(k => realInputs == null || realInputs.Contains(k) || k == playingKey).ToList() ?? [];
@@ -72,9 +74,11 @@ sealed partial class WiimController
                     if (UiInt(font["clock_view"]) is int clockView && font["clock_color"]?.ToString() is { Length: 6 } color)
                         clockColors[clockView] = color;
 
+            var extra = viewType["extra_info"] as JsonObject;
             return new ScreenUi(inputKey, inputKey != null ? InputOfUiKey(inputKey) : null, Flag("clock_24_hours"), Flag("standby_turn_off_screen"),
                 startPage, views, inputKeys, playingKey,
-                UiInt(prefer?["screen_on"]) is int screenOn ? screenOn != 0 : null, Flag("hidden_sub_cover_view_icon"), clockColors);
+                UiInt(prefer?["screen_on"]) is int screenOn ? screenOn != 0 : null, Flag("hidden_sub_cover_view_icon"), clockColors,
+                UiInt(extra?["clock_view_bg"]), UiInt(extra?["clock_view_color"]));
         }
         catch (Exception) { return null; }
     }
@@ -101,6 +105,30 @@ sealed partial class WiimController
         if (ui.InputKey != null && perInput.Count > 0) payload["input_config"] = PreferConfig(ui.InputKey, perInput);
         return SetUiConfigAsync(ip, payload);
     }
+
+    internal Task<bool> SetPlaybackScreenAsync(string ip, ScreenUi ui, int startPage, params (string Key, int Value)[] values)
+    {
+        bool playing = ui.InputKey == ui.PlayingInputKey;
+        var payload = new JsonObject();
+        if (playing)
+        {
+            var viewType = new JsonObject();
+            foreach (var (key, value) in values) viewType[key] = value;
+            payload["view_type"] = viewType;
+            payload["behavior"] = new JsonObject { ["playing_default_page"] = startPage };
+        }
+        if (ui.InputKey != null) payload["input_config"] = PreferConfig(ui.InputKey, [.. values, ("playing_default_page", startPage)]);
+        return payload.Count == 0 ? Task.FromResult(false) : SetUiConfigAsync(ip, payload);
+    }
+
+    internal Task<bool> SetSoundClockAsync(string ip, ScreenPreviews.SoundClock clock) => SetUiConfigAsync(ip, new JsonObject
+    {
+        ["view_type"] = new JsonObject
+        {
+            ["clock_view"] = clock.ClockView,
+            ["extra_info"] = new JsonObject { ["clock_view_bg"] = clock.Background, ["clock_view_color"] = clock.Color }
+        }
+    });
 
     internal Task<bool> SetScreenBehaviorAsync(string ip, ScreenUi ui, string key, int value, bool perInput)
     {

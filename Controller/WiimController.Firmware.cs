@@ -15,11 +15,65 @@ sealed record FirmwareUpdate(string Current, string Available, string RemoteAvai
         version.StartsWith("Linkplay.", StringComparison.OrdinalIgnoreCase) ? version[9..] : version;
 }
 
+sealed record FirmwareCheck(bool Done, bool Failed, string NewVersion)
+{
+    public bool HasUpdate => NewVersion.Length > 0;
+}
+
 sealed partial class WiimController
 {
+    internal const string FirmwareUpdateAdvice = "Use WiiM Home App firmware update.";
+    private static readonly TimeSpan FirmwareCheckTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan FirmwareCheckPoll = TimeSpan.FromSeconds(2);
+
+    internal static FirmwareCheck? ParseFirmwareCheck(string? json)
+    {
+        if (JsonField(json, "ota_state") is not { } state) return null;
+        string result = JsonField(json, "ota_result") ?? string.Empty;
+        string version = JsonField(json, "new_ver") ?? string.Empty;
+        bool failed = state.Contains("fail", StringComparison.OrdinalIgnoreCase) || result.Contains("fail", StringComparison.OrdinalIgnoreCase);
+        bool done = failed || state.StartsWith("check_done", StringComparison.OrdinalIgnoreCase);
+        bool noUpdate = result.Contains("no_new", StringComparison.OrdinalIgnoreCase) || version is "" or "0";
+        return new FirmwareCheck(done, failed, done && !failed && !noUpdate ? version : string.Empty);
+    }
+
+    internal async Task<FirmwareCheck?> CheckFirmwareNowAsync(string ip)
+    {
+        if (!CommandSucceeded(await SendToDeviceAsync(ip, "getMvRemoteUpdateStartCheck").ConfigureAwait(false))) return null;
+        var deadline = DateTime.UtcNow + FirmwareCheckTimeout;
+        FirmwareCheck? check = null;
+        do
+        {
+            await Task.Delay(FirmwareCheckPoll).ConfigureAwait(false);
+            check = ParseFirmwareCheck(await SendToDeviceAsync(ip, "getMVRemoteCheckResult").ConfigureAwait(false));
+        }
+        while (check is not { Done: true } && DateTime.UtcNow < deadline);
+        await Dispatcher.UIThread.InvokeAsync(() => CheckFirmwareAsync(force: true));
+        return check is { Done: true } ? check : null;
+    }
+
     private readonly Dictionary<string, FirmwareUpdate> _firmwareUpdates = new();
     private readonly HashSet<string> _firmwareNotified = new();
     private readonly DispatcherTimer _firmwareTimer = new() { Interval = TimeSpan.FromHours(6) };
+    private bool _firmwareChecks = true;
+
+    internal bool FirmwareChecks
+    {
+        get => _firmwareChecks;
+        set
+        {
+            _firmwareChecks = value;
+            SaveConfig();
+            if (value)
+            {
+                _ = CheckFirmwareAsync();
+                return;
+            }
+            if (_firmwareUpdates.Count == 0) return;
+            _firmwareUpdates.Clear();
+            _settingsWindow?.OnFirmwareChecked();
+        }
+    }
 
     internal FirmwareUpdate? FirmwareUpdateFor(string ip) => _firmwareUpdates.GetValueOrDefault(ip);
 
@@ -42,8 +96,9 @@ sealed partial class WiimController
         DispatcherTimer.RunOnce(() => _ = CheckFirmwareAsync(), TimeSpan.FromSeconds(20));
     }
 
-    internal async Task CheckFirmwareAsync()
+    internal async Task CheckFirmwareAsync(bool force = false)
     {
+        if (!force && !_firmwareChecks) return;
         var devices = _knownDevices.ToList();
         var replies = await Task.WhenAll(devices.Select(d => SendToDeviceAsync(d.Ip, "getStatusEx")));
         bool changed = false;
@@ -61,7 +116,7 @@ sealed partial class WiimController
             _firmwareUpdates[ip] = update;
             string key = $"{devices[i].Uuid}|{ip}|{update.Available}|{update.RemoteAvailable}";
             if (_firmwareNotified.Add(key))
-                Notify($"{devices[i].Name}: {update.Summary}. Install it from the WiiM Home app.");
+                Notify($"{devices[i].Name}: {update.Summary}. {FirmwareUpdateAdvice}");
         }
         if (changed) _settingsWindow?.OnFirmwareChecked();
     }

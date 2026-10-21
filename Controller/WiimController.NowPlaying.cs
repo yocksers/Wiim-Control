@@ -10,7 +10,7 @@ sealed partial class WiimController
 {
     private static readonly Dictionary<int, string> SourceNames = new()
     {
-        [1] = "AirPlay", [2] = "DLNA", [3] = "QPlay", [31] = "Spotify", [34] = "Lyrion", [32] = "TIDAL Connect", [36] = "Qobuz Connect",
+        [1] = "AirPlay", [2] = "DLNA", [3] = "Alexa", [31] = "Spotify", [34] = "Lyrion", [32] = "TIDAL Connect", [36] = "Qobuz Connect",
         [40] = "Line-in", [41] = "Bluetooth", [43] = "Optical", [45] = "Coaxial", [47] = "Line-in 2", [49] = "HDMI",
         [51] = "USB", [54] = "Phono", [58] = "HDMI ARC", [99] = "Multiroom"
     };
@@ -23,6 +23,16 @@ sealed partial class WiimController
     private bool _nowPlayingBusy;
 
     internal static string SourceName(int mode) => SourceNames.TryGetValue(mode, out var name) ? name : string.Empty;
+
+    private const int AirPlayMode = 1;
+
+    internal static string TrackArtUrl(string url, string ip, int mode, string title, string artist, string album)
+    {
+        if (url.Length == 0) return url;
+        bool onDevice = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.Equals(ip, StringComparison.OrdinalIgnoreCase);
+        if (mode != AirPlayMode && !onDevice) return url;
+        return $"{url}#{Uri.EscapeDataString($"{title}|{artist}|{album}")}";
+    }
 
     internal async Task<DeviceStatus?> GetDeviceStatusAsync(string ip)
     {
@@ -45,14 +55,17 @@ sealed partial class WiimController
         int.TryParse(JsonField(status, "curpos"), out int position);
         int.TryParse(JsonField(status, "totlen"), out int duration);
         string bluetooth = mode == 41 ? await GetBluetoothSourceAsync(ip).ConfigureAwait(false) : string.Empty;
+        string title = Clean(meta.GetValueOrDefault("title")) ?? Clean(HexText(JsonField(status, "Title"))) ?? string.Empty;
+        string artist = Clean(meta.GetValueOrDefault("artist")) ?? Clean(HexText(JsonField(status, "Artist"))) ?? string.Empty;
+        string album = Clean(meta.GetValueOrDefault("album")) ?? Clean(HexText(JsonField(status, "Album"))) ?? string.Empty;
         return WithPcAudioTitle(ip, await ApplyRoonAsync(ip, new DeviceStatus(
             new DeviceVolume(Math.Clamp(volume, 0, 100), JsonField(status, "mute") == "1"),
             JsonField(status, "status") ?? string.Empty,
             mode,
-            Clean(meta.GetValueOrDefault("title")) ?? Clean(HexText(JsonField(status, "Title"))) ?? string.Empty,
-            Clean(meta.GetValueOrDefault("artist")) ?? Clean(HexText(JsonField(status, "Artist"))) ?? string.Empty,
-            Clean(meta.GetValueOrDefault("album")) ?? Clean(HexText(JsonField(status, "Album"))) ?? string.Empty,
-            Clean(meta.GetValueOrDefault("albumArtURI")) ?? string.Empty,
+            title,
+            artist,
+            album,
+            TrackArtUrl(Clean(meta.GetValueOrDefault("albumArtURI")) ?? string.Empty, ip, mode, title, artist, album),
             sampleRate,
             bitDepth,
             loop,
@@ -161,8 +174,16 @@ sealed partial class WiimController
 
     private const int LossyMaxKbps = 400;
 
+    private const int CdBitDepth = 16;
+    private const int CdMaxSampleRate = 48000;
+
     internal static bool IsLossless(DeviceStatus status) =>
-        status.SampleRate >= 44100 && status.BitDepth >= 16 && status.BitRate > LossyMaxKbps;
+        status.SampleRate >= 44100 && status.BitDepth >= CdBitDepth && status.BitRate > LossyMaxKbps;
+
+    internal static string LosslessTag(DeviceStatus status) =>
+        status.Title == PcAudioTitle || !IsLossless(status) ? string.Empty
+        : status.BitDepth > CdBitDepth || status.SampleRate > CdMaxSampleRate ? "Hi-Res Lossless"
+        : "Lossless";
 
     internal static string Quality(DeviceStatus status)
     {
@@ -170,7 +191,7 @@ sealed partial class WiimController
         if (status.SampleRate > 0) parts.Add((status.SampleRate / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " kHz");
         if (status.SampleRate > 0 && status.BitDepth > 0) parts.Add($"{status.BitDepth}-bit");
         if (status.BitRate > 0) parts.Add($"{status.BitRate} kbps");
-        if (IsLossless(status)) parts.Add("Lossless");
+        if (LosslessTag(status) is { Length: > 0 } tag) parts.Add(tag);
         return string.Join("  ·  ", parts);
     }
 

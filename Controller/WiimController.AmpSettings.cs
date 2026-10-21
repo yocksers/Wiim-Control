@@ -118,7 +118,7 @@ sealed partial class WiimController
 
     private const string UsbDacMode = "AUDIO_OUTPUT_UAC_CARD_MODE";
 
-    private static (List<string>? Modes, string? UsbName) ParseOutputModes(string? json)
+    internal static (List<string>? Modes, string? UsbName) ParseOutputModes(string? json)
     {
         try
         {
@@ -133,7 +133,7 @@ sealed partial class WiimController
                 .Select(c => c.Name.IndexOf(" at ", StringComparison.Ordinal) is int at and > 0 ? c.Name[..at].Trim() : c.Name.Trim())
                 .Distinct()
                 .ToList();
-            return (cards.Select(c => c.Mode).Distinct().ToList(), usbNames is [{ Length: > 0 } single] ? single : null);
+            return (cards.Select(c => IsSpeakerOutput(c.Name) ? SpeakerMode : c.Mode).Distinct().ToList(), usbNames is [{ Length: > 0 } single] ? single : null);
         }
         catch (System.Text.Json.JsonException)
         {

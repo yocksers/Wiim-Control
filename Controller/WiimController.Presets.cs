@@ -113,7 +113,7 @@ sealed partial class WiimController
         };
     }
 
-    private static string RoutineOutputName(string output, string hexName)
+    internal static string RoutineOutputName(string output, string hexName)
     {
         string device = string.Empty;
         try
@@ -124,6 +124,7 @@ sealed partial class WiimController
         catch (FormatException) { }
         int at = device.IndexOf(" at ", StringComparison.Ordinal);
         if (at > 0) device = device[..at];
+        if (IsSpeakerOutput(device)) return "Speakers";
         return output switch
         {
             "AUDIO_OUTPUT_SPEAKER_MODE" => "Speakers",

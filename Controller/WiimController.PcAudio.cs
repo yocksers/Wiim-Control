@@ -72,6 +72,7 @@ sealed partial class WiimController
             var capture = CreatePcCapture();
             var server = keep != null && keep.SampleRate == capture.SampleRate ? keep : new PcAudioServer(capture.SampleRate);
             capture.Pcm += server.Write;
+            capture.Stopped += () => Dispatcher.UIThread.Post(() => OnPcCaptureStopped(capture));
             _pcCapture?.Dispose();
             if (_pcServer != null && !ReferenceEquals(_pcServer, server)) _pcServer.Dispose();
             _pcCapture = capture;
@@ -116,6 +117,23 @@ sealed partial class WiimController
         if (_pcServer is not { } server || server.ClientCount > 0 || DateTime.UtcNow - server.LastClientSeen < PcAudioIdleLimit) return;
         StopPcAudio();
         SyncPcAudioUi();
+    }
+
+    private static readonly TimeSpan PcCaptureRestartDelay = TimeSpan.FromSeconds(1.5);
+
+    private void OnPcCaptureStopped(IPcAudioCapture capture)
+    {
+        if (!ReferenceEquals(capture, _pcCapture) || _pcAudioIp is not { } ip) return;
+        DispatcherTimer.RunOnce(async () =>
+        {
+            if (!ReferenceEquals(capture, _pcCapture) || _pcAudioIp != ip) return;
+            OnDefaultOutputChanged();
+            if (_pcAudioIp == ip && !ReferenceEquals(capture, _pcCapture)) return;
+            StopPcAudio();
+            SyncPcAudioUi();
+            Notify("Casting this computer's sound stopped because its sound device is no longer available.");
+            await SendToDeviceAsync(ip, "setPlayerCmd:stop");
+        }, PcCaptureRestartDelay);
     }
 
     private void OnDefaultOutputChanged()

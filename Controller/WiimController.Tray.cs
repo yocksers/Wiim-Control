@@ -287,8 +287,7 @@ sealed partial class WiimController
         }));
         _mnuDevices.Add(MenuAction("Add device manually…", async () =>
         {
-            var ip = await Dialogs.PromptAsync(null, "Enter the WiiM device's IP address:", string.Empty, UiScale);
-            if (!string.IsNullOrWhiteSpace(ip)) AddManualDevice(ip);
+            if (await AddDeviceAsync(null)) BuildDevicesMenu();
         }));
 
         if (_knownDevices.Count > 1)

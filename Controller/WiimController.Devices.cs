@@ -31,12 +31,12 @@ sealed partial class WiimController
         _settingsWindow?.OnActiveDeviceChanged();
     }
 
-    internal void AddManualDevice(string ip)
+    internal void AddManualDevice(string ip, string? name = null, string uuid = "")
     {
-        var dev = new KnownDevice($"WiiM device {_knownDevices.Count + 1}", ip, string.Empty);
+        var dev = new KnownDevice(name ?? $"WiiM device {_knownDevices.Count + 1}", ip, uuid);
         _knownDevices.Add(dev);
         SwitchDevice(dev);
-        _ = FillMissingDeviceIdsAsync();
+        if (uuid.Length == 0) _ = FillMissingDeviceIdsAsync();
     }
 
     private static bool SameDeviceId(string a, string b) =>

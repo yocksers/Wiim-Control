@@ -36,6 +36,7 @@ sealed partial class WiimController
             if (key == "libraryserver")   _libraryServer = val;
             if (key == "recent")          _recent = ParseRecent(val);
             if (key == "checkupdates")    _checkUpdates = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
+            if (key == "firmwarechecks")  _firmwareChecks = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "startminimized")  _startMinimized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "nowplayingvinyl") _nowPlayingVinyl = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "miniplayerauto")  _miniPlayerAuto = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
@@ -48,6 +49,7 @@ sealed partial class WiimController
             if (key == "roontokens")     ParseRoonTokens(val);
             if (key == "sharedfolders")  _sharedFolders = ParseSharedFolders(val);
             if (key == "hiddenpeqpresets") ParseNameSet(_hiddenPeqPresets, val);
+            if (key == "lockeddevices")  ParseNameSet(_lockedDevices, val);
             if (key == "radiofavorites")  _radioFavorites = ParseRadioFavorites(val);
             if (key == "groupvolumekeys") _groupVolumeKeys = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "groupleader")     _groupLeaderIp = val;
@@ -75,9 +77,16 @@ sealed partial class WiimController
         }
     }
 
+    private readonly object _configGate = new();
+
     private void SaveConfig()
     {
         if (_configLocked) return;
+        lock (_configGate) SaveConfigLocked();
+    }
+
+    private void SaveConfigLocked()
+    {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
@@ -91,10 +100,11 @@ sealed partial class WiimController
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
                 $"enabledOutputs={string.Join('|', _enabledOutputIds)}",
                 $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}", $"recent={SerializeRecent()}",
-                $"checkUpdates={_checkUpdates}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingVinyl={_nowPlayingVinyl}",
+                $"checkUpdates={_checkUpdates}", $"firmwareChecks={_firmwareChecks}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingVinyl={_nowPlayingVinyl}",
                 $"miniPlayerAuto={_miniPlayerAuto}",
                 $"miniPlayers={SerializeMiniPlayerPlacements()}", $"trackToasts={_trackToasts}", $"artworkBackground={_artworkBackground}",
                 $"hiddenEqPresets={string.Join('\u0001', _hiddenEqPresets)}", $"hiddenPeqPresets={string.Join('\u0001', _hiddenPeqPresets)}",
+                $"lockedDevices={string.Join('\u0001', _lockedDevices)}",
                 $"roonCore={_roonCore}", $"roonTokens={SerializeRoonTokens()}", $"sharedFolders={SerializeSharedFolders()}",
                 $"knownDevices={string.Join('\u0002', _knownDevices.Select(d => string.Join('\u0001', d.Name, d.Ip, d.Uuid)))}"
             ]);

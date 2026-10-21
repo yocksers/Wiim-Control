@@ -12,6 +12,8 @@ sealed partial class WiimController
 {
     internal static readonly (int Milliseconds, string Name)[] GroupDelayLevels = [(800, "High"), (150, "Medium"), (70, "Low")];
     internal static readonly int[] HighPassFrequencies = [30, 35, 40];
+    internal const int HighPassMin = 20;
+    internal const int HighPassMax = 120;
 
     internal static string GroupDelayName(int milliseconds) =>
         GroupDelayLevels.FirstOrDefault(l => l.Milliseconds == milliseconds).Name is { } name ? $"{name} ({milliseconds} ms)" : $"{milliseconds} ms";

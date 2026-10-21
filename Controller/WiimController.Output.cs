@@ -97,6 +97,15 @@ sealed partial class WiimController
     private static string ShortDeviceName(string name) =>
         name.IndexOf(" at ", StringComparison.Ordinal) is int at and > 0 ? name[..at].Trim() : name.Trim();
 
+    internal static bool IsSpeakerOutput(string devName) => devName.Contains("Speaker", StringComparison.OrdinalIgnoreCase);
+
+    internal static string OutputChoiceName(string mode, string knownName, string devName)
+    {
+        if (IsSpeakerOutput(devName)) return "Speakers";
+        string device = ShortDeviceName(devName);
+        return mode == UsbDacOutputMode && device.Length > 0 ? $"{knownName} ({device})" : knownName;
+    }
+
     internal async Task<OutputState?> GetOutputStateAsync(string ip)
     {
         var list = SendToDeviceAsync(ip, "getSoundCardModeSupportList");
@@ -110,6 +119,7 @@ sealed partial class WiimController
         string activeIndex = JsonField(active.Result, "index") ?? string.Empty;
         (List<int> Rates, List<int> Bits)? usbCaps = null;
         var coexist = new List<string>();
+        var speakerModes = new HashSet<string>();
         bool switchDelaySupported = false;
         static List<int> Numbers(JsonElement element) => element.ValueKind == JsonValueKind.Array
             ? element.EnumerateArray().Select(e => int.TryParse(e.ToString(), out int n) ? n : 0).Where(n => n > 0).Distinct().Order().ToList()
@@ -130,10 +140,10 @@ sealed partial class WiimController
                     }
                     if (mode == UsbDacOutputMode && (usbCaps == null || Prop(card, "index").ToString() == activeIndex))
                         usbCaps = (Numbers(Prop(Prop(card, "soundCard"), "sampleRateSupportList")), Numbers(Prop(Prop(card, "soundCard"), "bitDepthSupportList")));
+                    string devName = Prop(Prop(card, "soundCard"), "devName").ToString();
+                    if (IsSpeakerOutput(devName)) speakerModes.Add(mode);
                     if (!OutputModes.TryGetValue(mode, out var known) || choices.Any(c => c.Mode == mode)) continue;
-                    string device = ShortDeviceName(Prop(Prop(card, "soundCard"), "devName").ToString());
-                    string name = mode == "AUDIO_OUTPUT_UAC_CARD_MODE" && device.Length > 0 ? $"{known.Name} ({device})" : known.Name;
-                    choices.Add(new OutputChoice(known.Code, mode, name));
+                    choices.Add(new OutputChoice(known.Code, mode, OutputChoiceName(mode, known.Name, devName)));
                 }
         }
         catch (JsonException) { }
@@ -153,7 +163,7 @@ sealed partial class WiimController
         if (usbCaps is { Rates.Count: > 0, Bits.Count: > 0 } caps && usbCap.Result?.Trim().Split(':') is [var r, var b, ..] &&
             int.TryParse(r, out int usbRate) && int.TryParse(b, out int usbBits))
             usb = new UsbResolution(caps.Rates, caps.Bits, usbRate, usbBits);
-        var lineOutTask = LineOutModeOf(coexist) is { } lineOutMode ? GetSimultaneousLineOutAsync(ip, lineOutMode) : Task.FromResult<SimultaneousLineOut?>(null);
+        var lineOutTask = LineOutModeOf(coexist.Where(m => !speakerModes.Contains(m))) is { } lineOutMode ? GetSimultaneousLineOutAsync(ip, lineOutMode) : Task.FromResult<SimultaneousLineOut?>(null);
         var delayTask = switchDelaySupported ? SendToDeviceAsync(ip, "getSpdifOutSwitchDelayMs") : Task.FromResult<string?>(null);
         await Task.WhenAll(lineOutTask, delayTask).ConfigureAwait(false);
         var lineOut = lineOutTask.Result;
