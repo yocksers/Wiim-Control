@@ -22,9 +22,9 @@ sealed partial class WiimController
 
         private Border BuildBackupCard()
         {
-            var backup = Pill("Back up…");
-            var restore = Pill("Restore…");
-            var report = Pill("Device report…");
+            var backup = Pill("Back up");
+            var restore = Pill("Restore");
+            var report = Pill("Device report");
             backup.Click += async (_, _) => await BackupAsync();
             restore.Click += async (_, _) => await RestoreAsync();
             report.Click += async (_, _) => await SaveDeviceReportAsync(report);

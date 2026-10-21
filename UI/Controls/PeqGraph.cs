@@ -10,10 +10,9 @@ namespace WiimControl;
 sealed class PeqGraph : Control
 {
     public const double MinFrequency = 10, MaxFrequency = 22000, MinGain = -12, MaxGain = 12, MinQ = 0.01, MaxQ = 24;
-    private const double AxisMin = 10, AxisMax = 24000, SampleRate = 48000;
+    private const double SampleRate = 48000;
     private const double Left = 44, Right = 12, Top = 14, Bottom = 26, PointRadius = 11;
-
-    private static readonly double[] MajorTicks = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    private const double FullMin = 10, FullMax = 24000, MinZoomRatio = 3, ZoomStep = 0.8, PanStep = 0.1;
     private static readonly IPen GridPen = new Pen(new SolidColorBrush(Color.Parse("#3A3A3A")), 1);
     private static readonly IPen MinorPen = new Pen(new SolidColorBrush(Color.Parse("#2F2F2F")), 1);
     private static readonly IPen ZeroPen = new Pen(new SolidColorBrush(Color.Parse("#5A5A5A")), 1);
@@ -25,6 +24,7 @@ sealed class PeqGraph : Control
     private PeqBand[] _bands = [];
     private int _selected = -1;
     private int _dragging = -1;
+    private double _axisMin = FullMin, _axisMax = FullMax;
 
     public event Action<int, PeqBand>? BandChanged;
     public event Action<int>? SelectedChanged;
@@ -42,6 +42,39 @@ sealed class PeqGraph : Control
         set { _bands = value; InvalidateVisual(); }
     }
 
+    public bool Editable { get; set; } = true;
+
+    public void ResetZoom()
+    {
+        (_axisMin, _axisMax) = (FullMin, FullMax);
+        InvalidateVisual();
+    }
+
+    internal (double Min, double Max) VisibleRange => (_axisMin, _axisMax);
+
+    internal void ZoomAt(double frequency, double factor)
+    {
+        double low = Math.Log10(_axisMin), high = Math.Log10(_axisMax), anchor = Math.Log10(frequency);
+        double span = Math.Clamp((high - low) * factor, Math.Log10(MinZoomRatio), Math.Log10(FullMax / FullMin));
+        double newLow = anchor - (anchor - low) / (high - low) * span;
+        ShowSpan(newLow, newLow + span);
+    }
+
+    internal void Pan(int direction)
+    {
+        double low = Math.Log10(_axisMin), high = Math.Log10(_axisMax), shift = (high - low) * PanStep * direction;
+        ShowSpan(low + shift, high + shift);
+    }
+
+    private void ShowSpan(double low, double high)
+    {
+        double span = high - low, fullLow = Math.Log10(FullMin), fullHigh = Math.Log10(FullMax);
+        if (low < fullLow) (low, high) = (fullLow, fullLow + span);
+        if (high > fullHigh) (low, high) = (fullHigh - span, fullHigh);
+        (_axisMin, _axisMax) = (Math.Pow(10, Math.Max(low, fullLow)), Math.Pow(10, Math.Min(high, fullHigh)));
+        InvalidateVisual();
+    }
+
     public int Selected
     {
         get => _selected;
@@ -56,10 +89,24 @@ sealed class PeqGraph : Control
     private Rect Plot => new(Left, Top, Math.Max(1, Bounds.Width - Left - Right), Math.Max(1, Bounds.Height - Top - Bottom));
 
     private double XOf(double f, Rect plot) =>
-        plot.Left + Math.Log(f / AxisMin) / Math.Log(AxisMax / AxisMin) * plot.Width;
+        plot.Left + Math.Log(f / _axisMin) / Math.Log(_axisMax / _axisMin) * plot.Width;
 
     private double FrequencyAt(double x, Rect plot) =>
-        AxisMin * Math.Pow(AxisMax / AxisMin, (x - plot.Left) / plot.Width);
+        _axisMin * Math.Pow(_axisMax / _axisMin, (x - plot.Left) / plot.Width);
+
+    private bool Visible(double f) => f >= _axisMin && f <= _axisMax;
+
+    private IEnumerable<(double Frequency, bool Labelled)> Ticks()
+    {
+        double decades = Math.Log10(_axisMax / _axisMin);
+        int[] labelled = decades <= 1.2 ? [1, 2, 3, 4, 5, 6, 7, 8, 9] : decades <= 2 ? [1, 2, 3, 5] : [1, 2, 5];
+        for (double decade = Math.Pow(10, Math.Floor(Math.Log10(_axisMin))); decade <= _axisMax; decade *= 10)
+            for (int m = 1; m <= 9; m++)
+            {
+                double f = decade * m;
+                if (f >= _axisMin && f <= _axisMax) yield return (f, labelled.Contains(m));
+            }
+    }
 
     private static double YOf(double db, Rect plot) =>
         plot.Top + (MaxGain - Math.Clamp(db, MinGain - 1, MaxGain + 1)) / (MaxGain - MinGain) * plot.Height;
@@ -125,20 +172,18 @@ sealed class PeqGraph : Control
         var plot = Plot;
         bool enabled = IsEffectivelyEnabled;
 
-        for (double decade = 10; decade < AxisMax; decade *= 10)
-            for (int m = 2; m <= 9; m++)
-            {
-                double f = decade * m;
-                if (f > AxisMax || MajorTicks.Contains(f)) continue;
-                double x = XOf(f, plot);
-                context.DrawLine(MinorPen, new Point(x, plot.Top), new Point(x, plot.Bottom));
-            }
-        foreach (var f in MajorTicks)
+        var ticks = Ticks().ToList();
+        foreach (var (f, _) in ticks.Where(t => !t.Labelled))
+        {
+            double x = XOf(f, plot);
+            context.DrawLine(MinorPen, new Point(x, plot.Top), new Point(x, plot.Bottom));
+        }
+        foreach (var (f, _) in ticks.Where(t => t.Labelled))
         {
             double x = XOf(f, plot);
             context.DrawLine(GridPen, new Point(x, plot.Top), new Point(x, plot.Bottom));
             var label = Label(FrequencyLabel(f), Palette.TextMuted);
-            context.DrawText(label, new Point(x - label.Width / 2, plot.Bottom + 6));
+            context.DrawText(label, new Point(Math.Min(x - label.Width / 2, Bounds.Width - label.Width - 2), plot.Bottom + 6));
         }
         foreach (var db in new double[] { -12, -6, 0, 6, 12 })
         {
@@ -156,7 +201,7 @@ sealed class PeqGraph : Control
         foreach (int i in Enumerable.Range(0, _bands.Length).OrderBy(i => i == _selected))
         {
             var band = _bands[i];
-            if (band.Filter == PeqFilter.Off) continue;
+            if (band.Filter == PeqFilter.Off || !Visible(band.Frequency)) continue;
             var center = new Point(XOf(band.Frequency, plot), YOf(band.Gain, plot));
             bool selected = i == _selected && enabled;
             context.DrawEllipse(selected ? Palette.Accent : Palette.Input, selected ? null : PointPen, center, PointRadius, PointRadius);
@@ -188,7 +233,7 @@ sealed class PeqGraph : Control
         double bestDistance = double.MaxValue;
         for (int i = 0; i < _bands.Length; i++)
         {
-            if (_bands[i].Filter == PeqFilter.Off) continue;
+            if (_bands[i].Filter == PeqFilter.Off || !Visible(_bands[i].Frequency)) continue;
             double dx = XOf(_bands[i].Frequency, plot) - position.X, dy = YOf(_bands[i].Gain, plot) - position.Y;
             double distance = Math.Sqrt(dx * dx + dy * dy);
             if (distance > PointRadius + 4) continue;
@@ -232,8 +277,12 @@ sealed class PeqGraph : Control
     {
         base.OnPointerPressed(e);
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        int index = PointAt(e.GetPosition(this));
-        if (index < 0) return;
+        int index = Editable ? PointAt(e.GetPosition(this)) : -1;
+        if (index < 0)
+        {
+            if (e.ClickCount == 2) ResetZoom();
+            return;
+        }
         Select(index);
         if (e.ClickCount == 2)
         {
@@ -253,7 +302,7 @@ sealed class PeqGraph : Control
         var position = e.GetPosition(this);
         if (_dragging < 0)
         {
-            Cursor = PointAt(position) >= 0 ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+            Cursor = Editable && PointAt(position) >= 0 ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
             return;
         }
         var plot = Plot;
@@ -273,11 +322,10 @@ sealed class PeqGraph : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        int index = PointAt(e.GetPosition(this));
-        if (index < 0 || e.Delta.Y == 0) return;
-        Select(index);
-        var band = _bands[index];
-        Change(index, band with { Q = NudgeQ(band.Q, Math.Sign(e.Delta.Y)) });
+        double delta = e.Delta.Y != 0 ? e.Delta.Y : -e.Delta.X;
+        if (delta == 0) return;
+        if ((e.KeyModifiers & KeyModifiers.Shift) != 0 || e.Delta.Y == 0) Pan(-Math.Sign(delta));
+        else ZoomAt(FrequencyAt(Math.Clamp(e.GetPosition(this).X, Plot.Left, Plot.Right), Plot), Math.Pow(ZoomStep, delta));
         e.Handled = true;
     }
 

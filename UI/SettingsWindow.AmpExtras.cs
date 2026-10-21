@@ -27,22 +27,42 @@ sealed partial class WiimController
             if (info.Uuid.Length > 0) rows.Add(LabeledRow("UUID", Selectable(info.Uuid)));
             if (info.CpuTemperature is int cpu) rows.Add(LabeledRow("Processor temperature", Info($"{cpu} °C")));
             if (info.BoardTemperature is int board) rows.Add(LabeledRow("Board temperature", Info($"{board} °C")));
-            if (info.Update is { } update)
+            var status = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+            void ShowStatus(string text, bool available)
             {
-                if (update.HasAmpUpdate)
-                    rows.Add(LabeledRow("Firmware update", new TextBlock
-                    {
-                        Text = $"{FirmwareUpdate.ShortVersion(update.Available)} is available", Classes = { "accent" },
-                        HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center
-                    }));
-                if (update.HasRemoteUpdate)
-                    rows.Add(LabeledRow("Remote control update", new TextBlock
-                    {
-                        Text = update.RemoteAvailable == "new" ? "Available" : $"{update.RemoteAvailable} is available", Classes = { "accent" },
-                        HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center
-                    }));
-                rows.Add(Muted("Install updates from the WiiM Home app. Don't switch the device off while it updates."));
+                status.Text = text;
+                status.Classes.Set("accent", available);
+                status.Classes.Set("muted", !available);
             }
+            if (info.Update is { HasAmpUpdate: true } ampUpdate) ShowStatus($"{FirmwareUpdate.ShortVersion(ampUpdate.Available)} is available", true);
+            else ShowStatus("Up to date", false);
+            var advice = Muted(FirmwareUpdateAdvice);
+            advice.IsVisible = info.Update != null;
+            var check = Pill("Check now");
+            ToolTip.SetTip(check, "Asks the device to look for new firmware now. Nothing is installed.");
+            check.Click += async (_, _) =>
+            {
+                check.IsEnabled = false;
+                ShowStatus("Checking…", false);
+                var result = await _owner.CheckFirmwareNowAsync(ip);
+                check.IsEnabled = true;
+                if (result == null) ShowStatus("Couldn't check", false);
+                else if (result.Failed) ShowStatus("The check didn't succeed", false);
+                else if (result.HasUpdate) ShowStatus($"{FirmwareUpdate.ShortVersion(result.NewVersion)} is available", true);
+                else ShowStatus("Up to date", false);
+                advice.IsVisible = result?.HasUpdate == true || _owner.FirmwareUpdateFor(ip) != null;
+            };
+            rows.Add(LabeledRow("Firmware update", new StackPanel
+            {
+                Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Children = { status, check }
+            }));
+            if (info.Update is { HasRemoteUpdate: true } remoteUpdate)
+                rows.Add(LabeledRow("Remote control update", new TextBlock
+                {
+                    Text = remoteUpdate.RemoteAvailable == "new" ? "Available" : $"{remoteUpdate.RemoteAvailable} is available", Classes = { "accent" },
+                    HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center
+                }));
+            rows.Add(advice);
             if (autoUpdate is { } auto)
             {
                 var choices = new List<(int Value, string Label)> { (0, "On") };
@@ -54,10 +74,17 @@ sealed partial class WiimController
                 if (auto.Months > 0 && auto.PausedUntil is { } until)
                     rows.Add(Muted($"Automatic updates are paused until {until:d}. No periodic updates are installed before then."));
             }
-            var restore = Pill("Restore…");
+            var restore = Pill("Restore");
             restore.Click += async (_, _) => await RestoreFactoryAsync(ip);
             rows.Add(LabeledRow("Restore factory settings", restore));
-            return Card("Device", rows.ToArray());
+            if (DevicePictures.Load(info.Project, info.Model, info.Color) is not { } picture) return Card(null, rows.ToArray());
+            var image = new Image
+            {
+                Source = picture, Height = 110, MaxWidth = 220, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            ToolTip.SetTip(image, info.Model);
+            return Card(null, [image, .. rows]);
         }
 
         private async Task RestartDeviceAsync(string ip)
@@ -93,7 +120,7 @@ sealed partial class WiimController
 
         private Border BuildStandbyCard(string ip, int seconds)
         {
-            var combo = new ComboBox { Width = 200 };
+            var combo = new ComboBox { Width = FieldWidth };
             var choices = StandbyMinutes.Select(m => m * 60).ToList();
             if (!choices.Contains(seconds)) choices.Add(seconds);
             choices.Sort();
@@ -109,6 +136,82 @@ sealed partial class WiimController
             return Card("Standby", LabeledRow("Go to standby after nothing has played for", combo));
         }
 
+        private List<Control> IpConfigRows(string ip, NetworkInfo net)
+        {
+            if (net.IpConfig is not { } config) return [];
+            var addressBox = new TextBox { Width = FieldWidth, Text = config.Address, Watermark = "10.0.0.53" };
+            var maskBox = new TextBox { Width = FieldWidth, Text = MaskOfPrefix(config.Prefix), Watermark = "255.255.255.0" };
+            string router = config.Gateway.Length > 0 ? config.Gateway : GuessRouter(net.Ip, config.Prefix);
+            var routerBox = new TextBox { Width = FieldWidth, Text = router, Watermark = "10.0.0.1" };
+            var dnsBox = new TextBox { Width = FieldWidth, Text = config.Dns.Length > 0 ? config.Dns : DefaultDns, Watermark = DefaultDns };
+            var save = Pill("Save", accent: true);
+            var manualRows = new StackPanel
+            {
+                IsVisible = config.Manual,
+                Children =
+                {
+                    LabeledRow("Fixed IP address", addressBox), LabeledRow("Subnet mask", maskBox),
+                    LabeledRow("Router", routerBox), LabeledRow("DNS server", dnsBox), LabeledRow(string.Empty, save)
+                }
+            };
+            var mode = SegmentSwitch([(0, "Automatic"), (1, "Manual")], config.Manual ? 1 : 0, FieldWidth, async value =>
+            {
+                manualRows.IsVisible = value == 1;
+                if (value == 0 && config.Manual) await SwitchToAutomaticIpAsync(ip, net.Wired);
+            });
+            var modeRow = LabeledRow("IP settings", mode);
+            ToolTip.SetTip(modeRow, "Automatic lets the router give the device its address. Manual gives it a fixed address you choose.");
+            save.Click += async (_, _) =>
+            {
+                string address = addressBox.Text?.Trim() ?? string.Empty, mask = maskBox.Text?.Trim() ?? string.Empty;
+                string gateway = routerBox.Text?.Trim() ?? string.Empty, dns = dnsBox.Text?.Trim() ?? string.Empty;
+                if (ManualIpProblem(address, mask, gateway, dns) is { } problem)
+                {
+                    await Dialogs.MessageAsync(this, problem, _scale);
+                    return;
+                }
+                if (!await Dialogs.ConfirmAsync(this, $"Give the device the fixed address {address}? It reconnects to the network, which takes up to a " +
+                        "minute. If the address is wrong for your network, the device can only be reached again after a reset or through the WiiM Home app.",
+                        _scale)) return;
+                manualRows.IsEnabled = false;
+                _lblAmpStatus.Text = $"Moving the device to {address}…";
+                bool ok = await _owner.SetManualIpAsync(ip, net.Wired, address, PrefixOfMask(mask) ?? config.Prefix, gateway, dns);
+                _lblAmpStatus.Text = string.Empty;
+                await Dialogs.MessageAsync(this, ok
+                    ? $"The device now uses the fixed address {address}."
+                    : $"The device didn't answer at {address}. Check the address, or set it back to Automatic in the WiiM Home app.", _scale);
+                LoadFromOwner();
+                await RefreshAmpAsync(quiet: true);
+            };
+            return [modeRow, manualRows];
+        }
+
+        private const string DefaultDns = "8.8.8.8";
+
+        private static string GuessRouter(string address, int prefix)
+        {
+            var parts = address.Split('.');
+            return parts.Length == 4 && prefix == 24 ? $"{parts[0]}.{parts[1]}.{parts[2]}.1" : string.Empty;
+        }
+
+        private async Task SwitchToAutomaticIpAsync(string ip, bool wired)
+        {
+            if (!await Dialogs.ConfirmAsync(this, "Let the router give the device its address again? It reconnects to the network and may get a " +
+                    "different address. Wiim Control looks for it afterwards, which can take up to a minute.", _scale))
+            {
+                await RefreshAmpAsync(quiet: true);
+                return;
+            }
+            _lblAmpStatus.Text = "Switching to an automatic address…";
+            string? found = await _owner.SetAutomaticIpAsync(ip, wired);
+            _lblAmpStatus.Text = string.Empty;
+            await Dialogs.MessageAsync(this, found != null
+                ? $"The device now gets its address automatically and is at {found}."
+                : "Couldn't find the device after the change. Use Discover on the Devices page to look for it again.", _scale);
+            LoadFromOwner();
+            await RefreshAmpAsync(quiet: true);
+        }
+
         private Border BuildNetworkCard(string ip, NetworkInfo net)
         {
             var rows = new List<Control>();
@@ -116,11 +219,13 @@ sealed partial class WiimController
             {
                 rows.Add(LabeledRow("Connection", Info("Ethernet")));
                 rows.Add(LabeledRow("IP address", Selectable(net.Ip)));
+                rows.AddRange(IpConfigRows(ip, net));
             }
             else
             {
                 rows.Add(LabeledRow("Wi-Fi network", Info(net.WifiName)));
                 rows.Add(LabeledRow("IP address", Selectable(net.Ip)));
+                rows.AddRange(IpConfigRows(ip, net));
                 if (net.Rssi is int rssi)
                 {
                     var strength = new TextBlock

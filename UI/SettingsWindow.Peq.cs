@@ -1,10 +1,13 @@
 ﻿using System.Globalization;
 using Avalonia;
+using Avalonia.Animation;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
@@ -89,7 +92,7 @@ sealed partial class WiimController
             _peqChannelButtons.HorizontalAlignment = HorizontalAlignment.Left;
             _peqChannelButtons.Margin = new Thickness(16, 0, 0, 0);
             var btnReset = Pill("Reset");
-            var btnImport = Pill("Import…");
+            var btnImport = Pill("Import");
             ToolTip.SetTip(btnImport, "Load the filters from a Room EQ Wizard or AutoEQ filter file (.txt).");
             btnImport.Click += async (_, _) => await ImportPeqFileAsync();
             var editButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { btnImport, btnReset } };
@@ -99,13 +102,6 @@ sealed partial class WiimController
             channelRow.Children.Add(_peqChannelButtons);
             Grid.SetColumn(editButtons, 2);
             channelRow.Children.Add(editButtons);
-            var hint = new TextBlock
-            {
-                Text = "Applies to the selected input. Drag a point in the graph to change its frequency and gain, " +
-                       "scroll over it to change Q and double-click it to reset its gain.",
-                Classes = { "muted", "small" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 10)
-            };
-
             var header = PeqRowGrid();
             header.Margin = new Thickness(0, 0, 0, 4);
             string[] titles = ["", "Filter", "Frequency", "Gain", "Q"];
@@ -140,13 +136,11 @@ sealed partial class WiimController
                 RowDefinitions =
                 {
                     new RowDefinition(1, GridUnitType.Star) { MinHeight = 130, MaxHeight = 260 },
-                    new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto),
+                    new RowDefinition(12, GridUnitType.Pixel), new RowDefinition(GridLength.Auto),
                     new RowDefinition(1.2, GridUnitType.Star) { MinHeight = 90 }
                 }
             };
             grid.Children.Add(_peqGraph);
-            Grid.SetRow(hint, 1);
-            grid.Children.Add(hint);
             Grid.SetRow(channelRow, 2);
             grid.Children.Add(channelRow);
             Grid.SetRow(scroll, 3);
@@ -342,7 +336,82 @@ sealed partial class WiimController
         {
             var button = new Button { Content = text };
             button.Classes.Add("segment");
+            button.Classes.Add("solid");
             return button;
+        }
+
+        private static readonly TimeSpan SegmentSlideTime = TimeSpan.FromMilliseconds(220);
+
+        private static void AddSlidingThumb(Border container, Grid grid, IReadOnlyList<Button> buttons)
+        {
+            var thumb = new Border { IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Left };
+            thumb.Classes.Add("segment-thumb");
+            grid.Children.Insert(0, thumb);
+            container.Classes.Add("sliding");
+            bool placed = false;
+            void Move()
+            {
+                int index = buttons.ToList().FindIndex(b => b.Classes.Contains("selected"));
+                thumb.IsVisible = index >= 0 && buttons[index].Bounds.Width > 0;
+                if (!thumb.IsVisible) return;
+                var target = buttons[index].Bounds;
+                thumb.Width = target.Width;
+                thumb.Height = target.Height;
+                thumb.Margin = new Thickness(0, target.Y, 0, 0);
+                thumb.VerticalAlignment = VerticalAlignment.Top;
+                thumb.RenderTransform = TransformOperations.Parse(
+                    $"translateX({target.X.ToString(CultureInfo.InvariantCulture)}px)");
+                if (!placed)
+                {
+                    placed = true;
+                    thumb.Transitions =
+                    [
+                        new TransformOperationsTransition { Property = RenderTransformProperty, Duration = SegmentSlideTime, Easing = new CubicEaseOut() }
+                    ];
+                }
+            }
+            void Dim() => thumb.Classes.Set("dim", !buttons.Any(b => b.IsEffectivelyEnabled));
+            foreach (var button in buttons)
+            {
+                button.Classes.CollectionChanged += (_, _) => Move();
+                button.PropertyChanged += (_, e) =>
+                {
+                    if (e.Property == BoundsProperty) Move();
+                    else if (e.Property == IsEffectivelyEnabledProperty) Dim();
+                };
+            }
+            Dim();
+        }
+
+        private static Border SegmentSwitch((int Value, string Label)[] options, int current, double width, Func<int, Task> change)
+        {
+            var grid = new Grid { ColumnSpacing = 3 };
+            var buttons = new List<(int Value, Button Button)>();
+            void Show(int selected)
+            {
+                foreach (var (value, button) in buttons) button.Classes.Set("selected", value == selected);
+            }
+            foreach (var (value, label) in options)
+            {
+                var button = Segment(label);
+                button.Padding = new Thickness(10, 5);
+                grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+                Grid.SetColumn(button, buttons.Count);
+                grid.Children.Add(button);
+                buttons.Add((value, button));
+                button.Click += async (_, _) =>
+                {
+                    if (value == current) return;
+                    current = value;
+                    Show(value);
+                    await change(value);
+                };
+            }
+            Show(current);
+            var border = new Border { Child = grid, Width = width, Padding = new Thickness(3), CornerRadius = new CornerRadius(12) };
+            border.Classes.Add("segments");
+            AddSlidingThumb(border, grid, buttons.Select(b => b.Button).ToList());
+            return border;
         }
 
         private Control BuildEqTypeSwitch()
@@ -357,6 +426,7 @@ sealed partial class WiimController
             ToolTip.SetTip(_btnParametricEq, "Parametric EQ with filter type, frequency, gain and Q for each band");
             var border = new Border { Child = grid, Margin = new Thickness(0, 0, 0, 14), IsVisible = false };
             border.Classes.Add("segments");
+            AddSlidingThumb(border, grid, [_btnGraphicEq, _btnParametricEq]);
             return border;
         }
 

@@ -15,5 +15,4 @@ static class Palette
     public static readonly IBrush AccentHover = new SolidColorBrush(Color.Parse("#7272FF"));
     public static readonly IBrush AccentText  = new SolidColorBrush(Color.Parse("#A4A4FF"));
     public static readonly IBrush Track       = new SolidColorBrush(Color.Parse("#555555"));
-    public static readonly IBrush Fill        = new SolidColorBrush(Color.Parse("#E6E6E6"));
 }

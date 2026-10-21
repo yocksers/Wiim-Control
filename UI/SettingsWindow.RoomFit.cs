@@ -9,7 +9,7 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly Button _btnRoomFitCurve = Pill("Show curve…");
+        private readonly Button _btnRoomFitCurve = Pill("Show curve");
 
         private async Task ShowRoomFitCurveAsync()
         {
@@ -29,11 +29,14 @@ sealed partial class WiimController
             var channels = state.Left is { } left && state.Right is { } right
                 ? new[] { ("Left", left), ("Right", right) }
                 : [(string.Empty, state.Stereo)];
-            foreach (var (label, bands) in channels)
+            content.Children.Add(Muted("Scroll over a graph to zoom in, hold Shift while scrolling to move along, and double-click it to see the whole range."));
+            var graphs = channels.Select(c => new PeqGraph { Bands = c.Item2, Height = 240, Editable = false }).ToArray();
+            for (int i = 0; i < channels.Length; i++)
             {
+                var (label, bands) = channels[i];
                 if (label.Length > 0)
                     content.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
-                content.Children.Add(new PeqGraph { Bands = bands, Height = 240, IsHitTestVisible = false });
+                content.Children.Add(graphs[i]);
                 content.Children.Add(RoomFitFilterTable(bands));
             }
             await Dialogs.ContentAsync(this, new ScrollViewer { Content = content, MaxHeight = 720 }, _scale);

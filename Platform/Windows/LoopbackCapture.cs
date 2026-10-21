@@ -52,6 +52,7 @@ sealed class LoopbackCapture : IPcAudioCapture
     private const int BytesPerSample = BitsPerSample / 8;
 
     public event Action<byte[]>? Pcm;
+    public event Action? Stopped;
 
     public LoopbackCapture()
     {
@@ -67,6 +68,7 @@ sealed class LoopbackCapture : IPcAudioCapture
         IAudioClient? client = null;
         IAudioCaptureClient? capture = null;
         IntPtr format = IntPtr.Zero;
+        bool started = false;
         try
         {
             var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(Type.GetTypeFromCLSID(MMDeviceEnumeratorClass)!)!;
@@ -82,14 +84,18 @@ sealed class LoopbackCapture : IPcAudioCapture
             Check(client.GetService(ref captureId, out var captureObject));
             capture = (IAudioCaptureClient)captureObject;
             Check(client.Start());
+            started = true;
             _ready.Set();
             Pump(capture, source);
             client.Stop();
         }
         catch (Exception ex)
         {
-            _startError = ex;
-            _ready.Set();
+            if (!started)
+            {
+                _startError = ex;
+                _ready.Set();
+            }
         }
         finally
         {
@@ -97,6 +103,7 @@ sealed class LoopbackCapture : IPcAudioCapture
             if (capture != null) Marshal.ReleaseComObject(capture);
             if (client != null) Marshal.ReleaseComObject(client);
         }
+        if (started && !_stopping) Stopped?.Invoke();
     }
 
     private void Pump(IAudioCaptureClient capture, SourceFormat source)
@@ -104,8 +111,10 @@ sealed class LoopbackCapture : IPcAudioCapture
         while (!_stopping)
         {
             Thread.Sleep(PollMs);
-            while (capture.GetNextPacketSize(out uint packet) == 0 && packet > 0)
+            while (true)
             {
+                if (capture.GetNextPacketSize(out uint packet) != 0) return;
+                if (packet == 0) break;
                 if (capture.GetBuffer(out var data, out uint frames, out uint flags, out _, out _) != 0) break;
                 var pcm = (flags & SilentFlag) != 0 ? new byte[frames * Channels * BytesPerSample] : Convert(data, frames, source);
                 capture.ReleaseBuffer(frames);

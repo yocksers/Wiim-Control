@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 
 namespace WiimControl;
@@ -6,7 +7,7 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly ComboBox _cboSubAmp = new() { Width = 220 };
+        private readonly ComboBox _cboSubAmp = new() { Width = DevicePickerWidth };
         private readonly TextBlock _lblSubStatus = Subtitle();
         private readonly StackPanel _subRows = new();
         private readonly SemaphoreSlim _subGate = new(1, 1);
@@ -169,16 +170,8 @@ sealed partial class WiimController
             crossLabel.Opacity = sub.Bypass ? 0.45 : 1;
             rows.Add(crossLabel);
 
-            var phase = new ComboBox { Width = 120 };
-            phase.Items.Add(ComboItem(0, "0°"));
-            phase.Items.Add(ComboItem(180, "180°"));
-            phase.SelectedIndex = sub.Phase >= 90 ? 1 : 0;
-            phase.SelectionChanged += async (_, _) =>
-            {
-                if ((phase.SelectedItem as ComboBoxItem)?.Tag is int value && value != (sub.Phase >= 90 ? 180 : 0))
-                    await ChangeSubAsync(() => _owner.SetSubwooferAsync(ip, "phase", value));
-            };
-            rows.Add(LabeledRow("Phase", phase));
+            rows.Add(LabeledRow("Phase", SegmentSwitch([(0, "0°"), (180, "180°")], sub.Phase >= 90 ? 180 : 0, FieldWidth,
+                value => ChangeSubAsync(() => _owner.SetSubwooferAsync(ip, "phase", value)))));
 
             if (sub.Delay is double delay)
             {
@@ -208,22 +201,34 @@ sealed partial class WiimController
                       "stay better controlled when the music gets loud.")
             };
             var toggle = SubToggle("High-pass filter", filter.Enabled, on => _owner.SetHighPassEnabledAsync(ip, on));
-            var frequency = new ComboBox { Width = 120 };
-            foreach (int hz in HighPassFrequencies.Append(filter.Frequency).Distinct().Order()) frequency.Items.Add(ComboItem(hz, $"{hz} Hz"));
-            frequency.SelectedItem = frequency.Items.OfType<ComboBoxItem>().First(i => i.Tag is int hz && hz == filter.Frequency);
+            const int Custom = -1;
+            bool preset = HighPassFrequencies.Contains(filter.Frequency);
+            var frequency = new ComboBox { Width = FieldWidth };
+            foreach (int hz in HighPassFrequencies) frequency.Items.Add(ComboItem(hz, $"{hz} Hz"));
+            frequency.Items.Add(ComboItem(Custom, "Custom"));
+            frequency.SelectedItem = frequency.Items.OfType<ComboBoxItem>().First(i => i.Tag is int hz && hz == (preset ? filter.Frequency : Custom));
+            var custom = AmpSlider(HighPassMin, HighPassMax, Math.Clamp(filter.Frequency, HighPassMin, HighPassMax), v => $"{v} Hz", false, out var customSlider);
+            custom.ValueCommitted += async (_, _) =>
+            {
+                if (custom.Value != filter.Frequency) await ChangeSubAsync(() => _owner.SetHighPassFrequencyAsync(ip, custom.Value));
+            };
+            var customRow = LabeledRow("Custom frequency", customSlider);
+            customRow.IsVisible = !preset;
             frequency.SelectionChanged += async (_, _) =>
             {
-                if ((frequency.SelectedItem as ComboBoxItem)?.Tag is int hz && hz != filter.Frequency)
-                    await ChangeSubAsync(() => _owner.SetHighPassFrequencyAsync(ip, hz));
+                if ((frequency.SelectedItem as ComboBoxItem)?.Tag is not int hz) return;
+                customRow.IsVisible = hz == Custom;
+                if (hz != Custom && hz != filter.Frequency) await ChangeSubAsync(() => _owner.SetHighPassFrequencyAsync(ip, hz));
             };
             var frequencyRow = LabeledRow("Cut-off frequency", frequency);
             ToolTip.SetTip(frequencyRow, "Sound below this frequency is filtered out of the main speakers");
-            frequencyRow.IsEnabled = filter.Enabled && !subwooferActive;
-            frequencyRow.Opacity = frequencyRow.IsEnabled ? 1 : 0.45;
+            var frequencyRows = new StackPanel { Children = { frequencyRow, customRow } };
+            frequencyRows.IsEnabled = filter.Enabled && !subwooferActive;
+            frequencyRows.Opacity = frequencyRows.IsEnabled ? 1 : 0.45;
             toggle.IsEnabled = !subwooferActive;
             toggle.Opacity = subwooferActive ? 0.45 : 1;
             rows.Add(toggle);
-            rows.Add(frequencyRow);
+            rows.Add(frequencyRows);
             return Card("High-pass filter", rows.ToArray());
         }
     }

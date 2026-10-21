@@ -17,7 +17,6 @@ sealed partial class WiimController
         private const double DefaultSize = 340;
         private const double ScreenMargin = 24;
         private const double SlotGap = 12;
-        private const int WheelVolumeStep = 2;
         private const double GripSize = 5;
         private const double CornerGripSize = 12;
 
@@ -59,7 +58,7 @@ sealed partial class WiimController
         {
             Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), IsVisible = false
         };
-        private readonly LevelSlider _position = new() { Margin = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center };
+        private readonly LevelSlider _position = new() { Margin = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center, WheelChangesValue = false };
         private readonly TextBlock _elapsed = TimeText(TextAlignment.Left);
         private readonly TextBlock _total = TimeText(TextAlignment.Right);
         private readonly Grid _positionRow = new()
@@ -70,7 +69,10 @@ sealed partial class WiimController
         private readonly Button _playPause;
         private readonly Button _shuffle, _repeat, _previous, _next;
         private readonly PathIcon _shuffleIcon, _repeatIcon;
-        private readonly LevelSlider _volume = new() { Margin = new Thickness(6, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, IsEnabled = false };
+        private readonly LevelSlider _volume = new()
+        {
+            Margin = new Thickness(6, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, IsEnabled = false, WheelChangesValue = false
+        };
         private readonly TextBlock _volumeValue = new()
         {
             Text = "–", FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#C0FFFFFF")), MinWidth = 24, TextAlignment = TextAlignment.Right,
@@ -84,7 +86,6 @@ sealed partial class WiimController
         private bool _volumeUpdating;
         private bool? _muted;
         private DateTime _volumeTouched = DateTime.MinValue;
-        private double _wheelDelta;
         private readonly DispatcherTimer _pollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
         private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
         private DeviceStatus? _status;
@@ -149,18 +150,13 @@ sealed partial class WiimController
             };
             _volumeSendTimer.Tick += async (_, _) => await FlushVolumeAsync();
             _mute.Click += async (_, _) => await ToggleMuteAsync();
-            AddHandler(PointerWheelChangedEvent, (_, e) =>
-            {
-                e.Handled = true;
-                ChangeVolumeByWheel(e.Delta.Y);
-            }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
             _pollTimer.Tick += async (_, _) => await RefreshAsync();
             _clockTimer.Tick += (_, _) => AdvancePosition();
             KeyDown += async (_, e) =>
             {
                 if (e.Handled) return;
                 if (e.Key == Key.Escape) Close();
-                else if (e.Key == Key.Space && _status != null)
+                else if (e.Key == Key.Space && _status != null && !_owner.IsDeviceLocked(Ip))
                 {
                     e.Handled = true;
                     await TransportAsync("onepause");
@@ -397,7 +393,7 @@ sealed partial class WiimController
             _target = target;
             _status = status;
             _fetched = DateTime.UtcNow;
-            _playPause.IsEnabled = _previous.IsEnabled = _next.IsEnabled = status != null;
+            ApplyLock();
             if (status == null)
             {
                 _title.Text = "Not reachable";
@@ -432,10 +428,10 @@ sealed partial class WiimController
 
         private void ShowVolume(DeviceVolume? volume)
         {
-            _volume.IsEnabled = _mute.IsEnabled = volume != null;
             if (volume is not { } v)
             {
                 _muted = null;
+                ApplyLock();
                 _volumeValue.Text = "–";
                 return;
             }
@@ -443,20 +439,19 @@ sealed partial class WiimController
                         DateTime.UtcNow - _volumeTouched < TimeSpan.FromSeconds(1.5);
             if (busy && _muted != null) return;
             ShowMuted(v.Muted);
+            ApplyLock();
             _volumeUpdating = true;
             _volume.Value = v.Volume;
             _volumeUpdating = false;
             _volumeValue.Text = v.Volume.ToString();
         }
 
-        private void ChangeVolumeByWheel(double delta)
+        internal void ApplyLock()
         {
-            if (!_volume.IsEnabled) return;
-            _wheelDelta += delta;
-            int notches = (int)_wheelDelta;
-            if (notches == 0) return;
-            _wheelDelta -= notches;
-            _volume.Value = Math.Clamp(_volume.Value + notches * WheelVolumeStep, 0, 100);
+            bool unlocked = !_owner.IsDeviceLocked(Ip);
+            _playPause.IsEnabled = _previous.IsEnabled = _next.IsEnabled = _status != null && unlocked;
+            _volume.IsEnabled = _mute.IsEnabled = _muted != null && unlocked;
+            _position.IsEnabled = _shuffle.IsEnabled = _repeat.IsEnabled = unlocked;
         }
 
         private void ShowMuted(bool muted)

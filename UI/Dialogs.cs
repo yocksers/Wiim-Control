@@ -155,7 +155,7 @@ static class Dialogs
         foreach (var d in devices) list.Items.Add($"{d.Name} ({d.Ip})");
         list.SelectedIndex = 0;
         var ok = DialogButton("OK", accent: true);
-        var enterManually = DialogButton("Enter manually…");
+        var enterManually = DialogButton("Enter manually");
         var cancel = DialogButton("Cancel");
         ok.IsDefault = true;
         cancel.IsCancel = true;

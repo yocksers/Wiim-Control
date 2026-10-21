@@ -14,7 +14,7 @@ sealed partial class WiimController
             var rows = new List<Control>();
             if (state.Choices.Count > 0)
             {
-                var combo = new ComboBox { Width = 360 };
+                var combo = new ComboBox { Width = WideFieldWidth };
                 foreach (var choice in state.Choices) combo.Items.Add(ComboItem(choice, choice.Name));
                 int active = state.Choices.FindIndex(c => c.Mode == state.ActiveMode);
                 if (active < 0)
@@ -36,10 +36,10 @@ sealed partial class WiimController
             {
                 var rates = usb.Rates.Contains(usb.Rate) ? usb.Rates : [.. usb.Rates, usb.Rate];
                 var bitsList = usb.Bits.Contains(usb.BitDepth) ? usb.Bits : [.. usb.Bits, usb.BitDepth];
-                var rate = new ComboBox { Width = 120 };
+                var rate = new ComboBox { Width = (WideFieldWidth - FieldGap) / 2 };
                 foreach (int r in rates) rate.Items.Add(ComboItem(r, (r / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " kHz"));
                 rate.SelectedIndex = rates.IndexOf(usb.Rate);
-                var depth = new ComboBox { Width = 110 };
+                var depth = new ComboBox { Width = (WideFieldWidth - FieldGap) / 2 };
                 foreach (int b in bitsList) depth.Items.Add(ComboItem(b, $"{b}-bit"));
                 depth.SelectedIndex = bitsList.IndexOf(usb.BitDepth);
                 async Task Apply()
@@ -49,7 +49,7 @@ sealed partial class WiimController
                 }
                 rate.SelectionChanged += async (_, _) => await Apply();
                 depth.SelectionChanged += async (_, _) => await Apply();
-                var usbRow = LabeledRow("USB output resolution", new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { rate, depth } });
+                var usbRow = LabeledRow("USB output resolution", new StackPanel { Orientation = Orientation.Horizontal, Spacing = FieldGap, Children = { rate, depth } });
                 ToolTip.SetTip(usbRow, "The highest sample rate and bit depth sent to the USB DAC. The choices are what the DAC reports it supports.");
                 rows.Add(usbRow);
             }
@@ -69,7 +69,7 @@ sealed partial class WiimController
                 rows.Add(delayRow);
             }
 
-            var find = Pill("Find speakers…");
+            var find = Pill("Find speakers");
             var disconnect = Pill("Disconnect");
             disconnect.IsEnabled = state.BluetoothName.Length > 0 || state.BluetoothOut;
             ToolTip.SetTip(find, "Look for Bluetooth speakers and headphones and connect one. The device then plays through it.");
@@ -81,7 +81,7 @@ sealed partial class WiimController
                 Orientation = Orientation.Horizontal, Spacing = 8,
                 Children = { new TextBlock { Text = bluetooth, Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) }, find, disconnect }
             }));
-            var receiversButton = Pill("Receivers…");
+            var receiversButton = Pill("Receivers");
             ToolTip.SetTip(receiversButton, "Pick the DLNA speakers this device sends its sound to. Picking one switches DLNA out on; removing all switches it off.");
             receiversButton.Click += async (_, _) => await ChooseCastReceiversAsync(ip);
             var selectedNames = state.CastReceivers?.Where(r => r.Selected).Select(r => r.Name).ToList() ?? [];
@@ -93,7 +93,7 @@ sealed partial class WiimController
             }));
             if (state.CastOut)
             {
-                var profile = new ComboBox { Width = 260 };
+                var profile = new ComboBox { Width = WideFieldWidth };
                 foreach (var p in CastProfiles) profile.Items.Add(ComboItem(p, p.Name));
                 profile.SelectedIndex = Array.FindIndex(CastProfiles, p => p.Key == state.CastProfileKey);
                 ToolTip.SetTip(profile, "The format the sound is sent to the DLNA speaker in. It's used the next time casting starts.");
@@ -103,7 +103,7 @@ sealed partial class WiimController
                         await ChangeOutputAsync(() => _owner.SetCastProfileAsync(ip, chosen));
                 };
                 rows.Add(LabeledRow("DLNA transcoding", profile));
-                var latency = new ComboBox { Width = 260 };
+                var latency = new ComboBox { Width = WideFieldWidth };
                 foreach (var (ms, name) in CastLatencies) latency.Items.Add(ComboItem(ms, name));
                 latency.SelectedIndex = Array.FindIndex(CastLatencies, l => l.Milliseconds == state.CastLatency);
                 ToolTip.SetTip(latency, "Higher latency gives fewer interruptions, but the sound starts later");

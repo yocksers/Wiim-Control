@@ -29,14 +29,7 @@ sealed partial class WiimController
                 if (_owner.Recent.Count == 0 || !await Dialogs.ConfirmAsync(this, "Clear the list of recently played music?", _scale)) return;
                 _owner.ClearRecent();
             };
-            var body = new StackPanel
-            {
-                Children =
-                {
-                    _recentRows,
-                    Muted("Radio stations and albums or folders you play from the Library and Radio pages are listed here. Click one to play it again.")
-                }
-            };
+            var body = new StackPanel { Children = { _recentRows } };
             var page = Page("Recent", _lblRecentStatus, [_cboRecentAmp, clear], body);
             _recentPage = page;
             page.PropertyChanged += (_, e) =>

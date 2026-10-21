@@ -10,7 +10,7 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly ComboBox _cboPresetAmp = new() { Width = 240 };
+        private readonly ComboBox _cboPresetAmp = new() { Width = DevicePickerWidth };
         private readonly TextBlock _lblPresetStatus = Subtitle();
         private readonly WrapPanel _presetTiles = new();
         private readonly List<Image> _presetImages = [];

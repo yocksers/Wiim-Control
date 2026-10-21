@@ -61,6 +61,12 @@ static class Icons
         "M1,10V12A9,9 0 0,1 10,21H12C12,14.92 7.07,10 1,10M1,14V16A5,5 0 0,1 6,21H8A7,7 0 0,0 1,14M1,18V21H4A3,3 0 0,0 1,18M5,7V8.63C8.96,9.91 12.09,13.04 13.37,17H19V7H5M21,3H3C1.89,3 1,3.89 1,5V8H3V5H21V19H14V21H21A2,2 0 0,0 23,19V5C23,3.89 22.1,3 21,3Z");
     public static readonly StreamGeometry Sleep = StreamGeometry.Parse("M12,3A9,9 0 1,0 21,12A7,7 0 0,1 12,3Z");
     public static readonly StreamGeometry Delete = StreamGeometry.Parse("M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z");
+    public static readonly StreamGeometry FullScreen = StreamGeometry.Parse("M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z");
+    public static readonly StreamGeometry FullScreenExit = StreamGeometry.Parse("M14,14H19V16H16V19H14V14M5,14H10V19H8V16H5V14M8,5H10V10H5V8H8V5M19,8V10H14V5H16V8H19Z");
+    public static readonly StreamGeometry Lock = StreamGeometry.Parse(
+        "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z");
+    public static readonly StreamGeometry LockOpen = StreamGeometry.Parse(
+        "M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V10A2,2 0 0,1 6,8H15V6A3,3 0 0,0 12,3A3,3 0 0,0 9,6H7A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,17A2,2 0 0,0 14,15A2,2 0 0,0 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17Z");
     public static readonly StreamGeometry Bluetooth = StreamGeometry.Parse(
         "M14.88,16.29L13,18.17V14.41M13,5.83L14.88,7.71L13,9.58M17.71,7.71L12,2H11V9.58L6.41,5L5,6.41L10.59,12L5,17.58L6.41,19L11,14.41V22H12L17.71,16.29L13.41,12L17.71,7.71Z");
     public static readonly StreamGeometry HdmiPort = StreamGeometry.Parse(
@@ -78,7 +84,7 @@ static class Icons
     {
         "bluetooth" => Bluetooth,
         "optical" => Toslink,
-        "co-axial" or "coaxial" or "line-in" or "line-in2" => Rca,
+        "co-axial" or "coaxial" or "line-in" or "line-in2" or "auxin" => Rca,
         "hdmi" => HdmiPort,
         "phono" => RecordPlayer,
         "pcusb" or "usb" or "udisk" => Usb,

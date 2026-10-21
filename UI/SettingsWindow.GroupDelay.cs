@@ -6,7 +6,7 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly ComboBox _cboDelayAmp = new() { Width = 240 };
+        private readonly ComboBox _cboDelayAmp = new() { Width = DevicePickerWidth };
         private readonly StackPanel _delayRows = new();
         private Border? _delayCard;
         private int _delayVersion;
@@ -49,7 +49,7 @@ sealed partial class WiimController
             foreach (var delay in shown)
             {
                 string input = delay.Input;
-                var combo = new ComboBox { Width = 200 };
+                var combo = new ComboBox { Width = FieldWidth };
                 foreach (int ms in GroupDelayLevels.Select(l => l.Milliseconds).Append(delay.Milliseconds).Distinct().OrderByDescending(ms => ms))
                     combo.Items.Add(ComboItem(ms, GroupDelayName(ms)));
                 combo.SelectedItem = combo.Items.OfType<ComboBoxItem>().First(i => i.Tag is int ms && ms == delay.Milliseconds);

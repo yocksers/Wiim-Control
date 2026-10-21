@@ -96,17 +96,10 @@ sealed partial class WiimController
             }
             if (s.Channel is int channel)
             {
-                var combo = new ComboBox { Width = 200 };
-                combo.Items.Add(ComboItem(ChannelStereo, "Stereo"));
-                combo.Items.Add(ComboItem(ChannelLeft, "Left only"));
-                combo.Items.Add(ComboItem(ChannelRight, "Right only"));
-                combo.SelectedIndex = channel switch { ChannelLeft => 1, ChannelRight => 2, _ => 0 };
-                combo.SelectionChanged += async (_, _) =>
-                {
-                    if ((combo.SelectedItem as ComboBoxItem)?.Tag is int chosen && chosen != channel)
-                        await ChangeAmpVolumeAsync(() => _owner.SetChannelAsync(ip, chosen));
-                };
-                var row = LabeledRow("Audio channel", combo);
+                var channels = SegmentSwitch([(ChannelStereo, "Stereo"), (ChannelLeft, "Left"), (ChannelRight, "Right")],
+                    channel is ChannelLeft or ChannelRight ? channel : ChannelStereo, FieldWidth,
+                    chosen => ChangeAmpVolumeAsync(() => _owner.SetChannelAsync(ip, chosen)));
+                var row = LabeledRow("Audio channel", channels);
                 ToolTip.SetTip(row, "Which channel the device plays when it plays on its own. In a group, use the LR button on the Devices page.");
                 rows.Add(row);
             }

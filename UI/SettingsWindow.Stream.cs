@@ -19,6 +19,7 @@ sealed partial class WiimController
             var save = Pill("☆  Save to Favourites");
             ToolTip.SetTip(_txtStreamUrl, "A web address of an internet radio stream, a playlist (.m3u, .pls) or an audio file");
             ToolTip.SetTip(save, "Keep this stream in Favourites with the name you entered");
+            ToolTip.SetTip(play, "Play any internet stream on the device by its address, like Open Network Stream in the WiiM Home app");
             play.Click += async (_, _) => await PlayStreamAsync();
             save.Click += async (_, _) => await SaveStreamAsync();
             _txtStreamUrl.KeyDown += async (_, e) =>
@@ -29,7 +30,7 @@ sealed partial class WiimController
             };
             var row = new WrapPanel { Children = { _txtStreamUrl, _txtStreamName, play, save } };
             foreach (var child in row.Children.OfType<Control>()) child.Margin = new Thickness(0, 0, 8, 8);
-            return Card("Network stream", Muted("Play any internet stream on the device by its address, like Open Network Stream in the WiiM Home app."), row);
+            return Card("Network stream", row);
         }
 
         private async Task<RadioStation?> StreamFromFieldsAsync()

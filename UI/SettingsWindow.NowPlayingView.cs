@@ -17,16 +17,25 @@ sealed partial class WiimController
         private const double DiscLeft = 380;
         private const double LabelSize = 196;
         private const double DegreesPerSecond = 200;
+        private const double ArtFadeSeconds = 0.5;
+        private static readonly TimeSpan LargeArtworkWait = TimeSpan.FromSeconds(1.5);
+        private const double BackdropOpacity = 0.45;
 
         private readonly Grid _npOverlay = new() { Background = new SolidColorBrush(Color.Parse("#0E0E0E")), IsVisible = false };
-        private readonly Image _npBackdrop = new() { Stretch = Stretch.UniformToFill, Opacity = 0.45, Effect = new BlurEffect { Radius = 60 } };
+        private readonly Image _npBackdrop = new() { Stretch = Stretch.UniformToFill, Opacity = BackdropOpacity, Effect = new BlurEffect { Radius = 60 } };
+        private readonly Image _npBackdropOld = new() { Stretch = Stretch.UniformToFill, Opacity = 0, Effect = new BlurEffect { Radius = 60 } };
         private readonly Image _npCover = new() { Stretch = Stretch.UniformToFill };
+        private readonly Image _npCoverOld = new() { Stretch = Stretch.UniformToFill, Opacity = 0, IsHitTestVisible = false };
+        private readonly DispatcherTimer _npFadeTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+        private DateTime _npFadeStart;
+        private bool _npFadeFromEmpty;
         private readonly PathIcon _npCoverPlaceholder = new()
         {
             Data = Icons.Music, Width = 120, Height = 120, Foreground = Palette.TextDim,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
         };
         private readonly Ellipse _npLabel = new() { Width = LabelSize, Height = LabelSize, Fill = Palette.Input };
+        private readonly Ellipse _npLabelOld = new() { Width = LabelSize, Height = LabelSize, Opacity = 0, IsHitTestVisible = false };
         private readonly RotateTransform _npSpin = new();
         private readonly Panel _npDisc = new() { Width = DiscSize, Height = DiscSize };
         private readonly Ellipse _npSheen = new() { Width = DiscSize, Height = DiscSize, IsHitTestVisible = false };
@@ -43,12 +52,16 @@ sealed partial class WiimController
         private DateTime _npLastTick;
         private string? _npIp;
         private NowPlayingControls? _npControls;
+        private VolumeControls? _npVolume;
+        private (Button Button, PathIcon Icon) _npFullScreen;
+        private WindowState? _npRestoreState;
 
         private Grid BuildNowPlayingOverlay()
         {
             BuildDisc();
             _npCoverContent.Children.Add(_npCoverPlaceholder);
             _npCoverContent.Children.Add(_npCover);
+            _npCoverContent.Children.Add(_npCoverOld);
             _npCoverCard.Child = _npCoverContent;
             _npStage.Children.Add(_npDisc);
             _npStage.Children.Add(_npSheen);
@@ -68,22 +81,34 @@ sealed partial class WiimController
                 _owner.NowPlayingVinyl = !_owner.NowPlayingVinyl;
                 ApplyNowPlayingStyle();
             };
+            _npFullScreen = IconPill(Icons.FullScreen, null);
+            _npFullScreen.Button.Click += (_, _) => SetNowPlayingFullScreen(_npRestoreState == null);
+            ApplyFullScreenButton();
+            PropertyChanged += (_, e) =>
+            {
+                if (e.Property != WindowStateProperty || WindowState == WindowState.FullScreen || _npRestoreState == null) return;
+                _npRestoreState = null;
+                ApplyFullScreenButton();
+            };
             var topBar = new Grid
             {
                 ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(20, 16), VerticalAlignment = VerticalAlignment.Top
             };
             var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { close, _npDevice } };
             topBar.Children.Add(left);
-            Grid.SetColumn(_npStyleButton, 2);
-            topBar.Children.Add(_npStyleButton);
+            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _npFullScreen.Button, _npStyleButton } };
+            Grid.SetColumn(right, 2);
+            topBar.Children.Add(right);
 
             var stage = new Viewbox { Stretch = Stretch.Uniform, Margin = new Thickness(40, 70, 40, 40), Child = _npStage };
             _npOverlay.Children.Add(_npBackdrop);
+            _npOverlay.Children.Add(_npBackdropOld);
             _npOverlay.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse("#99000000")) });
             _npOverlay.Children.Add(stage);
             _npOverlay.Children.Add(topBar);
 
             _npSpinTimer.Tick += (_, _) => SpinDisc();
+            _npFadeTimer.Tick += (_, _) => StepArtFade();
             return _npOverlay;
         }
 
@@ -111,6 +136,9 @@ sealed partial class WiimController
             _npLabel.HorizontalAlignment = HorizontalAlignment.Center;
             _npLabel.VerticalAlignment = VerticalAlignment.Center;
             _npDisc.Children.Add(_npLabel);
+            _npLabelOld.HorizontalAlignment = HorizontalAlignment.Center;
+            _npLabelOld.VerticalAlignment = VerticalAlignment.Center;
+            _npDisc.Children.Add(_npLabelOld);
             _npDisc.Children.Add(new Ellipse
             {
                 Width = 14, Height = 14, Fill = new SolidColorBrush(Color.Parse("#0E0E0E")),
@@ -135,16 +163,24 @@ sealed partial class WiimController
             _npIp = ip;
             _npDevice.Text = DeviceName(ip);
             var art = new ArtworkView { IsVisible = false };
+            bool loading = false;
             art.BitmapChanged += () =>
             {
-                ShowNowPlayingArt(art.Bitmap);
-                if (art.Bitmap != null && art.ImageUrl.Length > 0) _ = LoadLargeArtworkAsync(art, art.ImageUrl);
+                if (art.Bitmap == null && art.ImageUrl.Length > 0 && !loading)
+                {
+                    loading = true;
+                    return;
+                }
+                loading = false;
+                if (art.Bitmap != null && art.ImageUrl.Length > 0) _ = ShowSharpArtworkAsync(art, art.ImageUrl, art.Bitmap, fade: true);
+                else ShowNowPlayingArt(art.Bitmap);
             };
             if (_nowPlayingControls.TryGetValue(ip, out var card))
             {
                 art.ImageUrl = card.Art.ImageUrl;
                 art.Bitmap = card.Art.Bitmap;
             }
+            loading = false;
 
             var title = new TextBlock { FontSize = 30, FontWeight = FontWeight.Bold, Foreground = Brushes.White, TextTrimming = TextTrimming.CharacterEllipsis };
             var artist = new TextBlock
@@ -201,6 +237,13 @@ sealed partial class WiimController
                 buttons.Children.Add(control);
             }
 
+            var volume = CreateVolumeControls(ip);
+            volume.MuteIcon.Foreground = Brushes.White;
+            volume.Value.Foreground = Brushes.White;
+            volume.Value.Classes.Remove("muted");
+            var volumeRow = VolumeRow(volume);
+            volumeRow.Margin = new Thickness(0, 14, 0, 0);
+
             var controls = new Border
             {
                 VerticalAlignment = VerticalAlignment.Bottom, Padding = new Thickness(30, 110, 30, 22),
@@ -214,49 +257,126 @@ sealed partial class WiimController
                         new GradientStop(Color.FromArgb(230, 0, 0, 0), 1)
                     }
                 },
-                Child = new StackPanel { Children = { title, artist, detailRow, positionRow, buttons } }
+                Child = new StackPanel { Children = { title, artist, detailRow, positionRow, buttons, volumeRow } }
             };
+            buttons.IsEnabled = positionRow.IsEnabled = volumeRow.IsEnabled = !_owner.IsDeviceLocked(ip);
             ClearNowPlayingControls();
             _npCoverContent.Children.Add(controls);
             _npCoverContent.Children.Add(art);
             _npControls = new NowPlayingControls(art, title, artist, detail, playing, playPause, playPauseIcon, previous, next,
                 shuffle, shuffleIcon, repeat, repeatIcon, positionRow, position, elapsed, total);
+            _npVolume = volume;
 
-            ShowNowPlayingArt(art.Bitmap);
-            if (art.Bitmap != null && art.ImageUrl.Length > 0) _ = LoadLargeArtworkAsync(art, art.ImageUrl);
+            if (art.Bitmap != null && art.ImageUrl.Length > 0) _ = ShowSharpArtworkAsync(art, art.ImageUrl, art.Bitmap, fade: false);
+            else ShowNowPlayingArt(art.Bitmap, fade: false);
             ApplyNowPlayingStyle();
             _npOverlay.IsVisible = true;
             ApplyNowPlaying(ip);
+            ApplyVolume(ip);
         }
 
-        private async Task LoadLargeArtworkAsync(ArtworkView art, string url)
+        private async Task ShowSharpArtworkAsync(ArtworkView art, string url, Bitmap thumbnail, bool fade)
         {
-            var large = await _owner.GetLargeArtworkAsync(url);
-            if (large != null && _npControls?.Art == art && art.ImageUrl == url) ShowNowPlayingArt(large);
+            var largeTask = _owner.GetLargeArtworkAsync(url);
+            if (largeTask.IsCompletedSuccessfully && largeTask.Result is { } cached)
+            {
+                ShowNowPlayingArt(cached, fade);
+                return;
+            }
+            if (!fade) ShowNowPlayingArt(null, fade: false);
+            bool arrived = await Task.WhenAny(largeTask, Task.Delay(LargeArtworkWait)) == largeTask;
+            bool Current() => _npControls?.Art == art && art.ImageUrl == url;
+            if (!Current()) return;
+            if (!arrived) ShowNowPlayingArt(thumbnail);
+            var large = await largeTask;
+            if (!Current()) return;
+            if (large != null) ShowNowPlayingArt(large);
+            else if (arrived) ShowNowPlayingArt(thumbnail);
+        }
+
+        private void SetNowPlayingFullScreen(bool on)
+        {
+            if (on && _npRestoreState == null)
+            {
+                _npRestoreState = WindowState;
+                WindowState = WindowState.FullScreen;
+            }
+            else if (!on && _npRestoreState is { } restore)
+            {
+                _npRestoreState = null;
+                WindowState = restore;
+            }
+            ApplyFullScreenButton();
+        }
+
+        private void ApplyFullScreenButton()
+        {
+            bool on = _npRestoreState != null;
+            _npFullScreen.Icon.Data = on ? Icons.FullScreenExit : Icons.FullScreen;
+            ToolTip.SetTip(_npFullScreen.Button, on ? "Leave full screen (Esc)" : "Full screen (F11)");
         }
 
         private void HideNowPlayingView()
         {
+            SetNowPlayingFullScreen(false);
             _npOverlay.IsVisible = false;
             _npSpinTimer.Stop();
             _npIp = null;
             _npControls = null;
+            _npVolume = null;
             ClearNowPlayingControls();
-            ShowNowPlayingArt(null);
+            ShowNowPlayingArt(null, fade: false);
         }
 
         private void ClearNowPlayingControls()
         {
-            while (_npCoverContent.Children.Count > 2) _npCoverContent.Children.RemoveAt(2);
+            while (_npCoverContent.Children.Count > 3) _npCoverContent.Children.RemoveAt(3);
         }
 
-        private void ShowNowPlayingArt(Bitmap? bitmap)
+        private void ShowNowPlayingArt(Bitmap? bitmap, bool fade = true)
         {
+            var previous = _npCover.IsVisible ? _npCover.Source : null;
+            if (ReferenceEquals(previous, bitmap) && bitmap != null) return;
+            _npCoverOld.Source = _npBackdropOld.Source = previous;
+            _npLabelOld.Fill = _npLabel.Fill;
             _npCover.Source = bitmap;
             _npBackdrop.Source = bitmap;
             _npCover.IsVisible = bitmap != null;
             _npCoverPlaceholder.IsVisible = bitmap == null;
             _npLabel.Fill = bitmap != null ? new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill } : Palette.Input;
+            _npFadeFromEmpty = previous == null;
+            _npFadeStart = DateTime.UtcNow;
+            if (fade && _npOverlay.IsVisible && (previous != null || bitmap != null))
+            {
+                ApplyArtFade(0);
+                _npFadeTimer.Start();
+            }
+            else EndArtFade();
+        }
+
+        private void StepArtFade()
+        {
+            double progress = (DateTime.UtcNow - _npFadeStart).TotalSeconds / ArtFadeSeconds;
+            if (progress >= 1) EndArtFade();
+            else ApplyArtFade(progress);
+        }
+
+        private void ApplyArtFade(double progress)
+        {
+            double eased = progress * progress * (3 - 2 * progress);
+            double old = _npFadeFromEmpty ? 0 : 1 - eased;
+            _npCoverOld.Opacity = _npLabelOld.Opacity = old;
+            _npBackdropOld.Opacity = old * BackdropOpacity;
+            _npCover.Opacity = _npFadeFromEmpty ? eased : 1;
+        }
+
+        private void EndArtFade()
+        {
+            _npFadeTimer.Stop();
+            _npCoverOld.Opacity = _npLabelOld.Opacity = _npBackdropOld.Opacity = 0;
+            _npCover.Opacity = 1;
+            _npCoverOld.Source = _npBackdropOld.Source = null;
+            _npLabelOld.Fill = null;
         }
 
         private void ApplyNowPlayingStyle()

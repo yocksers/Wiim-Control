@@ -71,7 +71,7 @@ sealed partial class WiimController
 
             ComboBox Picker(string? selected)
             {
-                var combo = new ComboBox { Width = 240 };
+                var combo = new ComboBox { Width = FieldWidth };
                 combo.Items.Add(ComboItem(string.Empty, "None"));
                 foreach (var d in others) combo.Items.Add(ComboItem(d.Uuid, d.Name));
                 int index = others.FindIndex(d => d.Uuid.Equals(selected, StringComparison.OrdinalIgnoreCase));

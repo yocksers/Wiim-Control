@@ -87,7 +87,7 @@ static class WiimDiscovery
 
         var results = new ConcurrentDictionary<string, KnownDevice>();
         foreach (var (ip, location) in confirmed)
-            results[ip] = new KnownDevice(await TryGetFriendlyNameAsync(location) ?? "WiiM Amp", ip, string.Empty);
+            results[ip] = new KnownDevice(await TryGetFriendlyNameAsync(location) ?? UnnamedDevice, ip, string.Empty);
 
         await ResolveUnconfirmedAsync(candidateLocations.Keys, results);
         return results.Values.ToList();
@@ -151,6 +151,7 @@ static class WiimDiscovery
                 var manufacturer = device?.Element(ns + "manufacturer")?.Value ?? string.Empty;
 
                 if (manufacturer.Contains("linkplay", StringComparison.OrdinalIgnoreCase)
+                    || manufacturer.Contains("audio pro", StringComparison.OrdinalIgnoreCase)
                     || friendlyName.Contains("wiim", StringComparison.OrdinalIgnoreCase))
                 {
                     results[uri.Host] = new KnownDevice(friendlyName, uri.Host, string.Empty);
@@ -200,6 +201,14 @@ static class WiimDiscovery
         return results.Values.ToList();
     }
 
+    private const string UnnamedDevice = "WiiM device";
+
+    internal static bool IsWiimFamily(string hardware, string project, string deviceName, string firmware) =>
+        hardware.Contains("wiim", StringComparison.OrdinalIgnoreCase)
+        || project.Contains("wiim", StringComparison.OrdinalIgnoreCase)
+        || deviceName.Contains("wiim", StringComparison.OrdinalIgnoreCase)
+        || firmware.StartsWith("Linkplay.", StringComparison.OrdinalIgnoreCase);
+
     private static async Task<KnownDevice?> ProbeWiimApiAsync(IPAddress ip, CancellationToken token)
     {
         foreach (var command in new[] { "getStatusEx", "getStatus" })
@@ -212,13 +221,12 @@ static class WiimDiscovery
                 string project  = doc.RootElement.TryGetProperty("project", out var pr) ? pr.GetString() ?? "" : "";
                 string deviceName = doc.RootElement.TryGetProperty("DeviceName", out var dn) ? dn.GetString() ?? "" : "";
                 string uuid = doc.RootElement.TryGetProperty("uuid", out var id) ? id.GetString() ?? "" : "";
+                string firmware = doc.RootElement.TryGetProperty("firmware", out var fw) ? fw.GetString() ?? "" : "";
 
-                if (hardware.Contains("wiim", StringComparison.OrdinalIgnoreCase)
-                    || project.Contains("wiim", StringComparison.OrdinalIgnoreCase)
-                    || deviceName.Contains("wiim", StringComparison.OrdinalIgnoreCase))
+                if (IsWiimFamily(hardware, project, deviceName, firmware))
                 {
                     var name = !string.IsNullOrWhiteSpace(deviceName) ? deviceName
-                        : !string.IsNullOrWhiteSpace(hardware) ? hardware : "WiiM Amp";
+                        : !string.IsNullOrWhiteSpace(project) ? WiimController.ModelName(project) : UnnamedDevice;
                     return new KnownDevice(name, ip.ToString(), uuid);
                 }
             }

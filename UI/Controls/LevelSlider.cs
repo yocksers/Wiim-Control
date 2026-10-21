@@ -28,6 +28,7 @@ sealed class LevelSlider : Control, IRangeSlider
     public int Minimum { get => _min; set { _min = value; Value = _value; InvalidateVisual(); } }
     public int Maximum { get => _max; set { _max = value; Value = _value; InvalidateVisual(); } }
     public bool FillFromCenter { get; set; }
+    public bool WheelChangesValue { get; set; } = true;
 
     int IRangeSlider.SmallStep => 1;
 
@@ -76,7 +77,7 @@ sealed class LevelSlider : Control, IRangeSlider
         double x = XOf(_value);
         double start = FillFromCenter ? XOf((_min + _max) / 2) : TrackLeft;
         if (Math.Abs(x - start) > 0.5)
-            context.DrawRectangle(!IsEffectivelyEnabled || _muted ? Palette.TextDim : Palette.Fill, null,
+            context.DrawRectangle(!IsEffectivelyEnabled || _muted ? Palette.TextDim : Palette.Accent, null,
                 new Rect(Math.Min(start, x), cy - th / 2, Math.Abs(x - start), th), th / 2, th / 2);
 
         var knobCenter = new Point(x, cy);
@@ -113,6 +114,7 @@ sealed class LevelSlider : Control, IRangeSlider
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
+        if (!WheelChangesValue) return;
         int before = _value;
         Value += Math.Sign(e.Delta.Y) * 2;
         e.Handled = true;

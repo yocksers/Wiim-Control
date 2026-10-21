@@ -6,7 +6,7 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly ComboBox _cboInputsAmp = new() { Width = 220 };
+        private readonly ComboBox _cboInputsAmp = new() { Width = DevicePickerWidth };
         private readonly TextBlock _lblInputsStatus = Subtitle();
         private readonly StackPanel _inputsRows = new();
         private readonly SemaphoreSlim _inputsGate = new(1, 1);

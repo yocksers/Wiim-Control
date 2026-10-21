@@ -49,11 +49,11 @@ sealed partial class WiimController
             if (s.LineInRate is int lineRate && s.LineInBits is int lineBits && (inputs == null || inputs.Any(i => i.Mode == "line-in")))
             {
                 int[] rates = [44100, 48000, 96000, 192000];
-                var rate = new ComboBox { Width = 120 };
+                var rate = new ComboBox { Width = (FieldWidth - FieldGap) / 2 };
                 foreach (int r in rates) rate.Items.Add(ComboItem(r, (r / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " kHz"));
                 if (!rates.Contains(lineRate)) rate.Items.Add(ComboItem(lineRate, (lineRate / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " kHz"));
                 rate.SelectedItem = rate.Items.OfType<ComboBoxItem>().First(i => i.Tag is int v && v == lineRate);
-                var depth = new ComboBox { Width = 110 };
+                var depth = new ComboBox { Width = (FieldWidth - FieldGap) / 2 };
                 depth.Items.Add(ComboItem(16, "16-bit"));
                 depth.Items.Add(ComboItem(32, "24-bit"));
                 depth.SelectedIndex = lineBits >= 24 ? 1 : 0;

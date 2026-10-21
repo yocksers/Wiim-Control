@@ -39,10 +39,12 @@ sealed record SubwooferInfo(bool Enabled, bool Plugged, double Crossover, double
     double? Delay, bool Bypass = false);
 
 sealed record DeviceInfo(string Model, string Firmware, int? CpuTemperature, int? BoardTemperature, FirmwareUpdate? Update = null,
-    string Ssid = "", string Mac = "", string Uuid = "");
+    string Ssid = "", string Mac = "", string Uuid = "", string Project = "", int? Color = null);
 
 sealed record NetworkInfo(bool Wired, string WifiName, string Ip, int? Rssi, string ApMac, int? TxRate, int? Snr, int? Frequency,
-    int? Channel, bool? FiveGhzOnly, bool? Roaming, bool? Ipv6, string? PreferredDns, int? StandbySeconds);
+    int? Channel, bool? FiveGhzOnly, bool? Roaming, bool? Ipv6, string? PreferredDns, int? StandbySeconds, IpConfig? IpConfig = null);
+
+sealed record IpConfig(bool Manual, string Address, int Prefix, string Gateway, string Dns);
 
 sealed record PresetInfo(int Number, string Name, string Source, string PictureUrl, string Detail = "", bool IsRoutine = false);
 
@@ -60,7 +62,7 @@ sealed record WallpaperInfo(string RawJson, List<string> Current, int MaxNumber,
 
 sealed record ScreenUi(string? InputKey, string? Input, bool? Clock24, bool? StandbyScreenOff, int? StartPage,
     Dictionary<string, ScreenView> Views, List<string>? Inputs = null, string? PlayingInputKey = null, bool? InputScreenOn = null,
-    bool? HideCoverIcon = null, Dictionary<int, string>? ClockColors = null);
+    bool? HideCoverIcon = null, Dictionary<int, string>? ClockColors = null, int? ClockBackground = null, int? ClockColor = null);
 
 sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? StatusLight, bool? ButtonsLocked,
     int? OutputHardware, string? FilterMode, List<DigitalFilter> Filters, int? Filter, SubwooferInfo? Subwoofer,

@@ -21,7 +21,7 @@ sealed partial class WiimController
 
         private Grid BuildPositionRow(string ip, out LevelSlider slider, out TextBlock elapsed, out TextBlock total)
         {
-            var position = new LevelSlider { Margin = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center };
+            var position = new LevelSlider { Margin = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center, WheelChangesValue = false };
             var elapsedText = new TextBlock { Classes = { "dim", "small" }, MinWidth = 34, VerticalAlignment = VerticalAlignment.Center };
             var totalText = new TextBlock
             {

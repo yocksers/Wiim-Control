@@ -64,7 +64,7 @@ sealed partial class WiimController
             {
                 string ip = devices[i].Ip;
                 int left = seconds[i];
-                var choice = new ComboBox { Width = 160, PlaceholderText = "Change…" };
+                var choice = new ComboBox { Width = FieldWidth, PlaceholderText = "Change…" };
                 choice.Items.Add(ComboItem(0, "Off"));
                 foreach (int minutes in SleepChoices) choice.Items.Add(ComboItem(minutes, $"{minutes} minutes"));
                 choice.SelectedIndex = left > 0 ? -1 : 0;

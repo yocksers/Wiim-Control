@@ -15,6 +15,7 @@ sealed class PulseMonitorCapture : IPcAudioCapture
 
     public int SampleRate => Rate;
     public event Action<byte[]>? Pcm;
+    public event Action? Stopped;
 
     public static bool Available => FindOnPath(Recorder) != null;
 
@@ -51,6 +52,10 @@ sealed class PulseMonitorCapture : IPcAudioCapture
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { }
+        finally
+        {
+            if (!_stopping) Stopped?.Invoke();
+        }
     }
 
     private static string? FindOnPath(string name) =>

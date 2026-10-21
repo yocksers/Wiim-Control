@@ -11,10 +11,10 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly Button _btnEqExport = Pill("Export…");
-        private readonly Button _btnEqImport = Pill("Import…");
-        private readonly Button _btnRoomFitExport = Pill("Export…");
-        private readonly Button _btnRoomFitImport = Pill("Import…");
+        private readonly Button _btnEqExport = Pill("Export");
+        private readonly Button _btnEqImport = Pill("Import");
+        private readonly Button _btnRoomFitExport = Pill("Export");
+        private readonly Button _btnRoomFitImport = Pill("Import");
 
         private void HookEqFileButtons()
         {

@@ -6,7 +6,7 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly ComboBox _cboOutputAmp = new() { Width = 220 };
+        private readonly ComboBox _cboOutputAmp = new() { Width = DevicePickerWidth };
         private readonly TextBlock _lblOutputStatus = Subtitle();
         private readonly StackPanel _outputRows = new();
         private readonly SemaphoreSlim _outputGate = new(1, 1);
@@ -52,7 +52,7 @@ sealed partial class WiimController
 
         private Border BuildDigitalFilterCard(string ip, string mode, List<DigitalFilter> filters, int? current)
         {
-            var combo = new ComboBox { Width = 360 };
+            var combo = new ComboBox { Width = WideFieldWidth };
             foreach (var f in filters) combo.Items.Add(ComboItem(f.Index, f.Name));
             combo.SelectedIndex = filters.FindIndex(f => f.Index == current);
             combo.SelectionChanged += async (_, _) =>
@@ -60,9 +60,9 @@ sealed partial class WiimController
                 if ((combo.SelectedItem as ComboBoxItem)?.Tag is int index && index != current)
                     await ChangeOutputAsync(() => _owner.SetDigitalFilterAsync(ip, mode, index));
             };
-            return Card("Digital filter",
-                Muted("How the device's DAC filters the sound. The choices come from the device and differ between models."),
-                LabeledRow("Digital filter", combo));
+            var row = LabeledRow("Digital filter", combo);
+            ToolTip.SetTip(row, "How the device's DAC filters the sound");
+            return Card("Digital filter", row);
         }
 
         private async Task ChangeOutputAsync(Func<Task<bool>> change)

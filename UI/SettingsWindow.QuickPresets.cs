@@ -29,7 +29,7 @@ sealed partial class WiimController
 
     private sealed partial class SettingsWindow
     {
-        private readonly Button _btnEqQuick = Pill("Quick buttons…");
+        private readonly Button _btnEqQuick = Pill("Quick buttons");
         private List<string> _eqCustomList = [];
         private List<string> _eqBuiltInList = [];
 
