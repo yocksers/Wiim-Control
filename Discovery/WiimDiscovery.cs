@@ -12,16 +12,22 @@ static class WiimDiscovery
     private static readonly string[] SearchTargets =
         ["ssdp:all", "urn:schemas-upnp-org:device:MediaRenderer:1"];
 
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMilliseconds(700);
+    private const int ScanParallelism = 48;
+    private static readonly TimeSpan ScanMargin = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaxScanTime = TimeSpan.FromSeconds(30);
+
     private static readonly HttpClient ProbeHttp = new(new HttpClientHandler
     {
         ServerCertificateCustomValidationCallback = (_, _, _, _) => true
     })
-    { Timeout = TimeSpan.FromMilliseconds(700) };
+    { Timeout = ProbeTimeout };
 
     public static async Task<List<KnownDevice>> DiscoverAsync(TimeSpan timeout)
     {
+        var hosts = GetSubnetHostAddresses();
         var ssdpTask = DiscoverViaSsdpAsync(timeout);
-        var scanTask = ScanSubnetAsync(timeout);
+        var scanTask = ScanSubnetAsync(hosts, ScanBudget(hosts.Count, timeout));
         await Task.WhenAll(ssdpTask, scanTask);
 
         var merged = new Dictionary<string, KnownDevice>();
@@ -181,14 +187,20 @@ static class WiimDiscovery
         return result;
     }
 
-    private static async Task<List<KnownDevice>> ScanSubnetAsync(TimeSpan timeout)
+    internal static TimeSpan ScanBudget(int hostCount, TimeSpan minimum)
+    {
+        int rounds = (hostCount + ScanParallelism - 1) / ScanParallelism;
+        var budget = ProbeTimeout * 2 * rounds + ScanMargin;
+        return budget < minimum ? minimum : budget > MaxScanTime ? MaxScanTime : budget;
+    }
+
+    private static async Task<List<KnownDevice>> ScanSubnetAsync(List<IPAddress> hosts, TimeSpan timeout)
     {
         var results = new ConcurrentDictionary<string, KnownDevice>();
-        var hosts = GetSubnetHostAddresses();
         if (hosts.Count == 0) return [];
 
         using var cts = new CancellationTokenSource(timeout);
-        var options = new ParallelOptions { MaxDegreeOfParallelism = 48, CancellationToken = cts.Token };
+        var options = new ParallelOptions { MaxDegreeOfParallelism = ScanParallelism, CancellationToken = cts.Token };
         try
         {
             await Parallel.ForEachAsync(hosts, options, async (ip, ct) =>
@@ -207,6 +219,8 @@ static class WiimDiscovery
         hardware.Contains("wiim", StringComparison.OrdinalIgnoreCase)
         || project.Contains("wiim", StringComparison.OrdinalIgnoreCase)
         || deviceName.Contains("wiim", StringComparison.OrdinalIgnoreCase)
+        || project.StartsWith("Muzo_", StringComparison.OrdinalIgnoreCase)
+        || WiimController.IsKnownProject(project)
         || firmware.StartsWith("Linkplay.", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<KnownDevice?> ProbeWiimApiAsync(IPAddress ip, CancellationToken token)
@@ -215,7 +229,10 @@ static class WiimDiscovery
         {
             try
             {
-                var json = await ProbeHttp.GetStringAsync($"https://{ip}/httpapi.asp?command={command}", token);
+                string json;
+                try { json = await ProbeHttp.GetStringAsync($"https://{ip}/httpapi.asp?command={command}", token); }
+                catch (HttpRequestException ex) when (ex.StatusCode == null) { return null; }
+                catch (TaskCanceledException) { return null; }
                 using var doc = System.Text.Json.JsonDocument.Parse(json);
                 string hardware = doc.RootElement.TryGetProperty("hardware", out var hw) ? hw.GetString() ?? "" : "";
                 string project  = doc.RootElement.TryGetProperty("project", out var pr) ? pr.GetString() ?? "" : "";

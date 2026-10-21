@@ -148,6 +148,8 @@ sealed partial class WiimController
 
     private static readonly string[] ProjectSuffixes = ["_4layer", "_with_gc4a"];
 
+    internal static bool IsKnownProject(string project) => ModelNames.ContainsKey(project);
+
     internal static string ModelName(string project)
     {
         if (ModelNames.TryGetValue(project, out var name)) return name;
