@@ -87,6 +87,8 @@ sealed partial class WiimController
         private bool? _muted;
         private DateTime _volumeTouched = DateTime.MinValue;
         private readonly DispatcherTimer _pollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+        private const int InstantPollTicks = 5;
+        private int _quietTicks;
         private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
         private DeviceStatus? _status;
         private string _target;
@@ -150,7 +152,11 @@ sealed partial class WiimController
             };
             _volumeSendTimer.Tick += async (_, _) => await FlushVolumeAsync();
             _mute.Click += async (_, _) => await ToggleMuteAsync();
-            _pollTimer.Tick += async (_, _) => await RefreshAsync();
+            _pollTimer.Tick += async (_, _) =>
+            {
+                if (_owner.HasInstantUpdates(Ip) && _owner.HasInstantUpdates(_owner.PlaybackTargetOf(Ip)) && ++_quietTicks % InstantPollTicks != 0) return;
+                await RefreshAsync();
+            };
             _clockTimer.Tick += (_, _) => AdvancePosition();
             KeyDown += async (_, e) =>
             {
@@ -361,6 +367,8 @@ sealed partial class WiimController
             if (WindowState != WindowState.Normal || !IsVisible) return;
             _owner._miniPlayerPlacements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height));
         }
+
+        internal void RefreshNow() => _ = RefreshAsync();
 
         private async Task RefreshAsync()
         {

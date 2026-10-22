@@ -1,8 +1,5 @@
 # Wiim Control
 
-<img width="614" height="360" alt="image" src="https://github.com/user-attachments/assets/e25df2bb-8ab2-4131-a80f-5018f5775cd0" />
-<img width="613" height="361" alt="image" src="https://github.com/user-attachments/assets/f14ecb29-83cb-4d38-bb4a-abf3353e772c" />
-
 A program for **Windows, Linux and macOS** that controls **WiiM devices** (Mini, Pro, Pro Plus, Ultra, Sound, Amp,
 Amp Pro, Amp Ultra and other WiiM/LinkPlay devices) from your PC.
 
@@ -105,4 +102,5 @@ Also with thanks to:
 - [Roon Labs](https://roon.app/)
 
 WiiM and the WiiM logo are trademarks of their owner, Linkplay Technology. Wiim Control is an independent project and isn't
-made, endorsed or supported by WiiM; the logo in the app only links to [wiimhome.com](https://www.wiimhome.com/).
+made, endorsed or supported by WiiM; the logo in the app only links to [wiimhome.com](https://www.wiimhome.com/). The screen style
+previews on the Screen page come from the WiiM Home app and are used with WiiM's permission.

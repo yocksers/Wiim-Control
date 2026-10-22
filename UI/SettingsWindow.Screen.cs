@@ -114,7 +114,7 @@ sealed partial class WiimController
                     on => _owner.SetScreenBehaviorAsync(ip, ui, "screen_on", on ? 1 : 0, true)));
             var main = View("main_music_view");
             var second = View("sub_music_view");
-            bool showsSecond = ui.StartPage == 1 && second != null;
+            bool showsSecond = ui.StartPage == SecondPageFirst && second != null;
             var screens = new List<(int Value, string Label)>();
             if (main != null) screens.AddRange(StyleChoices(main));
             if (second != null) screens.AddRange(second.Choices.Select(p => (SecondPageChoice + p, SecondPageName(p))));
@@ -127,16 +127,30 @@ sealed partial class WiimController
                         : ScreenPreviews.Name("main_music_view", v, round, ui.InputKey, current),
                     round, v =>
                     {
-                        if (v < SecondPageChoice) return _owner.SetPlaybackScreenAsync(ip, ui, 0, ("main_music_view", v));
+                        if (v < SecondPageChoice) return _owner.SetPlaybackScreenAsync(ip, ui, MainPageFirst, ("main_music_view", v));
                         int page = v - SecondPageChoice;
                         var values = new List<(string, int)> { ("sub_music_view", page) };
                         if (SecondPageStyleKey(page) is { } styleKey && View(styleKey) is { } style) values.Add((styleKey, style.Value));
-                        return _owner.SetPlaybackScreenAsync(ip, ui, 1, values.ToArray());
+                        return _owner.SetPlaybackScreenAsync(ip, ui, SecondPageFirst, values.ToArray());
                     }));
             }
             if (showsSecond && SecondPageStyleKey(second!.Value) is { } pageKey && View(pageKey) is { Choices.Count: > 1 } pageStyle)
                 playbackTab.Add(Choice($"{SecondPageName(second.Value)} style", pageKey, StyleChoices(pageStyle), pageStyle.Value,
                     v => _owner.SetScreenViewAsync(ip, ui, (pageKey, v))));
+            if (showsSecond && second!.Value == VuMeterPage && ui.VuMeterMode is int vuMode)
+            {
+                var vuRow = LabeledRow("VU meter mode", SegmentSwitch([(1, "Output amplitude"), (0, "Original signal")], vuMode, WideFieldWidth,
+                    mode => ChangeAmpAsync(() => _owner.SetVuMeterModeAsync(ip, mode))));
+                ToolTip.SetTip(vuRow, "Output amplitude shows the effect of the device's volume on the VU meter. " +
+                    "Original signal shows the track's own level, unaffected by the volume.");
+                playbackTab.Add(vuRow);
+            }
+            if (showsSecond && second!.Value == VuMeterPage && ui.HideVuMeterTitle is bool hideTitle)
+            {
+                var titleRow = AmpToggle("Hide the title on the VU meter", hideTitle, on => _owner.SetVuMeterTitleHiddenAsync(ip, ui, on));
+                ToolTip.SetTip(titleRow, "Hides the song title and artist on the VU meter page");
+                playbackTab.Add(titleRow);
+            }
             if (ui.HideCoverIcon is bool hideIcon)
             {
                 var row = AmpToggle("Hide the icon on the cover art page", hideIcon,

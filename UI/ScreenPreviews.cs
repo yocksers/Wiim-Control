@@ -8,6 +8,7 @@ static class ScreenPreviews
     private const string Folder = "avares://WiimControl/Assets/Screen/";
     private static readonly Dictionary<string, Bitmap?> Loaded = new();
     private static readonly int[] RoundMeterOrder = [1, 3, 2, 4, 5];
+
     internal const string DigitalClock = "digital-clock";
 
     internal sealed record SoundClock(int Feature, int ClockView, int Background, int Color, string Picture, string Name);

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 
 namespace WiimControl;
 
@@ -32,8 +33,8 @@ sealed partial class WiimController
                 {
                     _presetHint,
                     _presetTiles,
-                    Muted("Click a preset to play it, or to run a routine (for example switching the output and EQ). " +
-                          "Presets and routines are saved in the WiiM Home app; the device doesn't allow saving them from here.")
+                    Muted("Click a preset to play it, or to run a routine (for example switching the output and EQ). Use the buttons under " +
+                          "a preset to save what's playing to it, rename it or clear it. Routines are made in the WiiM Home app.")
                 }
             };
             return Page("Presets", _lblPresetStatus, [_cboPresetAmp, btnRefresh], body);
@@ -73,8 +74,7 @@ sealed partial class WiimController
                 return;
             }
             _lblPresetStatus.Text = $"{presets.Presets.Count} of {presets.Slots} saved";
-            _presetHint.Text = "No presets are saved on this device yet. Save your favourite stations and playlists as presets in the " +
-                               "WiiM Home app, and they'll show up here.";
+            _presetHint.Text = "No presets are saved on this device yet. Play a station or playlist and use the + button under a preset to save it.";
             _presetHint.IsVisible = presets.Presets.Count == 0;
             for (int number = 1; number <= presets.Slots; number++)
                 _presetTiles.Children.Add(BuildPresetTile(ip, number, presets.Presets.FirstOrDefault(p => p.Number == number)));
@@ -117,10 +117,28 @@ sealed partial class WiimController
                     Margin = new Thickness(0, 2, 0, 0)
                 });
 
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(-8, 6, 0, -6) };
+            Button Action(StreamGeometry icon, string tip, Func<Task> run)
+            {
+                var (button, path) = IconButton(icon);
+                path.Width = path.Height = 16;
+                button.Width = button.Height = 30;
+                button.Padding = new Thickness(0);
+                ToolTip.SetTip(button, tip);
+                button.Click += async (_, _) => await run();
+                actions.Children.Add(button);
+                return button;
+            }
+            Action(Icons.Plus, preset == null ? "Save what's playing to this preset" : "Replace this preset with what's playing",
+                () => SavePlayingToPresetAsync(ip, number, preset));
+            if (preset is { IsRoutine: false }) Action(Icons.Edit, "Rename this preset", () => RenamePresetAsync(ip, preset));
+            if (preset != null) Action(Icons.Delete, "Clear this preset", () => ClearPresetAsync(ip, preset));
+            text.Children.Add(actions);
+
             var tile = new Border
             {
                 Width = 170, Padding = new Thickness(12), Margin = new Thickness(0, 0, 12, 12), CornerRadius = new CornerRadius(12),
-                Background = Palette.Card, Opacity = preset == null ? 0.55 : 1,
+                Background = Palette.Card, Opacity = preset == null ? 0.7 : 1,
                 Child = new StackPanel { Children = { picture, text } }
             };
             if (preset == null) return tile;
@@ -129,8 +147,9 @@ sealed partial class WiimController
             ToolTip.SetTip(tile, preset.IsRoutine ? $"Run the routine {preset.Name}" : $"Play {preset.Name}");
             tile.PointerEntered += (_, _) => tile.Background = Palette.Input;
             tile.PointerExited += (_, _) => tile.Background = Palette.Card;
-            tile.Tapped += async (_, _) =>
+            tile.Tapped += async (_, e) =>
             {
+                if (e.Source is Visual source && source.FindAncestorOfType<Button>(includeSelf: true) != null) return;
                 _lblPresetStatus.Text = preset.IsRoutine ? $"Running {preset.Name}…" : $"Playing {preset.Name}…";
                 if (!await _owner.PlayPresetOnAsync(TargetOf(ip), number))
                     await Dialogs.MessageAsync(this, "The device didn't start the preset.", _scale);
@@ -139,6 +158,44 @@ sealed partial class WiimController
             };
             if (preset.PictureUrl.Length > 0) _ = LoadPresetArtAsync(art, placeholder, preset.PictureUrl);
             return tile;
+        }
+
+        private async Task SavePlayingToPresetAsync(string ip, int number, PresetInfo? existing)
+        {
+            var item = await _owner.GetPlayingItemAsync(TargetOf(ip));
+            if (item == null)
+            {
+                await Dialogs.MessageAsync(this, "Only music the device plays from its own queue can be saved, for example radio stations, the Library " +
+                    "page or USB and network music. Music from Spotify, TIDAL Connect, AirPlay, Cast and the inputs can't be saved here.", _scale);
+                return;
+            }
+            if (existing != null && !await Dialogs.ConfirmAsync(this, $"Replace preset {number} ({existing.Name}) with {item.Title}?", _scale)) return;
+            string? name = await Dialogs.PromptAsync(this, $"Name for preset {number}:", item.Title, _scale);
+            if (string.IsNullOrWhiteSpace(name)) return;
+            await ChangePresetAsync(() => _owner.SavePresetAsync(ip, number, item, name.Trim()), $"Saving preset {number}…");
+        }
+
+        private async Task RenamePresetAsync(string ip, PresetInfo preset)
+        {
+            string? name = await Dialogs.PromptAsync(this, $"New name for preset {preset.Number}:", preset.Name, _scale);
+            if (string.IsNullOrWhiteSpace(name) || name.Trim() == preset.Name) return;
+            await ChangePresetAsync(() => _owner.RenamePresetAsync(ip, preset.Number, name.Trim()), $"Renaming preset {preset.Number}…");
+        }
+
+        private async Task ClearPresetAsync(string ip, PresetInfo preset)
+        {
+            if (!await Dialogs.ConfirmAsync(this, $"Clear preset {preset.Number} ({preset.Name})?", _scale)) return;
+            await ChangePresetAsync(() => _owner.ClearPresetAsync(ip, preset.Number), $"Clearing preset {preset.Number}…");
+        }
+
+        private async Task ChangePresetAsync(Func<Task<bool>> change, string status)
+        {
+            _lblPresetStatus.Text = status;
+            _presetTiles.IsEnabled = false;
+            bool ok = await change();
+            _presetTiles.IsEnabled = true;
+            if (!ok) await Dialogs.MessageAsync(this, "The device didn't save the change.", _scale);
+            await RefreshPresetsAsync();
         }
 
         private async Task LoadPresetArtAsync(Image art, PathIcon placeholder, string url)

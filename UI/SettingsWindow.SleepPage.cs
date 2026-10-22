@@ -12,6 +12,7 @@ sealed partial class WiimController
         private readonly TextBlock _lblSleepStatus = Subtitle();
         private readonly DispatcherTimer _sleepClock = new() { Interval = TimeSpan.FromSeconds(30) };
         private int _sleepVersion;
+        private const int EndOfTrack = -1;
         private bool _sleepFilling;
 
         private Control BuildSleepPage()
@@ -51,7 +52,10 @@ sealed partial class WiimController
                 return;
             }
             if (!quiet) _lblSleepStatus.Text = "Loading…";
-            var seconds = await Task.WhenAll(devices.Select(d => _owner.GetSleepSecondsAsync(d.Ip)));
+            var secondsTask = Task.WhenAll(devices.Select(d => _owner.GetSleepSecondsAsync(d.Ip)));
+            var endOfTrackTask = Task.WhenAll(devices.Select(d => _owner.GetEndOfTrackAsync(d.Ip)));
+            var seconds = await secondsTask;
+            var endOfTrack = await endOfTrackTask;
             if (version != _sleepVersion) return;
             _lblSleepStatus.Text = string.Empty;
 
@@ -64,20 +68,26 @@ sealed partial class WiimController
             {
                 string ip = devices[i].Ip;
                 int left = seconds[i];
+                bool? trackEnd = endOfTrack[i];
                 var choice = new ComboBox { Width = FieldWidth, PlaceholderText = "Change…" };
                 choice.Items.Add(ComboItem(0, "Off"));
                 foreach (int minutes in SleepChoices) choice.Items.Add(ComboItem(minutes, $"{minutes} minutes"));
-                choice.SelectedIndex = left > 0 ? -1 : 0;
+                if (trackEnd != null) choice.Items.Add(ComboItem(EndOfTrack, "End of current track"));
+                choice.SelectedIndex = trackEnd == true ? choice.Items.Count - 1 : left > 0 ? -1 : 0;
                 choice.SelectionChanged += async (_, _) =>
                 {
                     if (_sleepFilling || (choice.SelectedItem as ComboBoxItem)?.Tag is not int minutes) return;
-                    if (!await _owner.SetSleepTimerAsync(ip, minutes))
+                    bool ok = minutes == EndOfTrack
+                        ? (left <= 0 || await _owner.SetSleepTimerAsync(ip, 0)) && await _owner.SetEndOfTrackAsync(ip, true)
+                        : (trackEnd != true || await _owner.SetEndOfTrackAsync(ip, false)) && await _owner.SetSleepTimerAsync(ip, minutes);
+                    if (!ok)
                         await Dialogs.MessageAsync(this, "The device didn't accept the sleep timer. Check that it's switched on and reachable.", _scale);
                     await RefreshSleepAsync(quiet: true);
                 };
+                string stateText = trackEnd == true ? "Stops after this track" : left > 0 ? SleepLeft(left) : string.Empty;
                 var state = new TextBlock
                 {
-                    Text = left > 0 ? SleepLeft(left) : string.Empty, Classes = { "accent" }, IsVisible = left > 0,
+                    Text = stateText, Classes = { "accent" }, IsVisible = stateText.Length > 0,
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 rows.Add(LabeledRow(devices[i].Name, new StackPanel

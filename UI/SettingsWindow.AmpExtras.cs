@@ -19,14 +19,26 @@ sealed partial class WiimController
             Text = text, Foreground = Palette.TextMuted, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center
         };
 
-        private Border BuildDeviceCard(string ip, DeviceInfo info, AutoUpdate? autoUpdate)
+        private Border BuildDeviceCard(string ip, DeviceInfo info, AutoUpdate? autoUpdate, List<string>? formats)
         {
-            var rows = new List<Control> { LabeledRow("Model", Info(info.Model)), LabeledRow("Firmware", Info(info.Firmware)) };
+            var rows = new List<Control> { LabeledRow("Model", Info(info.Model)) };
+            if (info.Colour.Length > 0) rows.Add(LabeledRow("Colour", Info(info.Colour)));
+            rows.Add(LabeledRow("Firmware", Info(info.Firmware)));
+            foreach (var (part, version) in info.Components ?? []) rows.Add(LabeledRow($"{part} firmware", Info(version)));
             if (info.Ssid.Length > 0) rows.Add(LabeledRow("Device's own Wi-Fi name (SSID)", Selectable(info.Ssid)));
-            if (info.Mac.Length > 0) rows.Add(LabeledRow("MAC address", Selectable(info.Mac)));
+            if (info.EthernetMac.Length > 0) rows.Add(LabeledRow("Ethernet MAC address", Selectable(info.EthernetMac)));
+            if (info.BluetoothMac.Length > 0) rows.Add(LabeledRow("Bluetooth MAC address", Selectable(info.BluetoothMac)));
             if (info.Uuid.Length > 0) rows.Add(LabeledRow("UUID", Selectable(info.Uuid)));
             if (info.CpuTemperature is int cpu) rows.Add(LabeledRow("Processor temperature", Info($"{cpu} °C")));
             if (info.BoardTemperature is int board) rows.Add(LabeledRow("Board temperature", Info($"{board} °C")));
+            if (formats is { Count: > 0 })
+            {
+                var list = Info(string.Join("  ·  ", formats));
+                list.TextWrapping = TextWrapping.Wrap;
+                list.TextAlignment = TextAlignment.Right;
+                list.MaxWidth = WideFieldWidth;
+                rows.Add(LabeledRow("Supported audio formats", list));
+            }
             var status = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
             void ShowStatus(string text, bool available)
             {
@@ -116,12 +128,12 @@ sealed partial class WiimController
                 await Dialogs.MessageAsync(this, "The device didn't accept the request.", _scale);
         }
 
-        private static readonly int[] StandbyMinutes = [5, 10, 15, 20, 30, 45, 60, 90, 120];
+        private static readonly int[] StandbySeconds = [30, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200, 14400];
 
         private Border BuildStandbyCard(string ip, int seconds)
         {
             var combo = new ComboBox { Width = FieldWidth };
-            var choices = StandbyMinutes.Select(m => m * 60).ToList();
+            var choices = StandbySeconds.ToList();
             if (!choices.Contains(seconds)) choices.Add(seconds);
             choices.Sort();
             foreach (int s in choices)
@@ -218,12 +230,15 @@ sealed partial class WiimController
             if (net.Wired)
             {
                 rows.Add(LabeledRow("Connection", Info("Ethernet")));
+                if (net.Internet is bool online) rows.Add(LabeledRow("Internet", Info(online ? "Connected" : "Not connected")));
                 rows.Add(LabeledRow("IP address", Selectable(net.Ip)));
                 rows.AddRange(IpConfigRows(ip, net));
+                if (net.WifiMac.Length > 0) rows.Add(LabeledRow("Wi-Fi MAC address", Selectable(net.WifiMac)));
             }
             else
             {
                 rows.Add(LabeledRow("Wi-Fi network", Info(net.WifiName)));
+                if (net.Internet is bool online) rows.Add(LabeledRow("Internet", Info(online ? "Connected" : "Not connected")));
                 rows.Add(LabeledRow("IP address", Selectable(net.Ip)));
                 rows.AddRange(IpConfigRows(ip, net));
                 if (net.Rssi is int rssi)
@@ -236,10 +251,17 @@ sealed partial class WiimController
                     rows.Add(LabeledRow("Wi-Fi strength", strength));
                 }
                 if (net.Snr is int snr) rows.Add(LabeledRow("Signal-to-noise ratio", Info($"{snr} dB")));
+                if (net.Noise is int noise)
+                {
+                    var noiseRow = LabeledRow("Wi-Fi noise", Info($"{noise} dBm"));
+                    ToolTip.SetTip(noiseRow, "The background radio noise the device hears. Lower (more negative) is better.");
+                    rows.Add(noiseRow);
+                }
                 if (net.Frequency is int freq)
                     rows.Add(LabeledRow("Band", Info((freq >= 5000 ? "5 GHz" : "2.4 GHz") + (net.Channel is int ch && ch > 0 ? $", channel {ch}" : ""))));
                 if (net.TxRate is int rate) rows.Add(LabeledRow("Transfer rate", Info($"{rate} Mbit/s")));
                 if (net.ApMac.Length > 0) rows.Add(LabeledRow("Router (access point) MAC", Selectable(net.ApMac)));
+                if (net.WifiMac.Length > 0) rows.Add(LabeledRow("Wi-Fi MAC address", Selectable(net.WifiMac)));
                 if (net.FiveGhzOnly is bool fiveOnly)
                     rows.Add(AmpToggle("5 GHz only", fiveOnly, async on =>
                     {

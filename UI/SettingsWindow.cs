@@ -35,6 +35,16 @@ sealed partial class WiimController
         private readonly TextBlock _lblDeviceCount = Subtitle();
         private readonly StackPanel _deviceList = new();
         private readonly ToggleSwitch _chkSuppress = new();
+        private readonly ToggleSwitch _chkVolumeKeys = new();
+        private Border? _outputCard;
+
+        private void ApplyVolumeKeysState(bool on)
+        {
+            _chkSuppress.IsEnabled = on;
+            if (_outputCard == null) return;
+            _outputCard.IsEnabled = on;
+            _outputCard.Opacity = on ? 1 : 0.45;
+        }
         private readonly ToggleSwitch _chkAutoStart = new();
         private readonly ToggleSwitch _chkStartMinimized = new();
         private readonly ToggleSwitch _chkForwardMedia = new();
@@ -117,6 +127,7 @@ sealed partial class WiimController
         private readonly SemaphoreSlim _ampGate = new(1, 1);
         private bool _volumeOnlyPolling;
         private int _pollTick;
+        private const int InstantPollTicks = 15;
 
         private readonly StackPanel _hotkeyList = new();
         private readonly TextBlock _lblHotkeyNote = new()
@@ -166,6 +177,12 @@ sealed partial class WiimController
             _volumePollTimer.Tick += async (_, _) =>
             {
                 if (_devicesPage is not { IsVisible: true } || WindowState == WindowState.Minimized) return;
+                bool instant = _owner._knownDevices.Count > 0 && _owner._knownDevices.All(d => _owner.HasInstantUpdates(d.Ip));
+                if (instant)
+                {
+                    if (++_pollTick % InstantPollTicks == 0) await RefreshDeviceStatusesAsync();
+                    return;
+                }
                 if (++_pollTick % 3 == 0) await RefreshDeviceStatusesAsync();
                 else await RefreshVolumesAsync();
             };
@@ -398,8 +415,10 @@ sealed partial class WiimController
             sidebarItems.Children.Add(SectionLabel("Sound"));
             sidebarItems.Children.Add(NavGroup(
                 Nav("Equalizer", Icons.Equalizer, eqPage), Nav("Output", Icons.Output, outputPage), Nav("Inputs", Icons.Input, inputsPage)));
+            var deviceInfoNav = Nav(SectionDeviceInfo, Icons.Info, ampPage, SectionDeviceInfo);
+            deviceInfoNav.Click += (_, _) => CountDeviceInfoClick(ampPage);
             var general = NavGroup(
-                Nav(SectionDeviceInfo, Icons.Info, ampPage, SectionDeviceInfo), Nav(SectionNetwork, Icons.Wifi, ampPage, SectionNetwork),
+                deviceInfoNav, Nav(SectionNetwork, Icons.Wifi, ampPage, SectionNetwork),
                 Nav(SectionStandby, Icons.Power, ampPage, SectionStandby));
             var automation = NavGroup(
                 Nav(SectionAlarms, Icons.Alarm, ampPage, SectionAlarms), Nav("Sleep timer", Icons.Sleep, sleepPage), Nav("Presets", Icons.Star, presetsPage));
@@ -994,6 +1013,18 @@ sealed partial class WiimController
             ApplyVolume(ip);
         }
 
+        internal void OnVolumeEvent(string ip, int? volume, bool? muted)
+        {
+            bool known = _volumes.TryGetValue(ip, out var current);
+            if ((volume ?? (known ? current.Volume : null)) is not int v) return;
+            ShowVolume(ip, v, muted ?? (known && current.Muted));
+        }
+
+        internal void OnDeviceEvent(string ip)
+        {
+            if (IsVisible && WindowState != WindowState.Minimized) _ = RefreshDeviceStatusesAsync();
+        }
+
         internal void ShowVolume(string ip, int volume, bool muted)
         {
             if (_pendingVolumes.ContainsKey(ip) || _volumeSending.Contains(ip)) return;
@@ -1182,6 +1213,7 @@ sealed partial class WiimController
         private const string SectionDisplay = "Screen";
 
         private string _ampSection = SectionDeviceInfo;
+        private int _ampVersion;
         private (string Ip, AmpSettings Settings)? _ampCache;
 
         private string? SelectedAmpIp => (_cboAmp.SelectedItem as ComboBoxItem)?.Tag as string;
@@ -1243,8 +1275,10 @@ sealed partial class WiimController
                 return;
             }
             if (!quiet) _lblAmpStatus.Text = "Loading…";
-            var settings = await _owner.GetAmpSettingsAsync(ip, _screenInputIp == ip ? _screenInput : null);
-            if (ip != SelectedAmpIp) return;
+            int version = ++_ampVersion;
+            var settings = await _owner.GetAmpSettingsAsync(ip, _screenInputIp == ip ? _screenInput : null, _ampSection == SectionExperimental,
+                _ampSection == SectionDeviceInfo);
+            if (ip != SelectedAmpIp || version != _ampVersion) return;
             if (settings != null) _ampCache = (ip, settings);
             if (settings?.Screen != null && settings.ScreenUi != null && !_owner.HasScreen(ip))
             {
@@ -1291,10 +1325,14 @@ sealed partial class WiimController
             return LabeledRow(text, combo);
         }
 
+        private const int MainPageFirst = 1;
+        private const int SecondPageFirst = 0;
+
         private static IEnumerable<(int Value, string Label)> StyleChoices(ScreenView view) =>
             view.Choices.Select((value, index) => (value, $"Style {index + 1}"));
 
         private const int SecondPageChoice = 1000;
+        private const int VuMeterPage = 3;
 
         private static string? SecondPageStyleKey(int page) => page switch
         {
@@ -1484,12 +1522,14 @@ sealed partial class WiimController
                     cards.Add(BuildHardwareCard(ip, s));
                     empty = string.Empty;
                     break;
+                case SectionExperimental:
+                    return BuildExperimentalCards(ip, s.Experimental);
                 case SectionDisplay:
                     if (s.Screen is { } screen && (s.ScreenUi != null || _owner.HasScreen(ip))) cards.Add(BuildScreenCard(ip, screen, s.ScreenUi, s.Wallpapers));
                     empty = "This device has no screen. The WiiM Ultra, Amp Ultra, Sound and Bar have one.";
                     break;
                 default:
-                    if (s.Device is { } device) cards.Add(BuildDeviceCard(ip, device, s.AutoUpdate));
+                    if (s.Device is { } device) cards.Add(BuildDeviceCard(ip, device, s.AutoUpdate, s.Formats));
                     empty = "This device didn't report its details.";
                     break;
             }
@@ -1645,10 +1685,33 @@ sealed partial class WiimController
                     toggle.IsCheckedChanged += async (_, _) =>
                         await ChangeGroupAsync(() => SetLinkedAsync(snapshot, o.Ip, leaderIp, toggle.IsChecked == true));
                     rows.Add(ToggleRow(o.Name, toggle));
-                    rows.Add(new TextBlock
+                    var status = new StackPanel
                     {
-                        Text = linkedHere ? "Linked" : LinkStatus(snapshot, o.Ip), Classes = { "muted" }, Margin = new Thickness(0, 0, 0, 6)
-                    });
+                        Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(0, 0, 0, 6),
+                        Children = { new TextBlock { Text = linkedHere ? "Linked" : LinkStatus(snapshot, o.Ip), Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center } }
+                    };
+                    rows.Add(status);
+                    if (!linkedHere) continue;
+                    var (rename, renameIcon) = IconButton(Icons.Edit);
+                    renameIcon.Width = renameIcon.Height = 14;
+                    rename.Width = rename.Height = 24;
+                    rename.Padding = new Thickness(0);
+                    rename.MinHeight = 0;
+                    ToolTip.SetTip(rename, $"Rename {o.Name}");
+                    rename.Click += async (_, _) =>
+                    {
+                        await RenameDeviceAsync(o);
+                        await RefreshMultiroomAsync();
+                    };
+                    status.Children.Add(rename);
+                    int channel = snapshot.Channels?.GetValueOrDefault(o.Ip) ?? ChannelStereo;
+                    var channels = SegmentSwitch([(ChannelStereo, "Stereo"), (ChannelLeft, "Left"), (ChannelRight, "Right")],
+                        channel is ChannelLeft or ChannelRight ? channel : ChannelStereo, FieldWidth,
+                        value => ChangeGroupAsync(() => _owner.SetRoomChannelAsync(leaderIp, snapshot.AddressOf(o.Ip), value)));
+                    var channelRow = LabeledRow("Plays", channels);
+                    ToolTip.SetTip(channelRow, $"Whether {o.Name} plays both channels or only the left or right one in this group, for example to use two devices as a stereo pair");
+                    channelRow.Margin = new Thickness(0, 0, 0, 10);
+                    rows.Add(channelRow);
                 }
                 if (snapshot.MemberCount(leaderIp) > 0)
                 {
@@ -2148,7 +2211,7 @@ sealed partial class WiimController
 
         private Control BuildGroupDelayPage()
         {
-            var body = new StackPanel { Children = { GroupDelayCard() } };
+            var body = new StackPanel { Children = { GroupDelayCard(), SyncAudioCard() } };
             var refresh = Pill("Refresh");
             refresh.Click += async (_, _) => await RefreshGroupDelayAsync();
             var page = Page("Group audio delay", null, [_cboDelayAmp, refresh], body);
@@ -2202,6 +2265,15 @@ sealed partial class WiimController
         private Control BuildGeneralPage()
         {
             _chkSuppress.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetSuppress(_chkSuppress.IsChecked == true); };
+            _chkVolumeKeys.IsCheckedChanged += (_, _) =>
+            {
+                if (_loading) return;
+                _owner.SetVolumeKeys(_chkVolumeKeys.IsChecked == true);
+                ApplyVolumeKeysState(_chkVolumeKeys.IsChecked == true);
+            };
+            var volumeKeysRow = ToggleRow("Volume keys control the WiiM device", _chkVolumeKeys);
+            ToolTip.SetTip(volumeKeysRow, "When this is off, the keyboard's volume and mute keys change this computer's volume as usual. " +
+                                          "Hotkeys you set on the Hotkeys page keep working.");
             _chkAutoStart.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetAutoStartSetting(_chkAutoStart.IsChecked == true); };
             _chkStartMinimized.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetStartMinimized(_chkStartMinimized.IsChecked == true); };
             ToolTip.SetTip(_chkStartMinimized, OperatingSystem.IsMacOS()
@@ -2227,6 +2299,7 @@ sealed partial class WiimController
             if (OperatingSystem.IsWindows())
             {
                 cards.Children.Add(Card("Behavior",
+                    volumeKeysRow,
                     ToggleRow("Suppress Windows volume OSD", _chkSuppress),
                     ToggleRow(AutoStart.Label, _chkAutoStart),
                     ToggleRow(startMinimizedLabel, _chkStartMinimized),
@@ -2236,8 +2309,10 @@ sealed partial class WiimController
                 var btnClear = Pill("Allow all outputs");
                 btnClear.Margin = new Thickness(0, 8, 0, 0);
                 btnClear.Click += (_, _) => { _owner.ClearOutputDevices(); LoadFromOwner(); };
-                cards.Children.Add(Card("Output devices",
-                    Muted("Take over the volume keys only for these outputs (none selected = all)."), _outputList, btnClear));
+                _outputCard = Card("Output devices",
+                    Muted("Allow keyboard volume keys to control connected Wiim products directly on the Wiim."),
+                    _outputList, btnClear);
+                cards.Children.Add(_outputCard);
             }
             else if (OperatingSystem.IsLinux())
             {
@@ -2303,6 +2378,12 @@ sealed partial class WiimController
             var firmwareChecks = new ToggleSwitch { IsChecked = _owner.FirmwareChecks };
             firmwareChecks.IsCheckedChanged += (_, _) => _owner.FirmwareChecks = firmwareChecks.IsChecked == true;
             var firmwareRow = ToggleRow("Check WiiM devices for firmware updates", firmwareChecks);
+            var instantUpdates = new ToggleSwitch { IsChecked = _owner.InstantUpdates };
+            instantUpdates.IsCheckedChanged += (_, _) => _owner.InstantUpdates = instantUpdates.IsChecked == true;
+            var instantRow = ToggleRow("Instant updates from the devices", instantUpdates);
+            ToolTip.SetTip(instantRow, "The devices tell Wiim Control right away when the track, playback or volume changes, instead of " +
+                                       "Wiim Control asking every few seconds. Wiim Control listens on a network port for this, so your " +
+                                       "firewall or macOS may ask for permission the first time.");
             ToolTip.SetTip(firmwareRow, "Looks for new device firmware every few hours and shows a notice when there is one. " +
                                         "Check now on the Device info page always works.");
             cards.Children.Add(Card("Updates",
@@ -2310,9 +2391,31 @@ sealed partial class WiimController
                 LabeledRow($"You have version {AppVersion}", checkNow),
                 Muted("When a new version is out, Wiim Control asks whether to download and install it."),
                 firmwareRow));
+            cards.Children.Add(Card("Network", instantRow));
             cards.Children.Add(BuildBackupCard());
 
-            return Page("General", null, [], cards);
+            if (!OperatingSystem.IsWindows()) return Page("General", null, [], cards);
+            var refresh = Pill("Refresh");
+            ToolTip.SetTip(refresh, "Reads the list of output devices again, for example after plugging in headphones or a USB sound card");
+            refresh.Click += (_, _) => RefreshOutputList();
+            var page = Page("General", null, [refresh], cards);
+            page.PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && page.IsVisible) RefreshOutputList(); };
+            return page;
+        }
+
+        private void RefreshOutputList()
+        {
+            if (!OperatingSystem.IsWindows()) return;
+            var toggles = new List<Control>();
+            foreach (var (id, name) in ActiveOutputDevices())
+            {
+                var toggle = new ToggleSwitch { IsChecked = _owner.IsOutputEnabled(id) };
+                string deviceId = id;
+                toggle.IsCheckedChanged += (_, _) => { if (!_loading) _owner.SetOutputDeviceEnabled(deviceId, toggle.IsChecked == true); };
+                toggles.Add(ToggleRow(name, toggle));
+            }
+            if (toggles.Count == 0) toggles.Add(Muted("No playback devices found"));
+            SetRows(_outputList, toggles);
         }
 
         private Border BuildLinuxShortcutsCard()
@@ -2488,6 +2591,8 @@ sealed partial class WiimController
             RebuildDeviceCards();
 
             _chkSuppress.IsChecked = _owner._suppress;
+            _chkVolumeKeys.IsChecked = _owner._volumeKeys;
+            ApplyVolumeKeysState(_owner._volumeKeys);
             _chkAutoStart.IsChecked = IsAutoStartEnabled();
             _chkStartMinimized.IsChecked = _owner._startMinimized;
             _chkForwardMedia.IsChecked = _owner._forwardMediaKeys;
@@ -2522,16 +2627,7 @@ sealed partial class WiimController
             }
             _cboOsdScale.SelectedItem = osdScale;
 
-            var toggles = new List<Control>();
-            foreach (var (id, name) in ActiveOutputDevices())
-            {
-                var toggle = new ToggleSwitch { IsChecked = _owner._enabledOutputIds.Contains(id) };
-                string deviceId = id;
-                toggle.IsCheckedChanged += (_, _) => { if (!_loading) _owner.SetOutputDeviceEnabled(deviceId, toggle.IsChecked == true); };
-                toggles.Add(ToggleRow(name, toggle));
-            }
-            if (toggles.Count == 0) toggles.Add(Muted("No playback devices found"));
-            SetRows(_outputList, toggles);
+            RefreshOutputList();
             RebuildHotkeys();
 
             _loading = false;

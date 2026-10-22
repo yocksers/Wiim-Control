@@ -18,7 +18,8 @@ sealed record RoomFitState(bool Enabled, string Active, List<string> Profiles, P
 
 sealed record PeqState(bool Enabled, string Name, bool Split, PeqBand[] Stereo, PeqBand[] Left, PeqBand[] Right);
 
-sealed record MultiroomSnapshot(HashSet<string> Online, Dictionary<string, string> LeaderOf, Dictionary<string, string> MemberAddresses)
+sealed record MultiroomSnapshot(HashSet<string> Online, Dictionary<string, string> LeaderOf, Dictionary<string, string> MemberAddresses,
+    Dictionary<string, int>? Channels = null)
 {
     public int MemberCount(string leaderIp) => LeaderOf.Values.Count(v => v == leaderIp);
     public string AddressOf(string ip) => MemberAddresses.TryGetValue(ip, out var address) ? address : ip;
@@ -28,7 +29,7 @@ readonly record struct DeviceVolume(int Volume, bool Muted);
 
 sealed record DeviceStatus(DeviceVolume Volume, string PlayState, int Mode, string Title, string Artist, string Album,
     string ArtUrl, int SampleRate, int BitDepth, int Loop = 4, int PositionMs = 0, int DurationMs = 0, int BitRate = 0,
-    string BluetoothName = "", int SleepSeconds = 0, string SourceLabel = "")
+    string BluetoothName = "", int SleepSeconds = 0, string SourceLabel = "", string Vendor = "")
 {
     public bool IsPlaying => PlayState.Equals("play", StringComparison.OrdinalIgnoreCase);
 }
@@ -39,10 +40,12 @@ sealed record SubwooferInfo(bool Enabled, bool Plugged, double Crossover, double
     double? Delay, bool Bypass = false);
 
 sealed record DeviceInfo(string Model, string Firmware, int? CpuTemperature, int? BoardTemperature, FirmwareUpdate? Update = null,
-    string Ssid = "", string Mac = "", string Uuid = "", string Project = "", int? Color = null);
+    string Ssid = "", string Mac = "", string Uuid = "", string Project = "", int? Color = null, string Colour = "",
+    List<(string Part, string Version)>? Components = null, string EthernetMac = "", string BluetoothMac = "");
 
 sealed record NetworkInfo(bool Wired, string WifiName, string Ip, int? Rssi, string ApMac, int? TxRate, int? Snr, int? Frequency,
-    int? Channel, bool? FiveGhzOnly, bool? Roaming, bool? Ipv6, string? PreferredDns, int? StandbySeconds, IpConfig? IpConfig = null);
+    int? Channel, bool? FiveGhzOnly, bool? Roaming, bool? Ipv6, string? PreferredDns, int? StandbySeconds, IpConfig? IpConfig = null,
+    bool? Internet = null, int? Noise = null, string WifiMac = "");
 
 sealed record IpConfig(bool Manual, string Address, int Prefix, string Gateway, string Dns);
 
@@ -62,7 +65,8 @@ sealed record WallpaperInfo(string RawJson, List<string> Current, int MaxNumber,
 
 sealed record ScreenUi(string? InputKey, string? Input, bool? Clock24, bool? StandbyScreenOff, int? StartPage,
     Dictionary<string, ScreenView> Views, List<string>? Inputs = null, string? PlayingInputKey = null, bool? InputScreenOn = null,
-    bool? HideCoverIcon = null, Dictionary<int, string>? ClockColors = null, int? ClockBackground = null, int? ClockColor = null);
+    bool? HideCoverIcon = null, Dictionary<int, string>? ClockColors = null, int? ClockBackground = null, int? ClockColor = null,
+    int? VuMeterMode = null, bool? HideVuMeterTitle = null);
 
 sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? StatusLight, bool? ButtonsLocked,
     int? OutputHardware, string? FilterMode, List<DigitalFilter> Filters, int? Filter, SubwooferInfo? Subwoofer,
@@ -71,7 +75,7 @@ sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? Sta
     NetworkInfo? Network = null, int? ButtonVolumeStep = null, int? RemoteVolumeStep = null, List<string>? OutputModes = null,
     string? UsbDacName = null, bool BluetoothOut = false, bool CastOut = false, OutputState? Output = null,
     InputSettings? InputOptions = null, bool? AutoHeadroom = null, double? HeadroomGain = null, int? Channel = null,
-    bool? PromptSounds = null, AutoUpdate? AutoUpdate = null);
+    bool? PromptSounds = null, AutoUpdate? AutoUpdate = null, ExperimentalSettings? Experimental = null, List<string>? Formats = null);
 
 sealed record MediaServer(string Name, string Udn, string ContentDirectoryUrl, string IconUrl, bool OnThisComputer = false,
     bool IsLyrion = false, bool IsRoon = false, bool IsShare = false);
