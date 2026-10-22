@@ -20,8 +20,7 @@ sealed partial class WiimController
     {
         try
         {
-            return await _http.GetStringAsync(
-                $"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
+            return await GetDeviceTextAsync($"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -77,9 +76,10 @@ sealed partial class WiimController
 
         var leaderOf = new Dictionary<string, string>();
         var memberAddress = new Dictionary<string, string>();
+        var channels = new Dictionary<string, int>();
         foreach (var r in replies)
         {
-            foreach (var (slaveIp, slaveUuid) in ParseSlaveList(r.Slaves))
+            foreach (var (slaveIp, slaveUuid, channel) in ParseSlaveList(r.Slaves))
             {
                 string? known = devices.FirstOrDefault(d => d.Ip == slaveIp).Ip;
                 if (known == null && slaveUuid.Length > 0)
@@ -87,9 +87,10 @@ sealed partial class WiimController
                 if (known == null || known == r.Device.Ip) continue;
                 leaderOf[known] = r.Device.Ip;
                 memberAddress[known] = slaveIp.Length > 0 ? slaveIp : known;
+                if (channel is int c) channels[known] = c;
             }
         }
-        var snapshot = new MultiroomSnapshot(online, leaderOf, memberAddress);
+        var snapshot = new MultiroomSnapshot(online, leaderOf, memberAddress, channels);
         _multiroomCache = snapshot;
         _multiroomCacheTime = DateTime.UtcNow;
         return snapshot;
@@ -117,9 +118,9 @@ sealed partial class WiimController
         catch (JsonException) { return null; }
     }
 
-    private static List<(string Ip, string Uuid)> ParseSlaveList(string? json)
+    internal static List<(string Ip, string Uuid, int? Channel)> ParseSlaveList(string? json)
     {
-        var result = new List<(string, string)>();
+        var result = new List<(string, string, int?)>();
         if (json == null) return result;
         try
         {
@@ -131,7 +132,8 @@ sealed partial class WiimController
             {
                 string ip = s.TryGetProperty("ip", out var ipProp) ? ipProp.ToString() : string.Empty;
                 string uuid = s.TryGetProperty("uuid", out var uuidProp) ? NormalizeUuid(uuidProp.ToString()) : string.Empty;
-                result.Add((ip, uuid));
+                int? channel = s.TryGetProperty("channel", out var channelProp) && int.TryParse(channelProp.ToString(), out int c) ? c : null;
+                result.Add((ip, uuid, channel));
             }
         }
         catch (JsonException) { }

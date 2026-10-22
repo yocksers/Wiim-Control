@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 
 namespace WiimControl;
 
@@ -36,16 +37,26 @@ sealed partial class WiimController
         Timeout = TimeSpan.FromSeconds(5)
     };
 
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
+    internal static string DeviceText(byte[] bytes)
+    {
+        try { return StrictUtf8.GetString(bytes); }
+        catch (DecoderFallbackException) { return Encoding.Latin1.GetString(bytes); }
+    }
+
+    private async Task<string> GetDeviceTextAsync(string url) => DeviceText(await _http.GetByteArrayAsync(url).ConfigureAwait(false));
+
     private async Task<string> GetAmpStringAsync(string url)
     {
         try
         {
-            return await _http.GetStringAsync(url).ConfigureAwait(false);
+            return await GetDeviceTextAsync(url).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is TaskCanceledException or HttpRequestException or IOException)
         {
             await Task.Delay(150).ConfigureAwait(false);
-            return await _http.GetStringAsync(url).ConfigureAwait(false);
+            return await GetDeviceTextAsync(url).ConfigureAwait(false);
         }
     }
 

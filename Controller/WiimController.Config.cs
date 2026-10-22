@@ -37,6 +37,7 @@ sealed partial class WiimController
             if (key == "recent")          _recent = ParseRecent(val);
             if (key == "checkupdates")    _checkUpdates = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "firmwarechecks")  _firmwareChecks = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
+            if (key == "instantupdates")  _instantUpdates = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "startminimized")  _startMinimized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "nowplayingvinyl") _nowPlayingVinyl = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "miniplayerauto")  _miniPlayerAuto = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
@@ -62,12 +63,18 @@ sealed partial class WiimController
                 _windowSize = new Avalonia.Size(width, height);
             if (key == "uiscale" && int.TryParse(val, out int scale) && scale is >= 50 and <= 300) _uiScalePercent = scale;
             if (key == "suppresswindowsosd") _suppress = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "volumekeys")      _volumeKeys = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "volumestep" && int.TryParse(val, out int step) && step >= 1) _volumeStep = step;
             if (key == "osdcorner" && Enum.TryParse<OsdCorner>(val, true, out var corner)) _osdCorner = corner;
             if (key == "osddurationms" && int.TryParse(val, out int dur) && dur >= 200) _osdDurationMs = dur;
             if (key == "osdscale" && int.TryParse(val, out int osdScale) && osdScale is >= 50 and <= 300) _osdScalePercent = osdScale;
             if (key == "enabledoutputs" && val.Length > 0)
-                _enabledOutputIds = new HashSet<string>(val.Split('|', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
+                _legacyEnabledOutputIds = new HashSet<string>(val.Split('|', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
+            if (key == "disabledoutputs")
+            {
+                _disabledOutputIds = new HashSet<string>(val.Split('|', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
+                _legacyEnabledOutputIds = null;
+            }
             if (key == "knowndevices" && val.Length > 0)
                 _knownDevices = val.Split('\u0002', StringSplitOptions.RemoveEmptyEntries)
                     .Select(entry => entry.Split('\u0001'))
@@ -96,11 +103,11 @@ sealed partial class WiimController
                 $"linuxPortalShortcuts={_linuxPortalShortcuts}", $"hotkeys={SerializeHotkeys()}",
                 $"windowSize={(_windowSize is { } size ? $"{(int)size.Width}x{(int)size.Height}" : "")}", $"windowMaximized={_windowMaximized}", $"sidebarHidden={_sidebarHidden}",
                 $"uiScale={_uiScalePercent}",
-                $"suppressWindowsOSD={_suppress}", $"volumeStep={_volumeStep}",
+                $"suppressWindowsOSD={_suppress}", $"volumeKeys={_volumeKeys}", $"volumeStep={_volumeStep}",
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
-                $"enabledOutputs={string.Join('|', _enabledOutputIds)}",
+                $"disabledOutputs={string.Join('|', _disabledOutputIds)}",
                 $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}", $"recent={SerializeRecent()}",
-                $"checkUpdates={_checkUpdates}", $"firmwareChecks={_firmwareChecks}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingVinyl={_nowPlayingVinyl}",
+                $"checkUpdates={_checkUpdates}", $"firmwareChecks={_firmwareChecks}", $"instantUpdates={_instantUpdates}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingVinyl={_nowPlayingVinyl}",
                 $"miniPlayerAuto={_miniPlayerAuto}",
                 $"miniPlayers={SerializeMiniPlayerPlacements()}", $"trackToasts={_trackToasts}", $"artworkBackground={_artworkBackground}",
                 $"hiddenEqPresets={string.Join('\u0001', _hiddenEqPresets)}", $"hiddenPeqPresets={string.Join('\u0001', _hiddenPeqPresets)}",
@@ -124,6 +131,12 @@ sealed partial class WiimController
     }
 
     private void SetSuppress(bool value) { _suppress = value; SaveConfig(); SyncTrayCheckboxes(); }
+    private void SetVolumeKeys(bool value)
+    {
+        _volumeKeys = value;
+        SaveConfig();
+        UpdateVolumeKeyRegistration();
+    }
     private void SetStartMinimized(bool value) { _startMinimized = value; SaveConfig(); }
     internal bool NowPlayingVinyl
     {

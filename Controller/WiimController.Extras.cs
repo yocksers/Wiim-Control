@@ -120,9 +120,22 @@ sealed partial class WiimController
         string fromArt = string.Empty;
         if (Uri.TryCreate(status.ArtUrl, UriKind.Absolute, out var uri))
             fromArt = ServiceHosts.FirstOrDefault(s => uri.Host.Contains(s.Host, StringComparison.OrdinalIgnoreCase)).Name ?? string.Empty;
-        if (status.Mode == AlexaMode && fromArt.Length > 0) return $"Alexa · {fromArt}";
+        string fromVendor = VendorName(status.Vendor);
+        string service = fromVendor.Length > 0 ? fromVendor : fromArt;
+        if (status.Mode == AlexaMode && service.Length > 0) return $"Alexa · {service}";
         if (SourceName(status.Mode) is { Length: > 0 } source) return source;
-        return fromArt;
+        return service;
+    }
+
+    internal static string VendorName(string vendor)
+    {
+        string text = vendor.Trim();
+        if (text.Length == 0 || text.Length > 40 || text.Contains(':') || text.Contains('/') || !text.Any(char.IsLetter)) return string.Empty;
+        string key = text.Replace(" ", string.Empty).Replace("_", string.Empty);
+        if (ServiceHosts.FirstOrDefault(s => key.Contains(s.Host.Replace(".", string.Empty), StringComparison.OrdinalIgnoreCase) ||
+                                             key.Contains(s.Name.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase)).Name is { } known)
+            return known;
+        return text;
     }
 
     private static readonly Dictionary<string, string> ModelNames = new(StringComparer.OrdinalIgnoreCase)
@@ -150,6 +163,29 @@ sealed partial class WiimController
 
     internal static bool IsKnownProject(string project) => ModelNames.ContainsKey(project);
 
+    internal static string CleanMac(string mac)
+    {
+        string text = mac.Trim().ToUpperInvariant();
+        return text.Length == 0 || text.All(c => c is '0' or ':' or '-') ? string.Empty : text;
+    }
+
+    private static readonly string[] SilverProjects = ["WiiM_Amp", "WiiM_Ultra"];
+    private static readonly string[] WhiteProjects = ["WiiM_Sound", "WiiM_SoundLite", "WiiM_Sub"];
+
+    internal static string ColourName(string project, int? number, string text)
+    {
+        if (text.Trim().Length > 0) return text.Trim();
+        if (number is not int n) return string.Empty;
+        if (SilverProjects.Any(p => project.StartsWith(p, StringComparison.OrdinalIgnoreCase))) return n == 2 ? "Silver" : "Space grey";
+        if (WhiteProjects.Any(p => project.StartsWith(p, StringComparison.OrdinalIgnoreCase))) return n == 1 ? "White" : "Black";
+        return string.Empty;
+    }
+
+    private static readonly (string Field, string Part)[] ComponentFields = [("mcu_ver", "MCU"), ("dsp_ver", "DSP"), ("hdmi_ver", "HDMI")];
+
+    internal static List<(string Part, string Version)> ComponentVersions(Func<string, string> field) =>
+        ComponentFields.Select(c => (c.Part, Version: field(c.Field).Trim())).Where(c => c.Version.Length > 0 && c.Version != "0").ToList();
+
     internal static string ModelName(string project)
     {
         if (ModelNames.TryGetValue(project, out var name)) return name;
@@ -173,7 +209,9 @@ sealed partial class WiimController
                 firmware += $" ({released:d})";
             return new DeviceInfo(ModelName(Field("project")), firmware, Temperature("temperature_cpu"), Temperature("temperature_tmp102"),
                 ParseFirmwareUpdate(statusEx), Field("ssid"), Field("MAC"), Field("uuid"), Field("project"),
-                int.TryParse(Field("ModuleColorNumber"), out int color) ? color : null);
+                int.TryParse(Field("ModuleColorNumber"), out int color) ? color : null,
+                ColourName(Field("project"), int.TryParse(Field("ModuleColorNumber"), out int colour) ? colour : null, Field("ModuleColorString")),
+                ComponentVersions(Field), CleanMac(Field("ETH_MAC")), CleanMac(Field("BTMAC") is { Length: > 0 } bt ? bt : Field("BT_MAC")));
         }
         catch (JsonException) { return null; }
     }

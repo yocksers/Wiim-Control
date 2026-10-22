@@ -15,7 +15,8 @@ sealed partial class WiimController : IDisposable
     private IDisposable?    _shellWnd;
     private IOutputDeviceMonitor? _outputMonitor;
     private LinuxShortcuts? _linuxShortcuts;
-    private HashSet<string> _enabledOutputIds = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _disabledOutputIds = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string>? _legacyEnabledOutputIds;
     private string          _deviceIp = string.Empty;
     private string          _deviceUuid = string.Empty;
     private List<KnownDevice> _knownDevices = [];
@@ -35,6 +36,7 @@ sealed partial class WiimController : IDisposable
     private int              _uiScalePercent = 100;
     private bool             _linuxPortalShortcuts;
     private bool            _suppress    = true;
+    private bool            _volumeKeys  = true;
     private int             _volumeStep  = 5;
     private DateTime        _lastCmd     = DateTime.MinValue;
     private OsdCorner       _osdCorner       = OsdCorner.BottomRight;
@@ -82,12 +84,14 @@ sealed partial class WiimController : IDisposable
 
         if (OperatingSystem.IsWindows())
         {
-            try { _outputMonitor = new OutputDeviceMonitor(_enabledOutputIds); }
+            MigrateEnabledOutputs();
+            try { _outputMonitor = new OutputDeviceMonitor(_disabledOutputIds); }
             catch (Exception) { _outputMonitor = null; }
         }
 
         BuildTrayIcon();
         StartNowPlayingUpdates();
+        StartInstantUpdates();
         UpdateMediaSession();
         StartFirmwareChecks();
         StartUpdateChecks();
@@ -125,12 +129,13 @@ sealed partial class WiimController : IDisposable
     private void UpdateVolumeKeyRegistration()
     {
         if (OperatingSystem.IsWindows())
-            (_shellWnd as ShellHookWindow)?.SetVolumeKeysEnabled(_outputMonitor?.IsCurrentDeviceEnabled() ?? true);
+            (_shellWnd as ShellHookWindow)?.SetVolumeKeysEnabled(_volumeKeys && (_outputMonitor?.IsCurrentDeviceEnabled() ?? true));
     }
 
     private void HandleKeyCommand(string cmd)
     {
         if (_outputMonitor != null && !_outputMonitor.IsCurrentDeviceEnabled()) return;
+        if (!_volumeKeys && cmd is "vol++" or "vol--" or "mute") return;
         if (!Debounce()) return;
         RunPlayerCommand(cmd);
     }
@@ -160,6 +165,8 @@ sealed partial class WiimController : IDisposable
         _settingsWindow?.Close();
         CloseMiniPlayers();
         StopPcAudio();
+        try { StopInstantUpdatesAsync().Wait(TimeSpan.FromSeconds(2)); }
+        catch (AggregateException) { }
         _lifetime.Shutdown();
     }
 

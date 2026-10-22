@@ -6,8 +6,10 @@ namespace WiimControl;
 
 sealed partial class WiimController
 {
-    internal async Task<AmpSettings?> GetAmpSettingsAsync(string ip, string? screenInput = null)
+    internal async Task<AmpSettings?> GetAmpSettingsAsync(string ip, string? screenInput = null, bool experimental = false, bool formats = false)
     {
+        var experimentalTask = experimental ? GetExperimentalAsync(ip) : Task.FromResult<ExperimentalSettings?>(null);
+        var formatsTask = formats ? GetFormatsAsync(ip) : Task.FromResult(new List<string>());
         var statusEx = SendToDeviceAsync(ip, "getStatusEx");
         var led = SendToDeviceAsync(ip, "LED_SWITCH_GET");
         var volumeLight = SendToDeviceAsync(ip, "VOL_LED_SWITCH_GET");
@@ -20,7 +22,7 @@ sealed partial class WiimController
         var prompts = SendToDeviceAsync(ip, "getLowPriorityPromptDisable");
         var autoUpdate = SendToDeviceAsync(ip, "getMVRemoteAutoOTAEnable");
         await Task.WhenAll(statusEx, led, volumeLight, buttons, screen, screenUi, wallpapers, alarms,
-            network, prompts, autoUpdate).ConfigureAwait(false);
+            network, prompts, autoUpdate, experimentalTask, formatsTask).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
 
         return new AmpSettings(
@@ -52,7 +54,9 @@ sealed partial class WiimController
             null,
             null,
             PromptSounds: ParseInt(prompts.Result) is int promptsOff and (0 or 1) ? promptsOff == 0 : null,
-            AutoUpdate: ParseAutoUpdate(autoUpdate.Result));
+            AutoUpdate: ParseAutoUpdate(autoUpdate.Result),
+            Experimental: experimentalTask.Result,
+            Formats: formats ? formatsTask.Result : null);
     }
 
     internal async Task<InputsPage> GetInputsPageAsync(string ip)

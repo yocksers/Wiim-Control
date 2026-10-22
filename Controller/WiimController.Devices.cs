@@ -65,7 +65,9 @@ sealed partial class WiimController
     internal async Task<bool> RenameDeviceAsync(string ip, string name)
     {
         string hex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(name));
-        if (!CommandSucceeded(await SendToDeviceAsync(ip, $"setHexDeviceName:{hex}"))) return false;
+        if (!CommandSucceeded(await SendToDeviceAsync(ip, $"setHexDeviceName:{hex}")) &&
+            !(_multiroomCache is { } group && group.LeaderOf.TryGetValue(ip, out var leader) &&
+              await RenameGroupMemberAsync(leader, group.AddressOf(ip), name))) return false;
         int index = _knownDevices.FindIndex(k => k.Ip == ip);
         if (index >= 0) _knownDevices[index] = _knownDevices[index] with { Name = name };
         SaveConfig();
@@ -140,11 +142,13 @@ sealed partial class WiimController
         return added;
     }
 
+    internal bool IsOutputEnabled(string id) => !_disabledOutputIds.Contains(id);
+
     internal void SetOutputDeviceEnabled(string id, bool enabled)
     {
-        if (enabled) _enabledOutputIds.Add(id);
-        else         _enabledOutputIds.Remove(id);
-        _outputMonitor?.SetEnabledDevices(_enabledOutputIds);
+        if (enabled) _disabledOutputIds.Remove(id);
+        else         _disabledOutputIds.Add(id);
+        _outputMonitor?.SetDisabledDevices(_disabledOutputIds);
         SaveConfig();
         UpdateTrayStatus();
         UpdateVolumeKeyRegistration();
@@ -152,10 +156,19 @@ sealed partial class WiimController
 
     internal void ClearOutputDevices()
     {
-        _enabledOutputIds.Clear();
-        _outputMonitor?.SetEnabledDevices(_enabledOutputIds);
+        _disabledOutputIds.Clear();
+        _outputMonitor?.SetDisabledDevices(_disabledOutputIds);
         SaveConfig();
         UpdateTrayStatus();
         UpdateVolumeKeyRegistration();
+    }
+
+    private void MigrateEnabledOutputs()
+    {
+        if (_legacyEnabledOutputIds is not { Count: > 0 } enabled || !OperatingSystem.IsWindows()) return;
+        foreach (var (id, _) in OutputDeviceMonitor.GetActiveOutputDevices())
+            if (!enabled.Contains(id)) _disabledOutputIds.Add(id);
+        _legacyEnabledOutputIds = null;
+        SaveConfig();
     }
 }

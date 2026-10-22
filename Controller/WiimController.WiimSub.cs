@@ -40,10 +40,14 @@ sealed partial class WiimController
 
     internal bool? HighPassSupport(string ip) => _highPassSupport.TryGetValue(ip, out bool supported) ? supported : null;
 
-    internal static bool HasHighPassCapability(string? acousticCapability)
+    internal static bool HasHighPass(string? acousticCapability, string? mainProtect)
     {
-        try { return JsonNode.Parse(acousticCapability ?? string.Empty) is JsonObject root && root["MainProtect"] is JsonObject; }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) { return false; }
+        try
+        {
+            if (JsonNode.Parse(acousticCapability ?? string.Empty) is JsonObject root) return root["MainProtect"] is JsonObject;
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) { }
+        return ParseHighPassFilter(mainProtect) != null;
     }
 
     internal static bool HasSubwooferCapability(string? acousticCapability)
@@ -62,7 +66,7 @@ sealed partial class WiimController
         await Task.WhenAll(status, capability, pairing, highPass).ConfigureAwait(false);
         if (status.Result == null) return null;
         string? project = JsonField(status.Result, "project");
-        _highPassSupport[ip] = !IsWiimSub(project) && (ParseHighPassFilter(highPass.Result) != null || HasHighPassCapability(capability.Result));
+        _highPassSupport[ip] = !IsWiimSub(project) && HasHighPass(capability.Result, highPass.Result);
         if (IsWiimSub(project)) return _subwooferSupport[ip] = false;
         bool supported = HasSubwooferOutput(project) || HasSubwooferCapability(capability.Result) || ParsePairedSubs(pairing.Result) != null;
         return _subwooferSupport[ip] = supported;

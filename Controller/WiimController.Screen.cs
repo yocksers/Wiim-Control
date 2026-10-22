@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace WiimControl;
@@ -35,7 +36,8 @@ sealed partial class WiimController
         var configTask = SendToDeviceAsync(ip, "get_ui_config");
         var statusTask = SendToDeviceAsync(ip, "getPlayerStatus");
         var inputsTask = GetInputVisibilityAsync(ip);
-        await Task.WhenAll(configTask, statusTask, inputsTask).ConfigureAwait(false);
+        var vuMeterTask = SendToDeviceAsync(ip, "getVolumeAdjustUvmeterFlag");
+        await Task.WhenAll(configTask, statusTask, inputsTask, vuMeterTask).ConfigureAwait(false);
         try
         {
             if (JsonNode.Parse(configTask.Result ?? string.Empty) is not JsonObject root || root["view_type"] is not JsonObject viewType) return null;
@@ -75,13 +77,26 @@ sealed partial class WiimController
                         clockColors[clockView] = color;
 
             var extra = viewType["extra_info"] as JsonObject;
+            bool? hideVuMeterTitle = UiInt(supported?["hidden_uvmeter_title_support"]) is > 0
+                ? (UiInt(prefer?["hidden_uvmeter_title"]) ?? 0) != 0
+                : null;
             return new ScreenUi(inputKey, inputKey != null ? InputOfUiKey(inputKey) : null, Flag("clock_24_hours"), Flag("standby_turn_off_screen"),
                 startPage, views, inputKeys, playingKey,
                 UiInt(prefer?["screen_on"]) is int screenOn ? screenOn != 0 : null, Flag("hidden_sub_cover_view_icon"), clockColors,
-                UiInt(extra?["clock_view_bg"]), UiInt(extra?["clock_view_color"]));
+                UiInt(extra?["clock_view_bg"]), UiInt(extra?["clock_view_color"]), ParseVuMeterMode(vuMeterTask.Result), hideVuMeterTitle);
         }
         catch (Exception) { return null; }
     }
+
+    internal static int? ParseVuMeterMode(string? reply) =>
+        int.TryParse(reply?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int mode) && mode is 0 or 1 ? mode : null;
+
+    internal Task<bool> SetVuMeterTitleHiddenAsync(string ip, ScreenUi ui, bool hidden) => ui.InputKey == null
+        ? Task.FromResult(false)
+        : SetUiConfigAsync(ip, new JsonObject { ["input_config"] = PreferConfig(ui.InputKey, [("hidden_uvmeter_title", hidden ? 1 : 0)]) });
+
+    internal async Task<bool> SetVuMeterModeAsync(string ip, int mode) =>
+        CommandSucceeded(await SendToDeviceAsync(ip, $"setVolumeAdjustUvmeterFlag:{mode}").ConfigureAwait(false));
 
     private async Task<bool> SetUiConfigAsync(string ip, JsonObject payload) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"set_ui_config:{payload.ToJsonString()}").ConfigureAwait(false));

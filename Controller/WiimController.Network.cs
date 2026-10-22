@@ -20,8 +20,6 @@ sealed partial class WiimController
         return new NetworkSettings(band.Result, roam.Result, ipv6.Result, dns.Result, power.Result, staticIp.Result);
     }
 
-    private static bool? ParseFlag(string? reply) => reply?.Trim() switch { "1" => true, "0" => false, _ => null };
-
     internal static NetworkInfo? ParseNetworkInfo(string? statusEx, NetworkSettings settings)
     {
         if (statusEx == null) return null;
@@ -47,7 +45,8 @@ sealed partial class WiimController
             Number("RSSI"), Field("BSSID"), Number("wlanDataRate"), Number("wlanSnr"), Number("wlanFreq"), Number("WifiChannel"),
             ParseFlag(settings.Band), ParseFlag(settings.Roam), ParseFlag(settings.Ipv6),
             dnsKnown ? (dns == "0.0.0.0" ? string.Empty : dns) : null, standby,
-            ParseIpConfig(settings.StaticIp, isWired, isWired ? wired : wireless));
+            ParseIpConfig(settings.StaticIp, isWired, isWired ? wired : wireless),
+            ParseFlag(Field("internet")), Number("wlanNoise") is int noise and < 0 ? noise : null, CleanMac(Field("MAC")));
     }
 
     internal static string SignalName(int rssi) => rssi switch

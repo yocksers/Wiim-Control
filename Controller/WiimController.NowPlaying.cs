@@ -73,7 +73,8 @@ sealed partial class WiimController
             Math.Max(0, duration),
             Math.Max(0, bitRate),
             bluetooth,
-            sleepTask.Result)).ConfigureAwait(false));
+            sleepTask.Result,
+            Vendor: Clean(JsonField(status, "vendor")) ?? string.Empty)).ConfigureAwait(false));
     }
 
     internal async Task<Dictionary<string, DeviceStatus?>> GetAllDeviceStatusesAsync()
@@ -310,7 +311,7 @@ sealed partial class WiimController
     private static string? HexText(string? hex)
     {
         if (string.IsNullOrEmpty(hex) || hex.Length % 2 != 0 || !hex.All(Uri.IsHexDigit)) return null;
-        try { return Encoding.UTF8.GetString(Convert.FromHexString(hex)); }
+        try { return DeviceText(Convert.FromHexString(hex)); }
         catch (FormatException) { return null; }
     }
 }

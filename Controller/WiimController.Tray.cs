@@ -221,7 +221,7 @@ sealed partial class WiimController
 
     private string OutputStatusText() =>
         _outputMonitor is null               ? "Output: monitor unavailable"                        :
-        _enabledOutputIds.Count == 0         ? "Output: all devices allowed"                        :
+        _disabledOutputIds.Count == 0        ? "Output: all devices allowed"                        :
         _outputMonitor.IsEnabledOutputActive ? "Output: active for current device"                  :
                                                 "Output: inactive — current device not selected";
 
@@ -305,7 +305,7 @@ sealed partial class WiimController
         if (_mnuOutputs == null) return;
         _mnuOutputs.Items.Clear();
         _mnuOutputs.Add(Disabled("Check outputs the Wiim should take over:"));
-        _mnuOutputs.Add(Disabled("(none checked = allow all outputs)"));
+        _mnuOutputs.Add(Disabled("(none checked = the volume keys are left alone)"));
         _mnuOutputs.Add(new NativeMenuItemSeparator());
 
         var devices = ActiveOutputDevices();
@@ -318,11 +318,11 @@ sealed partial class WiimController
         foreach (var (id, name) in devices)
         {
             string deviceId = id;
-            _mnuOutputs.Add(Check(name, _enabledOutputIds.Contains(id), on => SetOutputDeviceEnabled(deviceId, on)));
+            _mnuOutputs.Add(Check(name, IsOutputEnabled(id), on => SetOutputDeviceEnabled(deviceId, on)));
         }
 
         _mnuOutputs.Add(new NativeMenuItemSeparator());
-        _mnuOutputs.Add(MenuAction("Allow all outputs (clear selection)", () =>
+        _mnuOutputs.Add(MenuAction("Allow all outputs", () =>
         {
             ClearOutputDevices();
             BuildOutputDevicesMenu();

@@ -20,9 +20,7 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
 
     private readonly IMMDeviceEnumerator _enumerator;
     private volatile bool _outputActive;
-    private HashSet<string> _enabledDeviceIds;
-
-    private bool NoRestriction => _enabledDeviceIds.Count == 0;
+    private HashSet<string> _disabledDeviceIds;
 
     public bool IsEnabledOutputActive => _outputActive;
 
@@ -31,21 +29,19 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
     public event Action<bool>? StatusChanged;
     public event Action? DefaultDeviceChanged;
 
-    public OutputDeviceMonitor(IEnumerable<string>? enabledDeviceIds = null)
+    public OutputDeviceMonitor(IEnumerable<string>? disabledDeviceIds = null)
     {
         var type = Type.GetTypeFromCLSID(CLSID_MMDeviceEnumerator)
             ?? throw new InvalidOperationException("MMDeviceEnumerator COM class not found.");
         _enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(type)!;
-        _enabledDeviceIds = enabledDeviceIds != null
-            ? new HashSet<string>(enabledDeviceIds, StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _disabledDeviceIds = new HashSet<string>(disabledDeviceIds ?? [], StringComparer.OrdinalIgnoreCase);
         _outputActive = CheckDefaultDevice();
         _enumerator.RegisterEndpointNotificationCallback(this);
     }
 
-    public void SetEnabledDevices(IEnumerable<string> deviceIds)
+    public void SetDisabledDevices(IEnumerable<string> deviceIds)
     {
-        _enabledDeviceIds = new HashSet<string>(deviceIds, StringComparer.OrdinalIgnoreCase);
+        _disabledDeviceIds = new HashSet<string>(deviceIds, StringComparer.OrdinalIgnoreCase);
         var active = CheckDefaultDevice();
         if (active != _outputActive)
         {
@@ -99,7 +95,7 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
             if (_enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia, out var device) != 0
                 || device is null) return false;
             if (device.GetId(out var id) != 0) return false;
-            return NoRestriction || _enabledDeviceIds.Contains(id);
+            return !_disabledDeviceIds.Contains(id);
         }
         catch { return false; }
     }

@@ -14,7 +14,7 @@ sealed partial class WiimController
     {
         var statusTask = SendToDeviceAsync(ip, "getStatusEx");
         var presetTask = SendToDeviceAsync(ip, "getPresetInfo");
-        var keysTask = GetPresetRoutineIdsAsync(ip);
+        var keysTask = GetPresetKeyListAsync(ip);
         var routinesTask = GetRoutinesAsync(ip);
         await Task.WhenAll(statusTask, presetTask, keysTask, routinesTask).ConfigureAwait(false);
         if (statusTask.Result == null && presetTask.Result == null) return null;
@@ -35,17 +35,30 @@ sealed partial class WiimController
         }
         catch (JsonException) { }
 
-        foreach (var (number, routineId) in keysTask.Result)
+        string keyList = keysTask.Result;
+        foreach (Match m in KeyRoutine.Matches(keyList))
         {
-            if (number < 1 || presets.Any(p => p.Number == number)) continue;
+            int number = int.Parse(m.Groups[1].Value);
+            string routineId = m.Groups[2].Value.Trim();
+            if (number < 1 || routineId.Equals("Empty", StringComparison.OrdinalIgnoreCase) || presets.Any(p => p.Number == number)) continue;
             var routine = routinesTask.Result.GetValueOrDefault(routineId);
             presets.Add(new PresetInfo(number, routine.Name ?? $"Routine {number}", "Routine", string.Empty, routine.Summary ?? string.Empty, true));
+        }
+        foreach (Match m in KeyNumber.Matches(keyList))
+        {
+            int number = int.Parse(m.Groups[1].Value);
+            string? content = KeyContent(keyList, number);
+            if (number < 1 || !IsMusicKey(content) || presets.Any(p => p.Number == number)) continue;
+            presets.Add(new PresetInfo(number, Clean(KeyValue(content, "Name")) ?? $"Preset {number}", Clean(KeyValue(content, "Source")) ?? string.Empty,
+                Clean(KeyValue(content, "PicUrl")) ?? string.Empty));
         }
         presets.Sort((a, b) => a.Number.CompareTo(b.Number));
         return new PresetList(Math.Max(slots, presets.Count == 0 ? 0 : presets.Max(p => p.Number)), presets);
     }
 
-    private async Task<Dictionary<int, string>> GetPresetRoutineIdsAsync(string ip)
+    private static readonly Regex KeyNumber = new(@"<Key(\d+)>", RegexOptions.Compiled);
+
+    private async Task<string> GetPresetKeyListAsync(string ip)
     {
         const string body =
             "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
@@ -62,14 +75,12 @@ sealed partial class WiimController
                 request.Headers.Add("SOAPACTION", "\"urn:schemas-wiimu-com:service:PlayQueue:1#GetKeyMapping\"");
                 using var response = await _http.SendAsync(request).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode) continue;
-                string xml = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-                return KeyRoutine.Matches(xml)
-                    .Where(m => !m.Groups[2].Value.Equals("Empty", StringComparison.OrdinalIgnoreCase))
-                    .ToDictionary(m => int.Parse(m.Groups[1].Value), m => m.Groups[2].Value.Trim());
+                var envelope = System.Xml.Linq.XDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+                return envelope.Descendants().FirstOrDefault(e => e.Name.LocalName == "QueueContext")?.Value ?? string.Empty;
             }
             catch (Exception) { }
         }
-        return [];
+        return string.Empty;
     }
 
     private async Task<Dictionary<string, (string? Name, string? Summary)>> GetRoutinesAsync(string ip)

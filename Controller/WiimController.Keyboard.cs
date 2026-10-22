@@ -52,9 +52,9 @@ sealed partial class WiimController
             var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
             string? cmd = ks.vkCode switch
             {
-                VK_VOLUME_UP   => "vol++",
-                VK_VOLUME_DOWN => "vol--",
-                VK_VOLUME_MUTE => "mute",
+                VK_VOLUME_UP   when _volumeKeys => "vol++",
+                VK_VOLUME_DOWN when _volumeKeys => "vol--",
+                VK_VOLUME_MUTE when _volumeKeys => "mute",
                 VK_MEDIA_PLAY_PAUSE when _forwardMediaKeys => "playpause",
                 VK_MEDIA_NEXT_TRACK  when _forwardMediaKeys => "next",
                 VK_MEDIA_PREV_TRACK  when _forwardMediaKeys => "prev",
