@@ -9,11 +9,11 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private static readonly IBrush SidebarOverArtwork = new SolidColorBrush(Color.Parse("#A0202020"));
+        private static readonly IBrush SidebarOverArtwork = Palette.SidebarGlass;
 
         private readonly Image _backdropA = BackdropImage();
         private readonly Image _backdropB = BackdropImage();
-        private readonly Border _backdropScrim = new() { Background = new SolidColorBrush(Color.Parse("#A4181818")), IsHitTestVisible = false };
+        private readonly Border _backdropScrim = new() { Background = Palette.WindowScrim, IsHitTestVisible = false };
         private Border? _sidebar;
         private Button? _showMenuButton;
         private bool _backdropOnA;

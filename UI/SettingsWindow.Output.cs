@@ -19,7 +19,7 @@ sealed partial class WiimController
                 int active = state.Choices.FindIndex(c => c.Mode == state.ActiveMode);
                 if (active < 0)
                 {
-                    combo.Items.Insert(0, ComboItem(string.Empty, state.ActiveMode.Length > 0 ? "Other output" : "Unknown"));
+                    combo.Items.Insert(0, ComboItem(string.Empty, UnlistedOutputName(state.ActiveMode)));
                     active = 0;
                 }
                 combo.SelectedIndex = active;

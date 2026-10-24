@@ -1,9 +1,12 @@
 using Avalonia;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Rendering.Composition;
+using Avalonia.Rendering.Composition.Animations;
 using Avalonia.Threading;
 
 namespace WiimControl;
@@ -22,8 +25,8 @@ sealed partial class WiimController
         private const double BackdropOpacity = 0.45;
 
         private readonly Grid _npOverlay = new() { Background = new SolidColorBrush(Color.Parse("#0E0E0E")), IsVisible = false };
-        private readonly Image _npBackdrop = new() { Stretch = Stretch.UniformToFill, Opacity = BackdropOpacity, Effect = new BlurEffect { Radius = 60 } };
-        private readonly Image _npBackdropOld = new() { Stretch = Stretch.UniformToFill, Opacity = 0, Effect = new BlurEffect { Radius = 60 } };
+        private readonly Image _npBackdrop = new() { Stretch = Stretch.UniformToFill, Opacity = BackdropOpacity };
+        private readonly Image _npBackdropOld = new() { Stretch = Stretch.UniformToFill, Opacity = 0 };
         private readonly Image _npCover = new() { Stretch = Stretch.UniformToFill };
         private readonly Image _npCoverOld = new() { Stretch = Stretch.UniformToFill, Opacity = 0, IsHitTestVisible = false };
         private readonly DispatcherTimer _npFadeTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
@@ -36,7 +39,13 @@ sealed partial class WiimController
         };
         private readonly Ellipse _npLabel = new() { Width = LabelSize, Height = LabelSize, Fill = Palette.Input };
         private readonly Ellipse _npLabelOld = new() { Width = LabelSize, Height = LabelSize, Opacity = 0, IsHitTestVisible = false };
-        private readonly RotateTransform _npSpin = new();
+        private readonly Panel _npLabelSpin = new()
+        {
+            Width = LabelSize, Height = LabelSize, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+        };
+        private bool _npSpinning;
+        private float _npSpinAngle;
+        private DateTime _npSpinStart;
         private readonly Panel _npDisc = new() { Width = DiscSize, Height = DiscSize };
         private readonly Ellipse _npSheen = new() { Width = DiscSize, Height = DiscSize, IsHitTestVisible = false };
         private readonly Canvas _npStage = new() { Height = StageCover };
@@ -48,8 +57,6 @@ sealed partial class WiimController
         private readonly Grid _npCoverContent = new();
         private readonly TextBlock _npDevice = new() { Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center };
         private readonly Button _npStyleButton = new();
-        private readonly DispatcherTimer _npSpinTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
-        private DateTime _npLastTick;
         private string? _npIp;
         private NowPlayingControls? _npControls;
         private VolumeControls? _npVolume;
@@ -107,15 +114,12 @@ sealed partial class WiimController
             _npOverlay.Children.Add(stage);
             _npOverlay.Children.Add(topBar);
 
-            _npSpinTimer.Tick += (_, _) => SpinDisc();
             _npFadeTimer.Tick += (_, _) => StepArtFade();
             return _npOverlay;
         }
 
         private void BuildDisc()
         {
-            _npDisc.RenderTransform = _npSpin;
-            _npDisc.RenderTransformOrigin = RelativePoint.Center;
             var vinyl = new RadialGradientBrush
             {
                 GradientStops =
@@ -133,12 +137,9 @@ sealed partial class WiimController
                     Width = d, Height = d, Stroke = new SolidColorBrush(Color.FromArgb((byte)(d % 27 < 9 ? 34 : 18), 255, 255, 255)),
                     StrokeThickness = 1, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
                 });
-            _npLabel.HorizontalAlignment = HorizontalAlignment.Center;
-            _npLabel.VerticalAlignment = VerticalAlignment.Center;
-            _npDisc.Children.Add(_npLabel);
-            _npLabelOld.HorizontalAlignment = HorizontalAlignment.Center;
-            _npLabelOld.VerticalAlignment = VerticalAlignment.Center;
-            _npDisc.Children.Add(_npLabelOld);
+            _npLabelSpin.Children.Add(_npLabel);
+            _npLabelSpin.Children.Add(_npLabelOld);
+            _npDisc.Children.Add(_npLabelSpin);
             _npDisc.Children.Add(new Ellipse
             {
                 Width = 14, Height = 14, Fill = new SolidColorBrush(Color.Parse("#0E0E0E")),
@@ -196,6 +197,10 @@ sealed partial class WiimController
             var playing = new PlayingIndicator { Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
             var detailRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0), Children = { playing, detail } };
             DockPanel.SetDock(playing, Dock.Left);
+            playing.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty) UpdateDiscSpin();
+            };
             var positionRow = BuildPositionRow(ip, out var position, out var elapsed, out var total);
             elapsed.Foreground = total.Foreground = Brushes.White;
             positionRow.Margin = new Thickness(0, 14, 0, 0);
@@ -273,6 +278,7 @@ sealed partial class WiimController
             _npOverlay.IsVisible = true;
             ApplyNowPlaying(ip);
             ApplyVolume(ip);
+            UpdateDiscSpin();
         }
 
         private async Task ShowSharpArtworkAsync(ArtworkView art, string url, Bitmap thumbnail, bool fade)
@@ -320,10 +326,10 @@ sealed partial class WiimController
         {
             SetNowPlayingFullScreen(false);
             _npOverlay.IsVisible = false;
-            _npSpinTimer.Stop();
             _npIp = null;
             _npControls = null;
             _npVolume = null;
+            UpdateDiscSpin();
             ClearNowPlayingControls();
             ShowNowPlayingArt(null, fade: false);
         }
@@ -337,10 +343,12 @@ sealed partial class WiimController
         {
             var previous = _npCover.IsVisible ? _npCover.Source : null;
             if (ReferenceEquals(previous, bitmap) && bitmap != null) return;
-            _npCoverOld.Source = _npBackdropOld.Source = previous;
+            _npCoverOld.Source = previous;
+            ReleaseNowPlayingBackdrop();
+            _npBackdropOld.Source = _npBackdrop.Source;
             _npLabelOld.Fill = _npLabel.Fill;
             _npCover.Source = bitmap;
-            _npBackdrop.Source = bitmap;
+            _npBackdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap) : null;
             _npCover.IsVisible = bitmap != null;
             _npCoverPlaceholder.IsVisible = bitmap == null;
             _npLabel.Fill = bitmap != null ? new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill } : Palette.Input;
@@ -375,8 +383,16 @@ sealed partial class WiimController
             _npFadeTimer.Stop();
             _npCoverOld.Opacity = _npLabelOld.Opacity = _npBackdropOld.Opacity = 0;
             _npCover.Opacity = 1;
-            _npCoverOld.Source = _npBackdropOld.Source = null;
+            _npCoverOld.Source = null;
+            ReleaseNowPlayingBackdrop();
             _npLabelOld.Fill = null;
+        }
+
+        private void ReleaseNowPlayingBackdrop()
+        {
+            if (_npBackdropOld.Source is not Bitmap old) return;
+            _npBackdropOld.Source = null;
+            _owner.DisposeWhenUnused([old]);
         }
 
         private void ApplyNowPlayingStyle()
@@ -386,23 +402,27 @@ sealed partial class WiimController
             _npStage.Width = vinyl ? DiscLeft + DiscSize : StageCover;
             _npStyleButton.Content = vinyl ? "Cover only" : "Vinyl";
             ToolTip.SetTip(_npStyleButton, vinyl ? "Show only the cover" : "Show the cover with a spinning record");
-            _npLastTick = DateTime.UtcNow;
-            if (vinyl) _npSpinTimer.Start();
-            else _npSpinTimer.Stop();
+            UpdateDiscSpin();
         }
 
-        private void SpinDisc()
+        private void UpdateDiscSpin()
         {
-            var now = DateTime.UtcNow;
-            double seconds = (now - _npLastTick).TotalSeconds;
-            _npLastTick = now;
-            if (_npIp == null || !_npOverlay.IsVisible)
-            {
-                _npSpinTimer.Stop();
-                return;
-            }
-            if (_npControls?.Playing.IsVisible != true) return;
-            _npSpin.Angle = (_npSpin.Angle + DegreesPerSecond * Math.Min(seconds, 0.2)) % 360;
+            bool spin = _npOverlay.IsVisible && _owner.NowPlayingVinyl && _npControls?.Playing.IsVisible == true;
+            if (spin == _npSpinning || ElementComposition.GetElementVisual(_npLabelSpin) is not { } visual) return;
+            if (_npSpinning)
+                _npSpinAngle = (float)((_npSpinAngle + (DateTime.UtcNow - _npSpinStart).TotalSeconds * DegreesPerSecond * Math.PI / 180) % (2 * Math.PI));
+            _npSpinning = spin;
+            visual.CenterPoint = new Vector3D(LabelSize / 2, LabelSize / 2, 0);
+            visual.StopAnimation("RotationAngle");
+            visual.RotationAngle = _npSpinAngle;
+            if (!spin) return;
+            _npSpinStart = DateTime.UtcNow;
+            var animation = visual.Compositor.CreateScalarKeyFrameAnimation();
+            animation.InsertKeyFrame(0, _npSpinAngle, new LinearEasing());
+            animation.InsertKeyFrame(1, _npSpinAngle + MathF.Tau, new LinearEasing());
+            animation.Duration = TimeSpan.FromSeconds(360 / DegreesPerSecond);
+            animation.IterationBehavior = AnimationIterationBehavior.Forever;
+            visual.StartAnimation("RotationAngle", animation);
         }
     }
 }

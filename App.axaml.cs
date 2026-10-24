@@ -9,7 +9,11 @@ public partial class App : Application
 {
     private WiimController? _controller;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        ThemeEngine.Register(Resources);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

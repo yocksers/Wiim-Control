@@ -13,9 +13,9 @@ sealed class PeqGraph : Control
     private const double SampleRate = 48000;
     private const double Left = 44, Right = 12, Top = 14, Bottom = 26, PointRadius = 11;
     private const double FullMin = 10, FullMax = 24000, MinZoomRatio = 3, ZoomStep = 0.8, PanStep = 0.1;
-    private static readonly IPen GridPen = new Pen(new SolidColorBrush(Color.Parse("#3A3A3A")), 1);
-    private static readonly IPen MinorPen = new Pen(new SolidColorBrush(Color.Parse("#2F2F2F")), 1);
-    private static readonly IPen ZeroPen = new Pen(new SolidColorBrush(Color.Parse("#5A5A5A")), 1);
+    private static readonly IPen GridPen = new Pen(Palette.Input, 1);
+    private static readonly IPen MinorPen = new Pen(Palette.DropDown, 1);
+    private static readonly IPen ZeroPen = new Pen(Palette.GraphZero, 1);
     private static readonly IPen CurvePen = new Pen(Palette.Text, 2);
     private static readonly IPen CurveDimPen = new Pen(Palette.TextDim, 2);
     private static readonly IPen BandPen = new Pen(Palette.AccentHover, 1.5);

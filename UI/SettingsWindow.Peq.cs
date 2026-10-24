@@ -17,7 +17,7 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private static readonly IBrush SelectedRowBrush = new SolidColorBrush(Color.Parse("#2C2C55"));
+        private static readonly IBrush SelectedRowBrush = Palette.NavSelectedHover;
         private static readonly (PeqFilter Filter, string Label)[] PeqFilterLabels =
             [(PeqFilter.Off, "Off"), (PeqFilter.LowShelf, "Low shelf"), (PeqFilter.Peak, "Peak"), (PeqFilter.HighShelf, "High shelf")];
 

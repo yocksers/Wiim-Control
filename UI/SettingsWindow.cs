@@ -200,6 +200,12 @@ sealed partial class WiimController
             Closing += async (_, e) =>
             {
                 if (_closeFlushed) return;
+                if (_npIp != null && e.CloseReason == WindowCloseReason.WindowClosing && !e.IsProgrammatic)
+                {
+                    e.Cancel = true;
+                    HideNowPlayingView();
+                    return;
+                }
                 e.Cancel = true;
                 if (_closeFlushing) return;
                 _closeFlushing = true;
@@ -216,7 +222,6 @@ sealed partial class WiimController
                 _volumeSendTimer.Stop();
                 _volumePollTimer.Stop();
                 _positionTimer.Stop();
-                _npSpinTimer.Stop();
                 _sleepClock.Stop();
                 ClearLibraryRows();
                 ClearRadioResults();
@@ -381,6 +386,7 @@ sealed partial class WiimController
             var queuePage = BuildQueuePage();
             var eqPage = BuildEqPage();
             var volumePage = BuildVolumePage();
+            var themesPage = BuildThemesPage();
             var outputPage = BuildOutputPage();
             var inputsPage = BuildInputsPage();
             var subwooferPage = BuildSubwooferPage();
@@ -438,7 +444,8 @@ sealed partial class WiimController
             sidebarItems.Children.Add(general);
             sidebarItems.Children.Add(SectionLabel("Wiim Control"));
             sidebarItems.Children.Add(NavGroup(
-                Nav("Volume keys", Icons.Volume, volumePage), Nav("Hotkeys", Icons.Keyboard, hotkeysPage), Nav("General", Icons.Settings, generalPage)));
+                Nav("Volume keys", Icons.Volume, volumePage), Nav("Hotkeys", Icons.Keyboard, hotkeysPage), Nav("General", Icons.Settings, generalPage),
+                Nav("Themes", Icons.Palette, themesPage)));
 
             var coffee = new StackPanel
             {
@@ -848,7 +855,7 @@ sealed partial class WiimController
 
         private Button CastButton(string ip)
         {
-            var (cast, castIcon) = IconPill(Icons.Cast, null);
+            var (cast, castIcon) = IconPill(Icons.ComputerSound, null);
             cast.Click += async (_, _) =>
             {
                 cast.IsEnabled = false;
@@ -864,11 +871,10 @@ sealed partial class WiimController
         {
             if (!_castButtons.TryGetValue(ip, out var c)) return;
             bool on = _owner.IsPlayingPcAudio(ip);
-            c.Icon.Data = on ? Icons.CastConnected : Icons.Cast;
             c.Button.Classes.Set("accent", on);
             ToolTip.SetTip(c.Button, on
-                ? "Stop casting audio from this computer"
-                : "Chromecast audio from this computer");
+                ? "Stop playing this computer's sound on the device"
+                : "Stream audio from this computer over network to the device");
         }
 
         private async Task SwitchInputAsync(string ip, string input)
@@ -991,7 +997,7 @@ sealed partial class WiimController
             _volumeSending.Add(ip);
             try
             {
-                if (await _owner.SetDeviceVolumeAsync(ip, volume) && _volumes.TryGetValue(ip, out var current))
+                if (await _owner.SetVolumeAsync(ip, volume) && _volumes.TryGetValue(ip, out var current))
                     _volumes[ip] = current with { Volume = volume };
             }
             finally
@@ -1007,7 +1013,7 @@ sealed partial class WiimController
             if (!_volumes.TryGetValue(ip, out var current)) return;
             bool muted = !current.Muted;
             _volumeTouched[ip] = DateTime.UtcNow;
-            if (!await _owner.SetDeviceMuteAsync(ip, muted)) return;
+            if (!await _owner.SetMuteAsync(ip, muted)) return;
             _volumes[ip] = (_volumes.TryGetValue(ip, out var latest) ? latest : current) with { Muted = muted };
             _volumeTouched[ip] = DateTime.UtcNow;
             ApplyVolume(ip);
@@ -1041,7 +1047,7 @@ sealed partial class WiimController
             {
                 var started = DateTime.UtcNow;
                 var ips = _owner._knownDevices.Select(d => d.Ip).Distinct().ToList();
-                var volumes = await Task.WhenAll(ips.Select(ip => _owner.GetDeviceVolumeAsync(ip)));
+                var volumes = await Task.WhenAll(ips.Select(ip => _owner.GetVolumeAsync(ip)));
                 for (int i = 0; i < ips.Count; i++)
                 {
                     string ip = ips[i];

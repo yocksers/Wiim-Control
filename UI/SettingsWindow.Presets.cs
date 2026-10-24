@@ -109,7 +109,7 @@ sealed partial class WiimController
                 }
             };
             if (preset is { Source.Length: > 0 })
-                text.Children.Add(new TextBlock { Text = preset.Source, Classes = { "muted", "small" }, TextTrimming = TextTrimming.CharacterEllipsis });
+                text.Children.Add(new TextBlock { Text = SourceLabel(preset.Source), Classes = { "muted", "small" }, TextTrimming = TextTrimming.CharacterEllipsis });
             if (preset is { Detail.Length: > 0 })
                 text.Children.Add(new TextBlock
                 {

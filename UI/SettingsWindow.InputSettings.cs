@@ -46,6 +46,13 @@ sealed partial class WiimController
                 rows.Add(row);
             }
 
+            if (s.ReduceNoise is bool reduceNoise && ReduceNoiseInputs(inputs?.Where(i => i.Shown).Select(i => i.Mode)) is { } noisyInputs)
+            {
+                var row = InputToggle($"Reduce noise from {noisyInputs}", reduceNoise, on => _owner.SetReduceNoiseAsync(ip, on));
+                ToolTip.SetTip(row, $"Adds a small buffer to the {noisyInputs} input to remove noise. The sound can lag the picture by about 10 ms more.");
+                rows.Add(row);
+            }
+
             if (s.LineInRate is int lineRate && s.LineInBits is int lineBits && (inputs == null || inputs.Any(i => i.Mode == "line-in")))
             {
                 int[] rates = [44100, 48000, 96000, 192000];

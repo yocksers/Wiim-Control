@@ -21,7 +21,7 @@ sealed partial class WiimController
         private const double CornerGripSize = 12;
 
         private readonly WiimController _owner;
-        private readonly Image _backdrop = new() { Stretch = Stretch.UniformToFill, Opacity = 0.45, Effect = new BlurEffect { Radius = 40 } };
+        private readonly Image _backdrop = new() { Stretch = Stretch.UniformToFill, Opacity = 0.45 };
         private readonly Image _cover = new() { Stretch = Stretch.UniformToFill, IsVisible = false };
         private readonly PathIcon _placeholder = new()
         {
@@ -34,7 +34,7 @@ sealed partial class WiimController
         };
         private readonly Grid _topBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10), Opacity = 0,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10), Opacity = 0,
             Transitions = new Avalonia.Animation.Transitions
             {
                 new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(150) }
@@ -95,6 +95,15 @@ sealed partial class WiimController
         private DateTime _fetched;
         private string _artUrl = string.Empty;
         private bool _refreshing;
+        private bool _pinned;
+        private readonly PathIcon _pinIcon = new() { Width = 13, Height = 13 };
+        private readonly Button _pin = new()
+        {
+            Width = 26, Height = 26, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(0, 0, 6, 0),
+            Background = new SolidColorBrush(Color.Parse("#B0000000")),
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center
+        };
+        private readonly List<Border> _grips = [];
 
         internal string Ip { get; }
 
@@ -116,6 +125,7 @@ sealed partial class WiimController
             Height = Math.Max(size.Height, MinHeight);
             WindowStartupLocation = WindowStartupLocation.Manual;
             Position = remembered && IsOnScreen(placement.Position) ? placement.Position : DefaultPosition(slot);
+            _pinned = remembered && placement.Pinned;
 
             (_shuffle, _shuffleIcon) = ControlButton(Icons.Shuffle, 18);
             (_repeat, _repeatIcon) = ControlButton(Icons.Repeat, 18);
@@ -178,7 +188,7 @@ sealed partial class WiimController
             };
             Closing += (_, _) =>
             {
-                if (_pendingVolume is { } volume) _ = _owner.SetDeviceVolumeAsync(Ip, volume);
+                if (_pendingVolume is { } volume) _ = _owner.SetVolumeAsync(Ip, volume);
                 _pendingVolume = null;
                 _owner.SaveConfig();
             };
@@ -187,6 +197,7 @@ sealed partial class WiimController
                 _pollTimer.Stop();
                 _volumeSendTimer.Stop();
                 _clockTimer.Stop();
+                ReleaseBackdrop();
                 ShowArtwork(null);
             };
         }
@@ -273,8 +284,13 @@ sealed partial class WiimController
                 HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0),
                 Child = _deviceName
             };
+            _pin.Content = _pinIcon;
+            _pin.Classes.Add("icon");
+            _pin.Click += (_, _) => SetPinned(!_pinned, save: true);
             _topBar.Children.Add(name);
-            Grid.SetColumn(close, 1);
+            Grid.SetColumn(_pin, 1);
+            _topBar.Children.Add(_pin);
+            Grid.SetColumn(close, 2);
             _topBar.Children.Add(close);
 
             var root = new Grid
@@ -292,12 +308,25 @@ sealed partial class WiimController
             root.PropertyChanged += (_, e) => { if (e.Property == IsPointerOverProperty) _topBar.Opacity = root.IsPointerOver ? 1 : 0; };
             root.PointerPressed += (_, e) =>
             {
-                if (e.Handled || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+                if (e.Handled || _pinned || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
                 e.Handled = true;
                 BeginMoveDrag(e);
             };
             AddResizeGrips(root);
+            SetPinned(_pinned, save: false);
             return root;
+        }
+
+        private void SetPinned(bool pinned, bool save)
+        {
+            _pinned = pinned;
+            _pinIcon.Data = pinned ? Icons.Pin : Icons.PinOutline;
+            _pinIcon.Foreground = pinned ? Palette.AccentText : Brushes.White;
+            ToolTip.SetTip(_pin, pinned ? "Pinned: can't be moved or resized. Click to unpin" : "Pin in place");
+            foreach (var grip in _grips) grip.IsHitTestVisible = !pinned;
+            if (!save) return;
+            _owner._miniPlayerPlacements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height), pinned);
+            _owner.SaveConfig();
         }
 
         private void AddResizeGrips(Grid root)
@@ -326,6 +355,7 @@ sealed partial class WiimController
                     e.Handled = true;
                     BeginResizeDrag(edge, e);
                 };
+                _grips.Add(grip);
                 root.Children.Add(grip);
             }
         }
@@ -338,6 +368,7 @@ sealed partial class WiimController
 
         internal void PlaceAtDefault(int slot)
         {
+            SetPinned(false, save: false);
             WindowState = WindowState.Normal;
             Width = Height = Math.Max(DefaultSize * _owner.UiScale, MinWidth);
             Position = DefaultPosition(slot);
@@ -365,7 +396,7 @@ sealed partial class WiimController
         private void RememberPlacement()
         {
             if (WindowState != WindowState.Normal || !IsVisible) return;
-            _owner._miniPlayerPlacements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height));
+            _owner._miniPlayerPlacements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height), _pinned);
         }
 
         internal void RefreshNow() => _ = RefreshAsync();
@@ -381,7 +412,7 @@ sealed partial class WiimController
                     await _owner.GetMultiroomSnapshotAsync();
                 string target = _owner.PlaybackTargetOf(ip);
                 var statusTask = _owner.GetDeviceStatusAsync(target);
-                var volumeTask = target == ip ? null : _owner.GetDeviceVolumeAsync(ip);
+                var volumeTask = target == ip ? null : _owner.GetVolumeAsync(ip);
                 var status = await statusTask;
                 var volume = volumeTask != null ? await volumeTask : status?.Volume;
                 if (ip != Ip || !IsVisible) return;
@@ -480,7 +511,7 @@ sealed partial class WiimController
             }
             _pendingVolume = null;
             _volumeSending = true;
-            try { await _owner.SetDeviceVolumeAsync(Ip, volume); }
+            try { await _owner.SetVolumeAsync(Ip, volume); }
             finally
             {
                 _volumeSending = false;
@@ -494,7 +525,7 @@ sealed partial class WiimController
             if (_muted is not { } muted) return;
             ShowMuted(!muted);
             _volumeTouched = DateTime.UtcNow;
-            await _owner.SetDeviceMuteAsync(Ip, !muted);
+            await _owner.SetMuteAsync(Ip, !muted);
             _volumeTouched = DateTime.UtcNow;
         }
 
@@ -542,9 +573,17 @@ sealed partial class WiimController
         private void ShowArtwork(Bitmap? bitmap)
         {
             _cover.Source = bitmap;
-            _backdrop.Source = bitmap;
+            ReleaseBackdrop();
+            _backdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap, WiimController.MiniPlayerBackdropBlur) : null;
             _cover.IsVisible = bitmap != null;
             _placeholder.IsVisible = bitmap == null;
+        }
+
+        private void ReleaseBackdrop()
+        {
+            if (_backdrop.Source is not Bitmap old) return;
+            _backdrop.Source = null;
+            _owner.DisposeWhenUnused([old]);
         }
 
         private async Task TransportAsync(string action)

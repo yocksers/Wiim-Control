@@ -246,7 +246,7 @@ sealed partial class WiimController
         private static string HexOf(Color color) =>
             $"{color.R:x2}{color.G:x2}{color.B:x2}";
 
-        private async Task<string?> PickColorAsync(string currentHex)
+        private async Task<string?> PickColorAsync(string currentHex, string title = "Clock colour")
         {
             var start = Color.TryParse("#" + currentHex, out var parsed) ? parsed : Colors.White;
             var wheel = new ColorSpectrum
@@ -293,7 +293,7 @@ sealed partial class WiimController
             var content = new StackPanel
             {
                 Width = 300, Spacing = 14,
-                Children = { new TextBlock { Text = "Clock colour", Classes = { "heading" } }, wheel, brightness, bottom }
+                Children = { new TextBlock { Text = title, Classes = { "heading" } }, wheel, brightness, bottom }
             };
             return await Dialogs.ChooseAsync(this, content, "OK", _scale) ? HexOf(chosen) : null;
         }

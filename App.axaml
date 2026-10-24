@@ -4,17 +4,6 @@
              Name="Wiim Control"
              RequestedThemeVariant="Dark">
   <Application.Resources>
-    <Color x:Key="SystemAccentColor">#5B5BF6</Color>
-    <Color x:Key="SystemAccentColorDark1">#5050E2</Color>
-    <Color x:Key="SystemAccentColorDark2">#4646CC</Color>
-    <Color x:Key="SystemAccentColorDark3">#3C3CB4</Color>
-    <Color x:Key="SystemAccentColorLight1">#7272FF</Color>
-    <Color x:Key="SystemAccentColorLight2">#8A8AFF</Color>
-    <Color x:Key="SystemAccentColorLight3">#A4A4FF</Color>
-    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#2F2F2F" />
-    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#3A3A3A" />
-    <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#555555" />
-    <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#606060" />
     <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="Transparent" />
     <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="Transparent" />
     <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="White" />
@@ -27,18 +16,18 @@
 
     <Style Selector="Window">
       <Setter Property="FontSize" Value="14" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="Background" Value="#181818" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Window}" />
     </Style>
 
     <Style Selector="TextBlock.muted">
-      <Setter Property="Foreground" Value="#A6A6A6" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.TextMuted}" />
     </Style>
     <Style Selector="TextBlock.dim">
-      <Setter Property="Foreground" Value="#7A7A7A" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.TextDimmer}" />
     </Style>
     <Style Selector="TextBlock.accent">
-      <Setter Property="Foreground" Value="#A4A4FF" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentText}" />
     </Style>
     <Style Selector="TextBlock.title">
       <Setter Property="FontSize" Value="28" />
@@ -57,65 +46,67 @@
     </Style>
 
     <Style Selector="Border.card">
-      <Setter Property="Background" Value="#2A2A2A" />
-      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Card}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusCard}" />
       <Setter Property="Padding" Value="20,16" />
       <Setter Property="Margin" Value="0,0,0,14" />
     </Style>
     <Style Selector="Border.card.active">
-      <Setter Property="Background" Value="#474747" />
+      <Setter Property="Background" Value="{DynamicResource Wc.CardActive}" />
     </Style>
     <Style Selector="Window.artwork Border.card">
-      <Setter Property="Background" Value="#D02A2A2A" />
+      <Setter Property="Background" Value="{DynamicResource Wc.CardGlass}" />
     </Style>
     <Style Selector="Window.artwork Border.card.active">
-      <Setter Property="Background" Value="#D0474747" />
+      <Setter Property="Background" Value="{DynamicResource Wc.CardActiveGlass}" />
     </Style>
 
     <Style Selector="Button.pill">
-      <Setter Property="Background" Value="#3A3A3A" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Input}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusPill}" />
       <Setter Property="Padding" Value="16,8" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.pill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#4A4A4A" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.InputHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
     </Style>
     <Style Selector="Button.pill:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#555555" />
+      <Setter Property="Background" Value="{DynamicResource Wc.InputPressed}" />
     </Style>
     <Style Selector="Button.pill:disabled /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#303030" />
-      <Setter Property="Foreground" Value="#6E6E6E" />
+      <Setter Property="Background" Value="{DynamicResource Wc.InputDisabled}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.TextDim}" />
     </Style>
     <Style Selector="Button.pill:disabled PathIcon">
-      <Setter Property="Foreground" Value="#6E6E6E" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.TextDim}" />
     </Style>
     <Style Selector="Button.pill.accent">
-      <Setter Property="Background" Value="#5B5BF6" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.OnAccent}" />
     </Style>
     <Style Selector="Button.pill.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#7272FF" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.OnAccent}" />
     </Style>
 
     <Style Selector="Button.pill.current">
-      <Setter Property="Background" Value="#30305E" />
-      <Setter Property="Foreground" Value="#A4A4FF" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentSoft}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentText}" />
     </Style>
     <Style Selector="Button.pill.current:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#363668" />
-      <Setter Property="Foreground" Value="#B4B4FF" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentSoftHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentTextHover}" />
     </Style>
 
     <Style Selector="Button.channel">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="BorderBrush" Value="#9A9A9A" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Wc.Outline}" />
       <Setter Property="BorderThickness" Value="1.5" />
-      <Setter Property="CornerRadius" Value="17" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusChannel}" />
       <Setter Property="Width" Value="34" />
       <Setter Property="Height" Value="34" />
       <Setter Property="Padding" Value="0" />
@@ -126,27 +117,27 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.channel:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#3A3A3A" />
-      <Setter Property="BorderBrush" Value="#C8C8C8" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Input}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Wc.OutlineHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
     </Style>
     <Style Selector="Button.channel.single">
-      <Setter Property="BorderBrush" Value="#A4A4FF" />
-      <Setter Property="Foreground" Value="#A4A4FF" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Wc.AccentText}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentText}" />
     </Style>
     <Style Selector="Button.channel.single:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="BorderBrush" Value="#B4B4FF" />
-      <Setter Property="Foreground" Value="#B4B4FF" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Wc.AccentTextHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentTextHover}" />
     </Style>
     <Style Selector="Button.channel:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="#555555" />
-      <Setter Property="Foreground" Value="#6E6E6E" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Wc.InputPressed}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.TextDim}" />
     </Style>
 
     <Style Selector="Button.icon">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="20" />
       <Setter Property="Width" Value="38" />
@@ -156,12 +147,12 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#4A4A4A" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.InputHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
     </Style>
     <Style Selector="Button.icon:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#6E6E6E" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.TextDim}" />
     </Style>
     <Style Selector="Button.icon:disabled PathIcon">
       <Setter Property="Opacity" Value="0.4" />
@@ -169,23 +160,23 @@
 
     <Style Selector="Button.nav">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusNav}" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="Margin" Value="0,2" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     </Style>
     <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#2C2C2C" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.NavHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
     </Style>
     <Style Selector="Button.nav.selected">
-      <Setter Property="Background" Value="#25254A" />
+      <Setter Property="Background" Value="{DynamicResource Wc.NavSelected}" />
     </Style>
     <Style Selector="Button.nav.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#2C2C55" />
+      <Setter Property="Background" Value="{DynamicResource Wc.NavSelectedHover}" />
     </Style>
 
     <Style Selector="ScrollViewer.menu /template/ ScrollBar">
@@ -201,17 +192,17 @@
     </Style>
 
     <Style Selector="Border.navgroup">
-      <Setter Property="Background" Value="#2A2A2A" />
-      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Card}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusGroup}" />
       <Setter Property="ClipToBounds" Value="True" />
       <Setter Property="Margin" Value="0,0,12,0" />
     </Style>
     <Style Selector="Window.artwork Border.navgroup">
-      <Setter Property="Background" Value="#D02A2A2A" />
+      <Setter Property="Background" Value="{DynamicResource Wc.CardGlass}" />
     </Style>
     <Style Selector="Border.navseparator">
       <Setter Property="Height" Value="1" />
-      <Setter Property="Background" Value="#3A3A3A" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Input}" />
       <Setter Property="Margin" Value="52,0,0,0" />
     </Style>
     <Style Selector="Border.navgroup Button.nav">
@@ -219,24 +210,24 @@
       <Setter Property="CornerRadius" Value="0" />
     </Style>
     <Style Selector="Border.navgroup Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#363636" />
+      <Setter Property="Background" Value="{DynamicResource Wc.GroupHover}" />
     </Style>
     <Style Selector="Border.navgroup Button.nav.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#2C2C55" />
+      <Setter Property="Background" Value="{DynamicResource Wc.NavSelectedHover}" />
     </Style>
 
     <Style Selector="Border.segments">
-      <Setter Property="Background" Value="#202020" />
-      <Setter Property="BorderBrush" Value="#363636" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Sidebar}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Wc.GroupHover}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusSegments}" />
       <Setter Property="Padding" Value="4" />
     </Style>
     <Style Selector="Button.segment">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#D0D0D0" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.SegmentText}" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusSegment}" />
       <Setter Property="Padding" Value="12,9" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -251,76 +242,76 @@
     </Style>
     <Style Selector="Button.segment:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#D0D0D0" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.SegmentText}" />
     </Style>
     <Style Selector="Button.segment.selected">
-      <Setter Property="Background" Value="#30305E" />
-      <Setter Property="Foreground" Value="#A4A4FF" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentSoft}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentText}" />
     </Style>
     <Style Selector="Button.segment.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#363668" />
-      <Setter Property="Foreground" Value="#B4B4FF" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentSoftHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentTextHover}" />
     </Style>
     <Style Selector="Button.segment:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#6E6E6E" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.TextDim}" />
     </Style>
     <Style Selector="Button.segment.selected:disabled /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#2A2A3E" />
-      <Setter Property="Foreground" Value="#7A7AB0" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentSoftDisabled}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentTextDisabled}" />
     </Style>
     <Style Selector="Button.segment.solid.selected">
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.OnAccent}" />
     </Style>
     <Style Selector="Button.segment.solid.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.OnAccent}" />
     </Style>
     <Style Selector="Border.segment-thumb">
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Accent}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusSegment}" />
     </Style>
     <Style Selector="Border.segment-thumb.dim">
-      <Setter Property="Background" Value="#2A2A3E" />
+      <Setter Property="Background" Value="{DynamicResource Wc.AccentSoftDisabled}" />
     </Style>
     <Style Selector="Border.sliding Button.segment.selected">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.OnAccent}" />
     </Style>
     <Style Selector="Border.sliding Button.segment.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.OnAccent}" />
     </Style>
     <Style Selector="Border.sliding Button.segment.selected:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#7A7AB0" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.AccentTextDisabled}" />
     </Style>
     <Style Selector="Button.segment:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#D0D0D0" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.SegmentText}" />
     </Style>
     <Style Selector="Border.sliding Button.segment.selected:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.OnAccent}" />
     </Style>
 
     <Style Selector="ComboBox">
-      <Setter Property="Background" Value="#3A3A3A" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Input}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusField}" />
       <Setter Property="Padding" Value="12,8" />
       <Setter Property="MinHeight" Value="38" />
     </Style>
     <Style Selector="ComboBox:pointerover /template/ Border#Background">
-      <Setter Property="Background" Value="#4A4A4A" />
+      <Setter Property="Background" Value="{DynamicResource Wc.InputHover}" />
     </Style>
 
     <Style Selector="TextBox">
-      <Setter Property="Background" Value="#3A3A3A" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{DynamicResource Wc.Input}" />
+      <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusField}" />
     </Style>
 
     <Style Selector="ToggleSwitch">
