@@ -62,7 +62,9 @@ sealed partial class WiimController : IDisposable
     public async Task StartAsync()
     {
         LoadConfig();
+        ThemeEngine.Apply(_activeTheme);
         ErrorLog.Cleanup();
+        DeleteOldInstallers();
         AutoStart.MigrateLegacy();
 
         if (_knownDevices.Count == 0 && !string.IsNullOrWhiteSpace(_deviceIp))
@@ -116,8 +118,16 @@ sealed partial class WiimController : IDisposable
         }
         else if (OperatingSystem.IsLinux())
         {
-            _linuxShortcuts = new LinuxShortcuts(cmd => Dispatcher.UIThread.Post(() => HandleCommand(cmd)));
+            _linuxShortcuts = new LinuxShortcuts(cmd => Dispatcher.UIThread.Post(() => HandleMediaKey(cmd)));
             if (_linuxPortalShortcuts) _ = _linuxShortcuts.RegisterAsync(_forwardMediaKeys);
+        }
+        else if (OperatingSystem.IsMacOS() &&
+                 Avalonia.Application.Current?.TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
+        {
+            activatable.Activated += (_, e) =>
+            {
+                if (e.Kind == ActivationKind.Reopen) Dispatcher.UIThread.Post(ShowSettingsWindow);
+            };
         }
 
         StartHotkeys();
@@ -129,13 +139,15 @@ sealed partial class WiimController : IDisposable
     private void UpdateVolumeKeyRegistration()
     {
         if (OperatingSystem.IsWindows())
-            (_shellWnd as ShellHookWindow)?.SetVolumeKeysEnabled(_volumeKeys && (_outputMonitor?.IsCurrentDeviceEnabled() ?? true));
+            (_shellWnd as ShellHookWindow)?.SetVolumeKeysEnabled(_volumeKeys && _suppress && (_outputMonitor?.IsEnabledOutputActive ?? true) &&
+                !IsBluetoothInput(_deviceIp));
     }
 
     private void HandleKeyCommand(string cmd)
     {
-        if (_outputMonitor != null && !_outputMonitor.IsCurrentDeviceEnabled()) return;
+        if (_outputMonitor != null && !_outputMonitor.IsEnabledOutputActive) return;
         if (!_volumeKeys && cmd is "vol++" or "vol--" or "mute") return;
+        if (cmd is "vol++" or "vol--" or "mute" && IsBluetoothInput(_deviceIp)) return;
         if (!Debounce()) return;
         RunPlayerCommand(cmd);
     }
@@ -152,6 +164,11 @@ sealed partial class WiimController : IDisposable
 
     private void RunPlayerCommand(string cmd)
     {
+        if (cmd is "vol++" or "vol--" or "mute" && IsBluetoothFromThisComputer(_deviceIp))
+        {
+            _ = ChangeComputerVolumeAsync(cmd);
+            return;
+        }
         if (cmd is "vol++" or "vol--")
             _ = ChangeVolumeAsync(cmd == "vol++" ? 1 : -1);
         else if (cmd == "mute")

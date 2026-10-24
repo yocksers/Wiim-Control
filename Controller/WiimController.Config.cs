@@ -58,6 +58,7 @@ sealed partial class WiimController
             if (key == "hotkeys")         ParseHotkeys(val);
             if (key == "windowmaximized") _windowMaximized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "sidebarhidden")   _sidebarHidden = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            LoadThemeSetting(key, val);
             if (key == "windowsize" && val.Split('x') is [var w, var h] &&
                 int.TryParse(w, out int width) && int.TryParse(h, out int height) && width > 0 && height > 0)
                 _windowSize = new Avalonia.Size(width, height);
@@ -102,6 +103,7 @@ sealed partial class WiimController
                 $"forwardMediaKeys={_forwardMediaKeys}", $"mediaControls={_mediaControls}", $"groupVolumeKeys={_groupVolumeKeys}", $"groupLeader={_groupLeaderIp}",
                 $"linuxPortalShortcuts={_linuxPortalShortcuts}", $"hotkeys={SerializeHotkeys()}",
                 $"windowSize={(_windowSize is { } size ? $"{(int)size.Width}x{(int)size.Height}" : "")}", $"windowMaximized={_windowMaximized}", $"sidebarHidden={_sidebarHidden}",
+                $"theme={ThemeEngine.Serialize(_activeTheme)}", $"themes={ThemeEngine.Serialize(_customThemes)}",
                 $"uiScale={_uiScalePercent}",
                 $"suppressWindowsOSD={_suppress}", $"volumeKeys={_volumeKeys}", $"volumeStep={_volumeStep}",
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
@@ -130,7 +132,13 @@ sealed partial class WiimController
         File.Move(temp, path, overwrite: true);
     }
 
-    private void SetSuppress(bool value) { _suppress = value; SaveConfig(); SyncTrayCheckboxes(); }
+    private void SetSuppress(bool value)
+    {
+        _suppress = value;
+        SaveConfig();
+        SyncTrayCheckboxes();
+        UpdateVolumeKeyRegistration();
+    }
     private void SetVolumeKeys(bool value)
     {
         _volumeKeys = value;

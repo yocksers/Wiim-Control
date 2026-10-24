@@ -7,7 +7,8 @@ sealed record PreGain(int Mode, string Name, double Gain);
 
 sealed record InputSettings(bool? PreGainEnabled, List<PreGain> PreGains, double MinGain, double MaxGain,
     bool? OpticalAutoSense, bool? HdmiAutoSense, bool? LineInAutoSense, int? TvRemoteStep, bool? HdmiAudioOnly, bool? TvSpeakers,
-    bool? StandbySourceEnabled, string? StandbySource, bool? PerSourceVolume, int? LineInRate = null, int? LineInBits = null);
+    bool? StandbySourceEnabled, string? StandbySource, bool? PerSourceVolume, int? LineInRate = null, int? LineInBits = null,
+    bool? ReduceNoise = null);
 
 sealed partial class WiimController
 {
@@ -23,7 +24,10 @@ sealed partial class WiimController
         var standbyOn = SendToDeviceAsync(ip, "getAudioInputPassThroughEnable");
         var standbySource = SendToDeviceAsync(ip, "getAudioInputPassThroughSrc");
         var lineInCap = SendToDeviceAsync(ip, "getAuxInMaxCap");
-        await Task.WhenAll(gain, optical, hdmi, lineIn, tvStep, tvPower, tvSpeakers, standbyOn, standbySource, lineInCap).ConfigureAwait(false);
+        var reduceNoise = SendToDeviceAsync(ip, "getSpdifInNoiseRemove");
+        var inputCards = SendToDeviceAsync(ip, "getInputModeSupportList");
+        await Task.WhenAll(gain, optical, hdmi, lineIn, tvStep, tvPower, tvSpeakers, standbyOn, standbySource, lineInCap, reduceNoise, inputCards)
+            .ConfigureAwait(false);
 
         bool? gainEnabled = null;
         var gains = new List<PreGain>();
@@ -56,7 +60,31 @@ sealed partial class WiimController
             ParseFlag(standbyOn.Result), source,
             JsonField(statusEx, "volume_control") is { } control ? control == "1" : null,
             lineInCap.Result?.Trim().Split(':') is [var rate, ..] && int.TryParse(rate, out int r) ? r : null,
-            lineInCap.Result?.Trim().Split(':') is [_, var depth, ..] && int.TryParse(depth, out int d) ? d : null);
+            lineInCap.Result?.Trim().Split(':') is [_, var depth, ..] && int.TryParse(depth, out int d) ? d : null,
+            HasReduceNoise(inputCards.Result, JsonField(statusEx, "project")) ? ParseFlag(reduceNoise.Result) : null);
+    }
+
+    internal static bool HasReduceNoise(string? inputModeList, string? project)
+    {
+        if (project?.Contains("WiiM_Ultra", StringComparison.OrdinalIgnoreCase) == true) return true;
+        try
+        {
+            using var doc = JsonDocument.Parse(inputModeList ?? string.Empty);
+            return doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.EnumerateArray().Any(card =>
+                Prop(card, "mode").ToString() == "HDMI" && Prop(Prop(card, "soundCard"), "supportDolbyAudio").ToString().Length > 0);
+        }
+        catch (JsonException) { return false; }
+    }
+
+    internal async Task<bool> SetReduceNoiseAsync(string ip, bool on) =>
+        CommandSucceeded(await SendToDeviceAsync(ip, $"setSpdifInNoiseRemove:{(on ? 1 : 0)}").ConfigureAwait(false));
+
+    internal static string? ReduceNoiseInputs(IEnumerable<string>? inputs)
+    {
+        if (inputs == null) return "optical or HDMI ARC";
+        var modes = inputs.ToList();
+        bool optical = modes.Contains("optical"), hdmi = modes.Contains("HDMI");
+        return optical && hdmi ? "optical or HDMI ARC" : optical ? "optical" : hdmi ? "HDMI ARC" : null;
     }
 
     internal async Task<bool> SetPreGainAsync(string ip, bool enabled, IEnumerable<PreGain> gains)

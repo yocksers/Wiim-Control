@@ -35,9 +35,15 @@ sealed partial class WiimController
         if (OperatingSystem.IsLinux())
             return LinuxMediaSession.Create(OnMediaSessionCommand, OnMediaSessionSeek, () => Dispatcher.UIThread.Post(ShowSettingsWindow),
                 OnMediaSessionVolume);
-        if (OperatingSystem.IsMacOS()) return MacMediaSession.Create(OnMediaSessionCommand, OnMediaSessionSeek);
+        if (OperatingSystem.IsMacOS()) return MacMediaSession.Create(OnMediaSessionCommand, OnMediaSessionSeek, LoadMediaArtworkAsync);
         return null;
 #endif
+    }
+
+    private async Task<byte[]?> LoadMediaArtworkAsync(string url)
+    {
+        try { return await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false); }
+        catch (Exception) { return null; }
     }
 
     internal static string MediaControlsName =>
@@ -54,6 +60,7 @@ sealed partial class WiimController
 
     private void OnMediaSessionCommand(string action) => Dispatcher.UIThread.Post(async () =>
     {
+        if (OperatingSystem.IsWindows() && !_forwardMediaKeys && IsMediaKeyEcho()) return;
         await SendMediaCommandAsync(action);
         await Task.Delay(400);
         await RefreshNowPlayingAsync();
@@ -62,7 +69,7 @@ sealed partial class WiimController
     private void OnMediaSessionVolume(int volume) => Dispatcher.UIThread.Post(async () =>
     {
         if (_deviceIp.Length == 0 || BlockedByLock(_deviceIp)) return;
-        await SetDeviceVolumeAsync(_deviceIp, volume);
+        await SetVolumeAsync(_deviceIp, volume);
         await RefreshNowPlayingAsync();
     });
 

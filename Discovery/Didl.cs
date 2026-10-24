@@ -56,7 +56,7 @@ static class Didl
     private static string MimeOf(string? protocolInfo) =>
         protocolInfo?.Split(':') is { Length: >= 3 } parts ? parts[2] : string.Empty;
 
-    private static TimeSpan ParseDuration(string? text)
+    internal static TimeSpan ParseDuration(string? text)
     {
         if (string.IsNullOrEmpty(text)) return TimeSpan.Zero;
         var parts = text.Split(':');

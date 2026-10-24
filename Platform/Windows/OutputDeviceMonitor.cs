@@ -94,8 +94,12 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
         {
             if (_enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia, out var device) != 0
                 || device is null) return false;
-            if (device.GetId(out var id) != 0) return false;
-            return !_disabledDeviceIds.Contains(id);
+            try
+            {
+                if (device.GetId(out var id) != 0) return false;
+                return !_disabledDeviceIds.Contains(id);
+            }
+            finally { Marshal.ReleaseComObject(device); }
         }
         catch { return false; }
     }

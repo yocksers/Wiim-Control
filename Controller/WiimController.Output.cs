@@ -178,6 +178,10 @@ sealed partial class WiimController
     }
 
     private const string UsbDacOutputMode = "AUDIO_OUTPUT_UAC_CARD_MODE";
+    internal const string HeadphoneOutputMode = "AUDIO_OUTPUT_PHONE_JACK_MODE";
+
+    internal static string UnlistedOutputName(string activeMode) =>
+        activeMode == HeadphoneOutputMode ? "Headphones" : activeMode.Length > 0 ? "Other output" : "Unknown";
 
     internal async Task<bool> SetUsbResolutionAsync(string ip, int sampleRate, int bits) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"setUacOutMaxCap:{sampleRate}:{bits}:0").ConfigureAwait(false));

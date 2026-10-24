@@ -83,7 +83,7 @@ static class SecretStore
             if (_keyringUnavailable) return false;
         }
         bool ok = OperatingSystem.IsMacOS()
-            ? Run("security", ["add-generic-password", "-U", "-s", KeyringService, "-a", id, "-l", "Wiim Control shared folder", "-w", secret], null)?.ExitCode == 0
+            ? StoreInMacKeychain(id, secret)
             : OperatingSystem.IsLinux() &&
               Run("secret-tool", ["store", "--label=Wiim Control shared folder", "service", KeyringService, "account", id], secret)?.ExitCode == 0;
         lock (StoredInKeyring)
@@ -92,6 +92,16 @@ static class SecretStore
             else _keyringUnavailable = true;
         }
         return ok;
+    }
+
+    private static string MacQuote(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+    private static bool StoreInMacKeychain(string id, string secret)
+    {
+        if (secret.Contains('\n') || secret.Contains('\r')) return false;
+        string command = $"add-generic-password -U -s {MacQuote(KeyringService)} -a {MacQuote(id)} -l {MacQuote("Wiim Control shared folder")} " +
+                         $"-w {MacQuote(secret)}\n";
+        return Run("security", ["-i"], command) != null && ReadFromKeyring(id) == secret;
     }
 
     private static string? ReadFromKeyring(string id)

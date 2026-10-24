@@ -30,6 +30,12 @@ sealed partial class WiimController
     [StructLayout(LayoutKind.Sequential)]
     private struct KBDLLHOOKSTRUCT { public uint vkCode, scanCode, flags, time; public IntPtr dwExtraInfo; }
 
+    private static readonly TimeSpan MediaKeyEcho = TimeSpan.FromSeconds(1);
+    private long _lastMediaKeyTicks;
+
+    private bool IsMediaKeyEcho() =>
+        DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMediaKeyTicks) < MediaKeyEcho.Ticks;
+
     private bool Debounce()
     {
         var now = DateTime.UtcNow;
@@ -50,11 +56,13 @@ sealed partial class WiimController
         if (nCode >= 0 && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
         {
             var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            if (ks.vkCode is >= VK_MEDIA_NEXT_TRACK and <= VK_MEDIA_PLAY_PAUSE) Interlocked.Exchange(ref _lastMediaKeyTicks, DateTime.UtcNow.Ticks);
+            bool volumeKeys = _volumeKeys && !IsBluetoothInput(_deviceIp);
             string? cmd = ks.vkCode switch
             {
-                VK_VOLUME_UP   when _volumeKeys => "vol++",
-                VK_VOLUME_DOWN when _volumeKeys => "vol--",
-                VK_VOLUME_MUTE when _volumeKeys => "mute",
+                VK_VOLUME_UP   when volumeKeys => "vol++",
+                VK_VOLUME_DOWN when volumeKeys => "vol--",
+                VK_VOLUME_MUTE when volumeKeys => "mute",
                 VK_MEDIA_PLAY_PAUSE when _forwardMediaKeys => "playpause",
                 VK_MEDIA_NEXT_TRACK  when _forwardMediaKeys => "next",
                 VK_MEDIA_PREV_TRACK  when _forwardMediaKeys => "prev",
@@ -63,7 +71,7 @@ sealed partial class WiimController
             };
             if (cmd != null)
             {
-                if (_outputMonitor is null || _outputMonitor.IsCurrentDeviceEnabled())
+                if (_outputMonitor is null || _outputMonitor.IsEnabledOutputActive)
                 {
                     bool isVolumeCmd = cmd is "vol++" or "vol--" or "mute";
                     if (Debounce())

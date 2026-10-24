@@ -126,9 +126,23 @@ sealed partial class WiimController
         catch (Exception) { }
     }
 
+    private const string InstallerPrefix = "WiimControlSetup-";
+
+    private static void DeleteOldInstallers()
+    {
+        string[] files;
+        try { files = Directory.GetFiles(Path.GetTempPath(), InstallerPrefix + "*.exe"); }
+        catch (Exception) { return; }
+        foreach (string file in files)
+        {
+            try { File.Delete(file); }
+            catch (Exception) { }
+        }
+    }
+
     private async Task DownloadAndInstallAsync(AppUpdate release)
     {
-        string path = Path.Combine(Path.GetTempPath(), $"WiimControlSetup-{release.Version}.exe");
+        string path = Path.Combine(Path.GetTempPath(), $"{InstallerPrefix}{release.Version}.exe");
         try
         {
             Notify($"Downloading Wiim Control {release.Version}…");

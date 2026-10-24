@@ -127,10 +127,19 @@ sealed partial class WiimController
         return service;
     }
 
+    private static readonly Dictionary<string, string> VendorAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Prime"] = "Amazon Music",
+        [ShareSourceName] = "Network"
+    };
+
+    internal static string SourceLabel(string source) => VendorName(source) is { Length: > 0 } name ? name : source;
+
     internal static string VendorName(string vendor)
     {
         string text = vendor.Trim();
         if (text.Length == 0 || text.Length > 40 || text.Contains(':') || text.Contains('/') || !text.Any(char.IsLetter)) return string.Empty;
+        if (VendorAliases.TryGetValue(text, out var alias)) return alias;
         string key = text.Replace(" ", string.Empty).Replace("_", string.Empty);
         if (ServiceHosts.FirstOrDefault(s => key.Contains(s.Host.Replace(".", string.Empty), StringComparison.OrdinalIgnoreCase) ||
                                              key.Contains(s.Name.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase)).Name is { } known)

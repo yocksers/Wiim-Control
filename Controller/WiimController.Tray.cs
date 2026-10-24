@@ -130,6 +130,10 @@ sealed partial class WiimController
         overlayMenu.Add(Submenu("Position", positionMenu));
         overlayMenu.Add(Submenu("Duration", durationMenu));
         menu.Add(Submenu("Volume overlay", overlayMenu));
+        _mnuThemes = new NativeMenu();
+        _mnuThemes.Opening += (_, _) => BuildThemeMenu();
+        BuildThemeMenu();
+        menu.Add(Submenu("Theme", _mnuThemes));
 
         _mnuPresets = new NativeMenu();
         for (int preset = 1; preset <= 12; preset++)

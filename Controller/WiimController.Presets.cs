@@ -144,6 +144,7 @@ sealed partial class WiimController
             "AUDIO_OUTPUT_AUX_MODE" => "Line out",
             "AUDIO_OUTPUT_COAX_MODE" => "Coax out",
             "AUDIO_OUTPUT_HDMI_MODE" => "HDMI out",
+            HeadphoneOutputMode => "Headphones",
             _ => device.Length > 0 ? device : "Output"
         };
     }

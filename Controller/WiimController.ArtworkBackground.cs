@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Media.Imaging;
 using SkiaSharp;
 
@@ -8,6 +9,9 @@ sealed partial class WiimController
     private const int BackdropSize = 128;
     private const float BackdropBlur = 9;
     private const int BackdropCacheSize = 8;
+    private const int NowPlayingBackdropSize = 256;
+    private const float NowPlayingBackdropBlur = 3;
+    internal const float MiniPlayerBackdropBlur = 9;
 
     private bool _artworkBackground = true;
     private string _activeArtUrl = string.Empty;
@@ -67,7 +71,20 @@ sealed partial class WiimController
         return backdrop;
     }
 
-    private static Bitmap? BlurForBackdrop(Bitmap source)
+    internal static Bitmap? BlurForNowPlaying(Bitmap source, float blur = NowPlayingBackdropBlur)
+    {
+        try
+        {
+            using var scaled = source.CreateScaledBitmap(new PixelSize(NowPlayingBackdropSize, NowPlayingBackdropSize), BitmapInterpolationMode.MediumQuality);
+            return BlurForBackdrop(scaled, NowPlayingBackdropSize, blur);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? BlurForBackdrop(Bitmap source, int size = BackdropSize, float blur = BackdropBlur)
     {
         try
         {
@@ -76,11 +93,11 @@ sealed partial class WiimController
             encoded.Position = 0;
             using var decoded = SKBitmap.Decode(encoded);
             if (decoded == null) return null;
-            using var surface = SKSurface.Create(new SKImageInfo(BackdropSize, BackdropSize, SKColorType.Rgba8888, SKAlphaType.Premul));
+            using var surface = SKSurface.Create(new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul));
             if (surface == null) return null;
-            using var blur = SKImageFilter.CreateBlur(BackdropBlur, BackdropBlur, SKShaderTileMode.Clamp);
-            using var paint = new SKPaint { ImageFilter = blur, FilterQuality = SKFilterQuality.High, IsAntialias = true };
-            surface.Canvas.DrawBitmap(decoded, new SKRect(0, 0, BackdropSize, BackdropSize), paint);
+            using var filter = SKImageFilter.CreateBlur(blur, blur, SKShaderTileMode.Clamp);
+            using var paint = new SKPaint { ImageFilter = filter, FilterQuality = SKFilterQuality.High, IsAntialias = true };
+            surface.Canvas.DrawBitmap(decoded, new SKRect(0, 0, size, size), paint);
             using var image = surface.Snapshot();
             using var png = image.Encode(SKEncodedImageFormat.Png, 100);
             using var stream = png.AsStream();

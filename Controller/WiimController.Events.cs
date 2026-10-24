@@ -18,8 +18,8 @@ sealed partial class WiimController
         (TransportEventService, "av", "/upnp/event/rendertransport1"),
         (VolumeEventService, "rc", "/upnp/event/rendercontrol1")
     ];
-    private static readonly TimeSpan SubscriptionLength = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan RenewBefore = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan SubscriptionLength = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan RenewBefore = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan EventRefreshDelay = TimeSpan.FromMilliseconds(300);
     private const int MaxEventBytes = 256 * 1024;
 
@@ -29,6 +29,7 @@ sealed partial class WiimController
         public required string Key { get; init; }
         public required string EventUrl { get; init; }
         public string Sid { get; set; } = string.Empty;
+        public string Callback { get; set; } = string.Empty;
         public DateTime Expires { get; set; }
     }
 
@@ -103,7 +104,13 @@ sealed partial class WiimController
             foreach (var (service, key, fallback) in EventServices)
             {
                 string path = CallbackPath(ip, key);
-                if (_subscriptions.TryGetValue(path, out var existing) && existing.Sid.Length > 0 && existing.Expires - DateTime.UtcNow > RenewBefore)
+                string? callback = CallbackFor(ip, path);
+                if (_subscriptions.TryGetValue(path, out var existing) && existing.Sid.Length > 0 && existing.Callback != callback)
+                {
+                    _ = UnsubscribeAsync(existing);
+                    existing.Sid = string.Empty;
+                }
+                if (existing is { Sid.Length: > 0 } && existing.Expires - DateTime.UtcNow > RenewBefore)
                     continue;
                 work.Add(SubscribeAsync(ip, key, path, existing ?? new EventSubscription
                 {
@@ -114,6 +121,11 @@ sealed partial class WiimController
     }
 
     private static string CallbackPath(string ip, string key) => $"/wiimcontrol/{ip}/{key}";
+
+    private string? CallbackFor(string ip, string path) =>
+        _eventListener?.LocalEndpoint is IPEndPoint endpoint && LocalAddressFor(ip) is { } local
+            ? $"<http://{local}:{endpoint.Port}{path}>"
+            : null;
 
     private async Task<string> GetEventUrlAsync(string ip, string serviceType, string fallbackPath)
     {
@@ -136,13 +148,15 @@ sealed partial class WiimController
 
     private async Task SubscribeAsync(string ip, string key, string path, EventSubscription subscription)
     {
-        if (_eventListener?.LocalEndpoint is not IPEndPoint endpoint || LocalAddressFor(ip) is not { } local) return;
+        if (CallbackFor(ip, path) is not { } callback) return;
         bool renew = subscription.Sid.Length > 0;
         if (renew && await SendSubscribeAsync(subscription.EventUrl, subscription, ("SID", subscription.Sid)).ConfigureAwait(false)) return;
         subscription.Sid = string.Empty;
-        if (await SendSubscribeAsync(subscription.EventUrl, subscription,
-                ("CALLBACK", $"<http://{local}:{endpoint.Port}{path}>"), ("NT", "upnp:event")).ConfigureAwait(false))
+        if (await SendSubscribeAsync(subscription.EventUrl, subscription, ("CALLBACK", callback), ("NT", "upnp:event")).ConfigureAwait(false))
+        {
+            subscription.Callback = callback;
             _subscriptions[path] = subscription;
+        }
         else _subscriptions.TryRemove(path, out _);
     }
 
@@ -255,7 +269,7 @@ sealed partial class WiimController
 
     private void OnDeviceEvent(string ip, string key, Dictionary<string, string> change)
     {
-        bool volumeEvent = key == "rc";
+        bool volumeEvent = key == "rc" && !IsBluetoothFromThisComputer(ip);
         if (volumeEvent)
         {
             int? volume = int.TryParse(change.GetValueOrDefault("Volume"), out int v) ? Math.Clamp(v, 0, 100) : null;

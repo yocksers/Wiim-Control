@@ -80,6 +80,7 @@ sealed partial class WiimController
         MoveMiniPlayerPlacement(oldIp, newIp);
         _knownDevices[index] = _knownDevices[index] with { Ip = newIp };
         if (_deviceIp == oldIp) _deviceIp = newIp;
+        if (_groupLeaderIp == oldIp) _groupLeaderIp = newIp;
         SaveConfig();
         RefreshDeviceStatusUi();
     }

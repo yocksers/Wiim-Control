@@ -286,7 +286,11 @@ sealed class RoonConnection : IDisposable
         JsonElement body = default;
         if (length > 0 && contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
         {
-            try { body = JsonDocument.Parse(payload).RootElement.Clone(); }
+            try
+            {
+                using var doc = JsonDocument.Parse(payload);
+                body = doc.RootElement.Clone();
+            }
             catch (JsonException) { }
         }
         string verb = first[1];

@@ -17,7 +17,8 @@ sealed class PcAudioServer : IDisposable
     private const int MaxRequestBytes = 8192;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan FillInterval = TimeSpan.FromMilliseconds(20);
-    private const double MaxGapSeconds = 0.1;
+    private static readonly TimeSpan SilenceAfter = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan MaxSilence = TimeSpan.FromSeconds(1);
     private const int FrameBytes = Channels * BitsPerSample / 8;
 
     private readonly TcpListener _listener = new(IPAddress.Any, 0);
@@ -26,13 +27,15 @@ sealed class PcAudioServer : IDisposable
     private readonly int _sampleRate;
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
     private readonly Timer _filler;
-    private long _framesWritten;
+    private TimeSpan _lastAudio;
+    private TimeSpan _silenceUntil;
 
     public int SampleRate => _sampleRate;
 
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
     public int ClientCount { get { lock (_clients) return _clients.Count; } }
     public DateTime LastClientSeen { get; private set; } = DateTime.UtcNow;
+    public IPAddress? AllowedClient { get; set; }
 
     public PcAudioServer(int sampleRate)
     {
@@ -46,7 +49,7 @@ sealed class PcAudioServer : IDisposable
     {
         lock (_clients)
         {
-            _framesWritten += pcm.Length / FrameBytes;
+            _lastAudio = _silenceUntil = _clock.Elapsed;
             if (_clients.Count > 0) LastClientSeen = DateTime.UtcNow;
             foreach (var client in _clients) client.Writer.TryWrite(pcm);
         }
@@ -56,10 +59,14 @@ sealed class PcAudioServer : IDisposable
     {
         lock (_clients)
         {
-            long missing = (long)(_clock.Elapsed.TotalSeconds * _sampleRate) - _framesWritten;
-            if (missing < _sampleRate * MaxGapSeconds) return;
-            _framesWritten += missing;
-            var silence = new byte[missing * FrameBytes];
+            var now = _clock.Elapsed;
+            if (now - _lastAudio < SilenceAfter) return;
+            var gap = now - _silenceUntil;
+            if (gap > MaxSilence) gap = MaxSilence;
+            _silenceUntil = now;
+            long frames = (long)(gap.TotalSeconds * _sampleRate);
+            if (frames <= 0 || _clients.Count == 0) return;
+            var silence = new byte[frames * FrameBytes];
             foreach (var client in _clients) client.Writer.TryWrite(silence);
         }
     }
@@ -71,9 +78,18 @@ sealed class PcAudioServer : IDisposable
             TcpClient tcp;
             try { tcp = await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false); }
             catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or SocketException) { return; }
+            if (!IsAllowed(tcp))
+            {
+                tcp.Dispose();
+                continue;
+            }
             _ = ServeAsync(tcp);
         }
     }
+
+    private bool IsAllowed(TcpClient tcp) =>
+        AllowedClient is not { } allowed ||
+        (tcp.Client.RemoteEndPoint as IPEndPoint)?.Address.MapToIPv4().Equals(allowed.MapToIPv4()) == true;
 
     private async Task ServeAsync(TcpClient tcp)
     {

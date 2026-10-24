@@ -40,6 +40,7 @@ sealed partial class WiimController
         var metaTask = SendToDeviceAsync(ip, "getMetaInfo");
         var sleepTask = GetSleepSecondsAsync(ip);
         var renamesTask = EnsureInputRenamesAsync(ip);
+        var timesTask = GetTransportTimesAsync(ip);
         await Task.WhenAll(statusTask, metaTask, sleepTask, renamesTask).ConfigureAwait(false);
         var status = statusTask.Result;
         if (!int.TryParse(JsonField(status, "vol"), out int volume)) return null;
@@ -54,12 +55,22 @@ sealed partial class WiimController
         int loop = int.TryParse(JsonField(status, "loop"), out int l) ? l : 4;
         int.TryParse(JsonField(status, "curpos"), out int position);
         int.TryParse(JsonField(status, "totlen"), out int duration);
+        if (IsNetworkMode(mode) && await Task.WhenAny(timesTask, Task.Delay(TransportTimesTimeout)).ConfigureAwait(false) == timesTask &&
+            timesTask.Result is { } times)
+        {
+            duration = times.DurationMs;
+            position = Math.Min(times.PositionMs ?? position, duration);
+        }
         string bluetooth = mode == 41 ? await GetBluetoothSourceAsync(ip).ConfigureAwait(false) : string.Empty;
+        NoteBluetoothSource(ip, mode, bluetooth);
+        var deviceVolume = new DeviceVolume(Math.Clamp(volume, 0, 100), JsonField(status, "mute") == "1");
+        if (IsBluetoothFromThisComputer(ip) && await ThisComputer.GetVolumeAsync().ConfigureAwait(false) is { } computerVolume)
+            deviceVolume = computerVolume;
         string title = Clean(meta.GetValueOrDefault("title")) ?? Clean(HexText(JsonField(status, "Title"))) ?? string.Empty;
         string artist = Clean(meta.GetValueOrDefault("artist")) ?? Clean(HexText(JsonField(status, "Artist"))) ?? string.Empty;
         string album = Clean(meta.GetValueOrDefault("album")) ?? Clean(HexText(JsonField(status, "Album"))) ?? string.Empty;
         return WithPcAudioTitle(ip, await ApplyRoonAsync(ip, new DeviceStatus(
-            new DeviceVolume(Math.Clamp(volume, 0, 100), JsonField(status, "mute") == "1"),
+            deviceVolume,
             JsonField(status, "status") ?? string.Empty,
             mode,
             title,
@@ -67,7 +78,7 @@ sealed partial class WiimController
             album,
             TrackArtUrl(Clean(meta.GetValueOrDefault("albumArtURI")) ?? string.Empty, ip, mode, title, artist, album),
             sampleRate,
-            bitDepth,
+            TrackBitDepth(bitDepth),
             loop,
             Math.Max(0, position),
             Math.Max(0, duration),
@@ -76,6 +87,29 @@ sealed partial class WiimController
             sleepTask.Result,
             Vendor: Clean(JsonField(status, "vendor")) ?? string.Empty)).ConfigureAwait(false));
     }
+
+    private static readonly TimeSpan TransportTimesTimeout = TimeSpan.FromSeconds(3);
+
+    private async Task<(int? PositionMs, int DurationMs)?> GetTransportTimesAsync(string ip)
+    {
+        string url = await GetServiceUrlAsync(ip, TransportEventService, "/upnp/control/rendertransport1").ConfigureAwait(false);
+        return TransportTimes(await Upnp.CallAsync(url, TransportEventService, "GetInfoEx", ("InstanceID", "0")).ConfigureAwait(false));
+    }
+
+    internal static (int? PositionMs, int DurationMs)? TransportTimes(System.Xml.Linq.XElement? infoEx)
+    {
+        var duration = Didl.ParseDuration(Child(infoEx, "TrackDuration"));
+        if (duration <= TimeSpan.Zero) return null;
+        bool trustPosition = !Child(infoEx, "TrackSource").Contains("Prime", StringComparison.Ordinal) ||
+                             Child(infoEx, "CurrentTransportState") == "PLAYING";
+        var position = Didl.ParseDuration(Child(infoEx, "RelTime"));
+        return (trustPosition ? (int)Math.Min(position.TotalMilliseconds, duration.TotalMilliseconds) : null, (int)duration.TotalMilliseconds);
+    }
+
+    private const int DecoderBitDepth = 32;
+    private const int StreamBitDepth = 24;
+
+    internal static int TrackBitDepth(int reported) => reported == DecoderBitDepth ? StreamBitDepth : reported;
 
     internal async Task<Dictionary<string, DeviceStatus?>> GetAllDeviceStatusesAsync()
     {

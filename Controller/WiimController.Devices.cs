@@ -116,23 +116,20 @@ sealed partial class WiimController
         catch { found = []; }
 
         int added = 0;
-        bool changed = false;
+        var moves = new Dictionary<string, string>();
         foreach (var d in found)
         {
-            if (_knownDevices.Any(k => k.Ip == d.Ip)) continue;
-            int moved = _knownDevices.FindIndex(k => SameDeviceId(k.Uuid, d.Uuid));
-            if (moved >= 0)
+            int known = d.Uuid.Length > 0 ? _knownDevices.FindIndex(k => SameDeviceId(k.Uuid, d.Uuid)) : -1;
+            if (known >= 0)
             {
-                bool wasActive = _knownDevices[moved].Ip == _deviceIp;
-                MoveMiniPlayerPlacement(_knownDevices[moved].Ip, d.Ip);
-                _knownDevices[moved] = _knownDevices[moved] with { Ip = d.Ip };
-                if (wasActive) _deviceIp = d.Ip;
-                changed = true;
+                if (_knownDevices[known].Ip != d.Ip) moves[_knownDevices[known].Ip] = d.Ip;
                 continue;
             }
+            if (_knownDevices.Any(k => k.Ip == d.Ip) || moves.ContainsValue(d.Ip)) continue;
             _knownDevices.Add(d);
             added++;
         }
+        bool changed = ApplyAddressMoves(moves);
         if (added > 0 || changed)
         {
             SaveConfig();
@@ -140,6 +137,23 @@ sealed partial class WiimController
         }
         _ = FillMissingDeviceIdsAsync();
         return added;
+    }
+
+    private bool ApplyAddressMoves(Dictionary<string, string> moves)
+    {
+        if (moves.Count == 0) return false;
+        var placements = moves.Keys.Where(_miniPlayerPlacements.ContainsKey).ToDictionary(ip => ip, ip => _miniPlayerPlacements[ip]);
+        foreach (string oldIp in moves.Keys)
+        {
+            _miniPlayerPlacements.Remove(oldIp);
+            CloseMiniPlayer(oldIp);
+        }
+        foreach (var (oldIp, placement) in placements) _miniPlayerPlacements[moves[oldIp]] = placement;
+        for (int i = 0; i < _knownDevices.Count; i++)
+            if (moves.TryGetValue(_knownDevices[i].Ip, out var newIp)) _knownDevices[i] = _knownDevices[i] with { Ip = newIp };
+        if (moves.TryGetValue(_deviceIp, out var active)) _deviceIp = active;
+        if (moves.TryGetValue(_groupLeaderIp, out var leader)) _groupLeaderIp = leader;
+        return true;
     }
 
     internal bool IsOutputEnabled(string id) => !_disabledOutputIds.Contains(id);

@@ -8,7 +8,7 @@ sealed partial class WiimController
     private static readonly TimeSpan NowPlayingInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastNowPlayingInterval = TimeSpan.FromSeconds(4);
 
-    private readonly record struct MiniPlayerPlacement(PixelPoint Position, Size Size);
+    private readonly record struct MiniPlayerPlacement(PixelPoint Position, Size Size, bool Pinned = false);
 
     private readonly Dictionary<string, MiniPlayerWindow> _miniPlayers = new();
     private readonly Dictionary<string, MiniPlayerPlacement> _miniPlayerPlacements = new();
@@ -70,15 +70,15 @@ sealed partial class WiimController
     private void ParseMiniPlayerPlacements(string value)
     {
         foreach (var entry in value.Split('|', StringSplitOptions.RemoveEmptyEntries))
-            if (entry.Split(',') is [var ip, var x, var y, var width, var height] && ip.Length > 0 &&
+            if (entry.Split(',') is [var ip, var x, var y, var width, var height, .. var rest] && rest.Length <= 1 && ip.Length > 0 &&
                 int.TryParse(x, out int left) && int.TryParse(y, out int top) &&
                 int.TryParse(width, out int w) && int.TryParse(height, out int h) && w > 0 && h > 0)
-                _miniPlayerPlacements[ip] = new MiniPlayerPlacement(new PixelPoint(left, top), new Size(w, h));
+                _miniPlayerPlacements[ip] = new MiniPlayerPlacement(new PixelPoint(left, top), new Size(w, h), rest is ["1"]);
     }
 
     private string SerializeMiniPlayerPlacements() =>
         string.Join('|', _miniPlayerPlacements.Select(p =>
-            $"{p.Key},{p.Value.Position.X},{p.Value.Position.Y},{(int)p.Value.Size.Width},{(int)p.Value.Size.Height}"));
+            $"{p.Key},{p.Value.Position.X},{p.Value.Position.Y},{(int)p.Value.Size.Width},{(int)p.Value.Size.Height}{(p.Value.Pinned ? ",1" : "")}"));
 
     internal void NoteDeviceInput(string ip, DeviceStatus? status)
     {

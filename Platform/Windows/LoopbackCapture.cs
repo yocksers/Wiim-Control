@@ -65,14 +65,16 @@ sealed class LoopbackCapture : IPcAudioCapture
 
     private void Run()
     {
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDevice? device = null;
         IAudioClient? client = null;
         IAudioCaptureClient? capture = null;
         IntPtr format = IntPtr.Zero;
         bool started = false;
         try
         {
-            var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(Type.GetTypeFromCLSID(MMDeviceEnumeratorClass)!)!;
-            Check(enumerator.GetDefaultAudioEndpoint(0, 1, out var device));
+            enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(Type.GetTypeFromCLSID(MMDeviceEnumeratorClass)!)!;
+            Check(enumerator.GetDefaultAudioEndpoint(0, 1, out device));
             var clientId = AudioClientId;
             Check(device!.Activate(ref clientId, 1, IntPtr.Zero, out var clientObject));
             client = (IAudioClient)clientObject;
@@ -102,6 +104,8 @@ sealed class LoopbackCapture : IPcAudioCapture
             if (format != IntPtr.Zero) Marshal.FreeCoTaskMem(format);
             if (capture != null) Marshal.ReleaseComObject(capture);
             if (client != null) Marshal.ReleaseComObject(client);
+            if (device != null) Marshal.ReleaseComObject(device);
+            if (enumerator != null) Marshal.ReleaseComObject(enumerator);
         }
         if (started && !_stopping) Stopped?.Invoke();
     }

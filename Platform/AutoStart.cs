@@ -65,7 +65,8 @@ static class AutoStart
                     key.SetValue(RunValueName, WindowsCommand);
                 }
             }
-            if (IsEnabled()) SetEnabled(true);
+            if (OperatingSystem.IsWindows()) RepairWindows();
+            else if (IsEnabled()) SetEnabled(true);
         }
         catch (Exception) { }
     }
@@ -73,11 +74,28 @@ static class AutoStart
     private static string WindowsCommand => $"\"{ExecutablePath}\" {MinimizedArgument}";
 
     [SupportedOSPlatform("windows")]
-    private static bool IsEnabledWindows()
+    private static string? WindowsEntry()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
-        return key?.GetValue(RunValueName) is string command &&
-               (command == WindowsCommand || command == $"\"{ExecutablePath}\"");
+        return key?.GetValue(RunValueName) as string;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool IsEnabledWindows() => WindowsEntry() is { Length: > 0 };
+
+    internal static string ProgramOf(string command)
+    {
+        string text = command.Trim();
+        if (text.StartsWith('"') && text.IndexOf('"', 1) is int end and > 0) return text[1..end];
+        int space = text.IndexOf(' ');
+        return space > 0 ? text[..space] : text;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void RepairWindows()
+    {
+        if (WindowsEntry() is not { Length: > 0 } command || command == WindowsCommand) return;
+        if (!File.Exists(ProgramOf(command))) SetEnabledWindows(true);
     }
 
     [SupportedOSPlatform("windows")]

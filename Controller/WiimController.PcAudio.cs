@@ -45,7 +45,8 @@ sealed partial class WiimController
         StopPcAudio();
         if (LocalAddressFor(ip) is not { } local) return false;
         if (!StartPcCapture()) return false;
-        string url = $"http://{local}:{_pcServer!.Port}{PcAudioServer.StreamPath}";
+        _pcServer!.AllowedClient = IPAddress.TryParse(ip, out var device) ? device : null;
+        string url = $"http://{local}:{_pcServer.Port}{PcAudioServer.StreamPath}";
         if (!CommandSucceeded(await SendToDeviceAsync(ip, $"setPlayerCmd:play:{url}")))
         {
             StopPcAudio();
@@ -77,6 +78,7 @@ sealed partial class WiimController
             if (_pcServer != null && !ReferenceEquals(_pcServer, server)) _pcServer.Dispose();
             _pcCapture = capture;
             _pcServer = server;
+            if (_pcAudioIp != null && IPAddress.TryParse(_pcAudioIp, out var target)) server.AllowedClient = target;
             return true;
         }
         catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidCastException or SocketException or
@@ -156,7 +158,7 @@ sealed partial class WiimController
 
     private NativeMenuItem BuildPcAudioMenuItem()
     {
-        _mnuPcAudio = new NativeMenuItem("Play this computer's sound on the device") { ToggleType = NativeMenuItemToggleType.CheckBox };
+        _mnuPcAudio = new NativeMenuItem("Stream audio from this computer over network to the device") { ToggleType = NativeMenuItemToggleType.CheckBox };
         _mnuPcAudio.Click += async (_, _) =>
         {
             if (!await SetPcAudioAsync(_deviceIp, !IsPlayingPcAudio(_deviceIp)))
