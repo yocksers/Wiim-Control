@@ -129,13 +129,6 @@ sealed partial class WiimController
                 }
             }
 
-            if (s.PerSourceVolume is bool perSource)
-            {
-                var row = InputToggle("Per-source volume control", perSource, on => _owner.SetPerSourceVolumeAsync(ip, on));
-                ToolTip.SetTip(row, "Remember a separate volume for each input");
-                rows.Add(row);
-            }
-
             return rows.Count > 0 ? Card("Input settings", rows.ToArray()) : null;
         }
     }
