@@ -7,7 +7,7 @@ sealed record PreGain(int Mode, string Name, double Gain);
 
 sealed record InputSettings(bool? PreGainEnabled, List<PreGain> PreGains, double MinGain, double MaxGain,
     bool? OpticalAutoSense, bool? HdmiAutoSense, bool? LineInAutoSense, int? TvRemoteStep, bool? HdmiAudioOnly, bool? TvSpeakers,
-    bool? StandbySourceEnabled, string? StandbySource, bool? PerSourceVolume, int? LineInRate = null, int? LineInBits = null,
+    bool? StandbySourceEnabled, string? StandbySource, int? LineInRate = null, int? LineInBits = null,
     bool? ReduceNoise = null);
 
 sealed partial class WiimController
@@ -58,7 +58,6 @@ sealed partial class WiimController
             ParseFlag(tvPower.Result) is { } power ? !power : null,
             ParseFlag(tvSpeakers.Result),
             ParseFlag(standbyOn.Result), source,
-            JsonField(statusEx, "volume_control") is { } control ? control == "1" : null,
             lineInCap.Result?.Trim().Split(':') is [var rate, ..] && int.TryParse(rate, out int r) ? r : null,
             lineInCap.Result?.Trim().Split(':') is [_, var depth, ..] && int.TryParse(depth, out int d) ? d : null,
             HasReduceNoise(inputCards.Result, JsonField(statusEx, "project")) ? ParseFlag(reduceNoise.Result) : null);
@@ -124,7 +123,4 @@ sealed partial class WiimController
 
     internal async Task<bool> SetLineInResolutionAsync(string ip, int sampleRate, int bits) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"setAuxInMaxCap:{sampleRate}:{bits}:0").ConfigureAwait(false));
-
-    internal async Task<bool> SetPerSourceVolumeAsync(string ip, bool on) =>
-        CommandSucceeded(await SendToDeviceAsync(ip, $"setVolumeControl:{(on ? 1 : 0)}").ConfigureAwait(false));
 }
