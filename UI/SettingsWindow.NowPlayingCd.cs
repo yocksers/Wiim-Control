@@ -75,7 +75,7 @@ sealed partial class WiimController
                 Width = hole * 2 + 10, Height = hole * 2 + 10, Stroke = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)), StrokeThickness = 1,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false
             });
-            _npCd.Children.Add(disc);
+            _npCd.Children.Add(new Panel { ClipToBounds = true, IsHitTestVisible = false, Children = { disc } });
             _npCd.Children.Add(CdRing(radius, hole, new ConicGradientBrush
             {
                 Angle = 20,
