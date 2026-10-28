@@ -385,20 +385,18 @@ sealed partial class WiimController
             var recentPage = BuildRecentPage();
             var queuePage = BuildQueuePage();
             var eqPage = BuildEqPage();
-            var volumePage = BuildVolumePage();
+            var mediaKeysPage = BuildMediaKeysPage();
             var themesPage = BuildThemesPage();
             var outputPage = BuildOutputPage();
             var inputsPage = BuildInputsPage();
             var subwooferPage = BuildSubwooferPage();
             var audioSettingsPage = BuildAudioSettingsPage();
-            var groupDelayPage = BuildGroupDelayPage();
             var ampPage = BuildAmpPage();
             var sleepPage = BuildSleepPage();
-            var hotkeysPage = BuildHotkeysPage();
             var generalPage = BuildGeneralPage();
             _devicePages.AddRange([
-                (presetsPage, RefreshPresetsAsync), (audioSettingsPage, RefreshAmpVolumeAsync), (outputPage, () => RefreshOutputAsync()),
-                (inputsPage, () => RefreshInputsAsync()), (subwooferPage, () => RefreshSubwooferAsync()), (groupDelayPage, RefreshGroupDelayAsync)
+                (presetsPage, RefreshPresetsAsync), (audioSettingsPage, RefreshAudioSettingsAsync), (outputPage, () => RefreshOutputAsync()),
+                (inputsPage, () => RefreshInputsAsync()), (subwooferPage, () => RefreshSubwooferAsync())
             ]);
 
             var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 0) };
@@ -412,40 +410,29 @@ sealed partial class WiimController
             sidebarItems.Children.Add(new DockPanel { Children = { hideMenu, brand } });
             sidebarItems.Children.Add(_lblDeviceName);
             sidebarItems.Children.Add(_lblDeviceIp);
-            sidebarItems.Children.Add(SectionLabel("Devices"));
-            sidebarItems.Children.Add(NavGroup(Nav("Devices", Icons.Speaker, devicesPage), Nav("Multiroom", Icons.Link, multiroomPage)));
-            sidebarItems.Children.Add(SectionLabel("Music"));
-            sidebarItems.Children.Add(NavGroup(
+            sidebarItems.Children.Add(NavSection("Devices", NavGroup(Nav("Devices", Icons.Speaker, devicesPage), Nav("Multiroom", Icons.Link, multiroomPage),
+                Nav("Presets", Icons.Star, presetsPage))));
+            sidebarItems.Children.Add(NavSection("Music", NavGroup(
                 Nav("Library", Icons.Library, libraryPage), Nav("Radio", Icons.Radio, radioPage), Nav("Queue", Icons.Queue, queuePage),
-                Nav("Recent", Icons.History, recentPage)));
-            sidebarItems.Children.Add(SectionLabel("Sound"));
-            sidebarItems.Children.Add(NavGroup(
-                Nav("Equalizer", Icons.Equalizer, eqPage), Nav("Output", Icons.Output, outputPage), Nav("Inputs", Icons.Input, inputsPage)));
+                Nav("Recent", Icons.History, recentPage))));
+            sidebarItems.Children.Add(NavSection("Audio", NavGroup(
+                Nav("Equalizer", Icons.Equalizer, eqPage), Nav("Output", Icons.Output, outputPage), Nav("Inputs", Icons.Input, inputsPage),
+                Nav(SectionHighPass, Icons.HighPass, subwooferPage, SectionHighPass), Nav("Audio settings", Icons.AudioSettings, audioSettingsPage),
+                Nav(SectionSubOut, Icons.Speaker, subwooferPage, SectionSubOut))));
             var deviceInfoNav = Nav(SectionDeviceInfo, Icons.Info, ampPage, SectionDeviceInfo);
             deviceInfoNav.Click += (_, _) => CountDeviceInfoClick(ampPage);
             var general = NavGroup(
                 deviceInfoNav, Nav(SectionNetwork, Icons.Wifi, ampPage, SectionNetwork),
                 Nav(SectionStandby, Icons.Power, ampPage, SectionStandby));
             var automation = NavGroup(
-                Nav(SectionAlarms, Icons.Alarm, ampPage, SectionAlarms), Nav("Sleep timer", Icons.Sleep, sleepPage), Nav("Presets", Icons.Star, presetsPage));
-            sidebarItems.Children.Add(SectionLabel("Audio"));
-            sidebarItems.Children.Add(NavGroup(
-                Nav(SectionHighPass, Icons.HighPass, subwooferPage, SectionHighPass), Nav("Audio settings", Icons.AudioSettings, audioSettingsPage),
-                Nav("Group audio delay", Icons.Timer, groupDelayPage)));
-            sidebarItems.Children.Add(SectionLabel("Subwoofer"));
-            sidebarItems.Children.Add(NavGroup(
-                Nav(SectionSubOut, Icons.Speaker, subwooferPage, SectionSubOut)));
-            sidebarItems.Children.Add(SectionLabel("Hardware"));
+                Nav(SectionAlarms, Icons.Alarm, ampPage, SectionAlarms), Nav("Sleep timer", Icons.Sleep, sleepPage));
             _displayNav = Nav(SectionDisplay, Icons.Display, ampPage, SectionDisplay);
-            sidebarItems.Children.Add(NavGroup(Nav(SectionHardware, Icons.Wrench, ampPage, SectionHardware), _displayNav));
-            sidebarItems.Children.Add(SectionLabel("Automation"));
-            sidebarItems.Children.Add(automation);
-            sidebarItems.Children.Add(SectionLabel("General"));
-            sidebarItems.Children.Add(general);
-            sidebarItems.Children.Add(SectionLabel("Wiim Control"));
-            sidebarItems.Children.Add(NavGroup(
-                Nav("Volume keys", Icons.Volume, volumePage), Nav("Hotkeys", Icons.Keyboard, hotkeysPage), Nav("General", Icons.Settings, generalPage),
-                Nav("Themes", Icons.Palette, themesPage)));
+            sidebarItems.Children.Add(NavSection("Hardware", NavGroup(Nav(SectionHardware, Icons.Wrench, ampPage, SectionHardware), _displayNav)));
+            sidebarItems.Children.Add(NavSection("Automation", automation));
+            sidebarItems.Children.Add(NavSection("General", general));
+            sidebarItems.Children.Add(NavSection("Wiim Control", NavGroup(
+                Nav("Media keys", Icons.Keyboard, mediaKeysPage), Nav("General", Icons.Settings, generalPage),
+                Nav("Themes", Icons.Palette, themesPage))));
 
             var coffee = new StackPanel
             {
@@ -515,10 +502,32 @@ sealed partial class WiimController
             return new Border { Classes = { "navgroup" }, Child = list };
         }
 
-        private static TextBlock SectionLabel(string text) => new()
+        private StackPanel NavSection(string name, Border group)
         {
-            Text = text, Classes = { "small", "muted" }, Margin = new Thickness(4, 22, 4, 6)
-        };
+            var chevron = new PathIcon { Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(chevron, Dock.Right);
+            var header = new Button
+            {
+                Classes = { "section" }, Margin = new Thickness(4, 22, 4, 6),
+                Content = new DockPanel
+                {
+                    Children = { chevron, new TextBlock { Text = name, Classes = { "small", "muted" }, VerticalAlignment = VerticalAlignment.Center } }
+                }
+            };
+            void Apply(bool collapsed)
+            {
+                group.IsVisible = !collapsed;
+                chevron.Data = collapsed ? Icons.ChevronRight : Icons.ChevronDown;
+            }
+            Apply(_owner.IsSectionCollapsed(name));
+            header.Click += (_, _) =>
+            {
+                bool collapse = group.IsVisible;
+                _owner.SetSectionCollapsed(name, collapse);
+                Apply(collapse);
+            };
+            return new StackPanel { Children = { header, group } };
+        }
 
         private Button Nav(string text, StreamGeometry icon, Control page, string? section = null)
         {
@@ -631,6 +640,7 @@ sealed partial class WiimController
         private void RebuildDeviceCards()
         {
             _volumeControls.Clear();
+            _groupVolumes.Clear();
             _nowPlayingControls.Clear();
             _castButtons.Clear();
             _inputLabels.Clear();
@@ -640,6 +650,8 @@ sealed partial class WiimController
             for (int position = 0; position < devices.Count; position++)
             {
                 var d = devices[position];
+                if (IsFollower(d.Ip)) continue;
+                var members = GroupMembers(d.Ip);
                 bool active = d.Ip == _owner._deviceIp;
                 bool locked = _owner.IsDeviceLocked(d.Ip);
 
@@ -731,8 +743,8 @@ sealed partial class WiimController
                 orderButtons.Children.Add(lockButton);
                 actions.Children.Insert(0, orderButtons);
 
-                var (mini, _) = IconPill(Icons.MiniPlayer, "Open the mini player for this device");
-                mini.Click += (_, _) => _owner.ShowMiniPlayer(d.Ip);
+                var (mini, _) = IconPill(Icons.MiniPlayer, "Open or close the mini player for this device");
+                mini.Click += (_, _) => _owner.ToggleMiniPlayer(d.Ip);
                 var playerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { mini } };
                 if (PcAudioSupported)
                 {
@@ -756,8 +768,8 @@ sealed partial class WiimController
                 Grid.SetRow(nowPlayingRow, 1);
                 Grid.SetColumnSpan(nowPlayingRow, 2);
                 grid.Children.Add(nowPlayingRow);
-                var volumeRow = BuildVolumeRow(d.Ip);
-                volumeRow.IsEnabled = !locked;
+                var volumeRow = members.Count > 1 ? BuildGroupVolumeRow(d.Ip, members) : BuildVolumeRow(d.Ip);
+                if (members.Count == 1) volumeRow.IsEnabled = !locked;
                 Grid.SetRow(volumeRow, 2);
                 Grid.SetColumnSpan(volumeRow, 2);
                 grid.Children.Add(volumeRow);
@@ -766,6 +778,7 @@ sealed partial class WiimController
                 card.Classes.Add("card");
                 if (active) card.Classes.Add("active");
                 cards.Add(card);
+                if (members.Count > 1) cards.Add(BuildGroupMembersCard(members));
             }
             if (cards.Count == 0) cards.Add(Muted("No devices yet. Use Discover or Add Device."));
 
@@ -906,6 +919,7 @@ sealed partial class WiimController
                 _volumeTouched[ip] = DateTime.UtcNow;
                 _pendingVolumes[ip] = slider.Value;
                 if (!_volumeSendTimer.IsEnabled) _volumeSendTimer.Start();
+                ApplyGroupVolume(ip);
             };
             mute.Click += async (_, _) => await ToggleDeviceMuteAsync(ip);
             return new VolumeControls(slider, value, mute, muteIcon);
@@ -943,6 +957,7 @@ sealed partial class WiimController
         {
             if (_volumeControls.TryGetValue(ip, out var card)) ApplyVolumeTo(ip, card);
             if (_npIp == ip && _npVolume != null) ApplyVolumeTo(ip, _npVolume);
+            ApplyGroupVolume(ip);
         }
 
         private void ApplyVolumeTo(string ip, VolumeControls c)
@@ -960,6 +975,7 @@ sealed partial class WiimController
                 c.Value.Classes.Set("muted", false);
                 c.Slider.Muted = v.Muted;
                 c.Slider.IsEnabled = c.Mute.IsEnabled = true;
+                if (OtherFollowerOf(ip) != null) c.Mute.IsEnabled = false;
                 c.MuteIcon.Data = v.Muted ? Icons.Mute : Icons.Volume;
             }
             else
@@ -997,7 +1013,10 @@ sealed partial class WiimController
             _volumeSending.Add(ip);
             try
             {
-                if (await _owner.SetVolumeAsync(ip, volume) && _volumes.TryGetValue(ip, out var current))
+                bool sent = OtherFollowerOf(ip) is { } other
+                    ? await _owner.SetFollowerVolumeAsync(other.Leader, ip, volume)
+                    : await _owner.SetVolumeAsync(ip, volume);
+                if (sent && _volumes.TryGetValue(ip, out var current))
                     _volumes[ip] = current with { Volume = volume };
             }
             finally
@@ -1047,7 +1066,9 @@ sealed partial class WiimController
             {
                 var started = DateTime.UtcNow;
                 var ips = _owner._knownDevices.Select(d => d.Ip).Distinct().ToList();
+                var others = RefreshOtherFollowerVolumesAsync(started);
                 var volumes = await Task.WhenAll(ips.Select(ip => _owner.GetVolumeAsync(ip)));
+                await others;
                 for (int i = 0; i < ips.Count; i++)
                 {
                     string ip = ips[i];
@@ -1070,6 +1091,7 @@ sealed partial class WiimController
             {
                 var started = DateTime.UtcNow;
                 var statuses = await _owner.GetAllDeviceStatusesAsync();
+                AdoptLatestGroups();
                 foreach (var (ip, status) in statuses)
                 {
                     if (status != null) _statuses[ip] = status;
@@ -1183,6 +1205,7 @@ sealed partial class WiimController
             c.Playing.IsVisible = status.IsPlaying;
             c.PlayPause.IsEnabled = c.Previous.IsEnabled = c.Next.IsEnabled = true;
             ApplyPlayback(ip, c, status);
+            if (ReferenceEquals(c, _npControls)) UpdateLyricsTrack(status);
             if (status.ArtUrl != c.Art.ImageUrl)
             {
                 c.Art.ImageUrl = status.ArtUrl;
@@ -1194,7 +1217,7 @@ sealed partial class WiimController
         internal bool IsShowingArtwork(Avalonia.Media.Imaging.Bitmap bitmap) =>
             _nowPlayingControls.Values.Any(c => ReferenceEquals(c.Art.Bitmap, bitmap)) ||
             (_npControls != null && ReferenceEquals(_npControls.Art.Bitmap, bitmap)) ||
-            ReferenceEquals(_npCover.Source, bitmap) || ReferenceEquals(_npCoverOld.Source, bitmap) ||
+            ReferenceEquals(_npCover.Source, bitmap) || ReferenceEquals(_npCoverOld.Source, bitmap) || ReferenceEquals(_npPendingArt, bitmap) ||
             IsBackdrop(bitmap) ||
             _presetImages.Any(i => ReferenceEquals(i.Source, bitmap));
 
@@ -1597,6 +1620,7 @@ sealed partial class WiimController
             RebuildMultiroom();
             RebuildDeviceCards();
             await RefreshChannelsAsync();
+            RebuildMultiroom();
             await homeTheater;
         }
 
@@ -1607,7 +1631,7 @@ sealed partial class WiimController
             if (_multiroom == null) return null;
             if (!_multiroom.Online.Contains(ip)) return ("Not reachable", Palette.TextDim);
             if (_multiroom.LeaderOf.TryGetValue(ip, out var leader)) return ($"Linked to {DeviceName(leader)}", Palette.AccentText);
-            int members = _multiroom.MemberCount(ip);
+            int members = _multiroom.MemberCount(ip) + _multiroom.OthersOf(ip).Count;
             return members > 0 ? ($"Group leader  ·  {members} linked", Palette.AccentText) : null;
         }
 
@@ -1615,7 +1639,7 @@ sealed partial class WiimController
         {
             if (!snapshot.Online.Contains(ip)) return "Not reachable";
             if (snapshot.LeaderOf.TryGetValue(ip, out var leader)) return $"Linked to {DeviceName(leader)}";
-            int members = snapshot.MemberCount(ip);
+            int members = snapshot.MemberCount(ip) + snapshot.OthersOf(ip).Count;
             return members > 0 ? $"Group leader  ·  {members} linked" : "Not linked";
         }
 
@@ -1683,6 +1707,24 @@ sealed partial class WiimController
             }
             else
             {
+                if (snapshot.MemberCount(leaderIp) > 0)
+                {
+                    rows.Add(new TextBlock { Text = leaderName, Margin = new Thickness(0, 6, 0, 0) });
+                    rows.Add(new TextBlock { Text = "Leader", Classes = { "muted" }, Margin = new Thickness(0, 4, 0, 6) });
+                    var leaderChannel = _channels.GetValueOrDefault(leaderIp, ChannelStereo);
+                    var leaderChannels = SegmentSwitch([(ChannelStereo, "Stereo"), (ChannelLeft, "Left"), (ChannelRight, "Right")],
+                        leaderChannel is ChannelLeft or ChannelRight ? leaderChannel : ChannelStereo, FieldWidth,
+                        value => ChangeGroupAsync(async () =>
+                        {
+                            bool ok = await _owner.SetChannelAsync(leaderIp, value);
+                            if (ok) _channels[leaderIp] = value;
+                            return ok;
+                        }));
+                    var leaderRow = LabeledRow("Plays", leaderChannels);
+                    ToolTip.SetTip(leaderRow, $"Whether {leaderName} plays both channels or only the left or right one in this group, for example to use two devices as a stereo pair");
+                    leaderRow.Margin = new Thickness(0, 0, 0, 10);
+                    rows.Add(leaderRow);
+                }
                 foreach (var other in devices.Where(d => d.Ip != leaderIp))
                 {
                     var o = other;
@@ -2167,16 +2209,22 @@ sealed partial class WiimController
             UpdateEqEnabledState();
         }
 
-        private Control BuildVolumePage()
+        private Control BuildMediaKeysPage() =>
+            Page("Media keys", null, [], new StackPanel { Children = { BuildVolumeKeysCard(), BuildVolumeOverlayCard(), BuildShortcutsCard() } });
+
+        private Border BuildVolumeKeysCard()
         {
             _numStep.ValueChanged += (_, _) => { if (_loading) return; _owner.SetVolumeStep(_numStep.Value); };
             _chkLogStep.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetLogStep(_chkLogStep.IsChecked == true); };
             _chkGroupVolume.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetGroupVolumeKeys(_chkGroupVolume.IsChecked == true); };
-            var keysCard = Card("Volume keys",
+            return Card("Volume keys",
                 LabeledRow("Step size", _numStep),
                 ToggleRow("Logarithmic step (finer at low volume)", _chkLogStep),
                 ToggleRow("Volume keys also change linked devices", _chkGroupVolume));
+        }
 
+        private Border BuildVolumeOverlayCard()
+        {
             foreach (var c in Enum.GetValues<OsdCorner>()) _cboCorner.Items.Add(ComboItem(c, OsdCornerLabel(c)));
             foreach (int ms in DurationChoices) _cboDuration.Items.Add(ComboItem(ms, OsdDurationLabel(ms)));
             _cboCorner.SelectionChanged += (_, _) =>
@@ -2197,36 +2245,24 @@ sealed partial class WiimController
                 var preview = _volumes.TryGetValue(_owner._deviceIp, out var current) ? current : new DeviceVolume(50, false);
                 _owner.ShowVolumeOsd(preview.Volume, preview.Muted);
             };
-            var overlayCard = Card("Volume overlay", LabeledRow("Position", _cboCorner), LabeledRow("Duration", _cboDuration),
+            return Card("Volume overlay", LabeledRow("Position", _cboCorner), LabeledRow("Duration", _cboDuration),
                 LabeledRow("Size", _cboOsdScale));
-
-            var cards = new StackPanel { Children = { keysCard, overlayCard } };
-            return Page("Volume keys", null, [], cards);
         }
 
         private Control BuildAudioSettingsPage()
         {
             var body = new StackPanel();
             var refresh = Pill("Refresh");
-            refresh.Click += async (_, _) => await RefreshAmpVolumeAsync();
+            refresh.Click += async (_, _) => await RefreshAudioSettingsAsync();
             var page = Page("Audio settings", null, [_cboVolumeAmp, refresh], body);
             body.Children.Add(BuildAmpVolumeCard(page));
             body.Children.Add(_dynamicBassHost);
+            body.Children.Add(GroupDelayCard());
+            body.Children.Add(SyncAudioCard());
             return page;
         }
 
-        private Control BuildGroupDelayPage()
-        {
-            var body = new StackPanel { Children = { GroupDelayCard(), SyncAudioCard() } };
-            var refresh = Pill("Refresh");
-            refresh.Click += async (_, _) => await RefreshGroupDelayAsync();
-            var page = Page("Group audio delay", null, [_cboDelayAmp, refresh], body);
-            page.PropertyChanged += async (_, e) =>
-            {
-                if (e.Property == IsVisibleProperty && page.IsVisible) await RefreshGroupDelayAsync();
-            };
-            return page;
-        }
+        private Task RefreshAudioSettingsAsync() => Task.WhenAll(RefreshAmpVolumeAsync(), RefreshGroupDelayAsync());
 
         private static Control CoffeeButton()
         {
@@ -2279,7 +2315,7 @@ sealed partial class WiimController
             };
             var volumeKeysRow = ToggleRow("Volume keys control the WiiM device", _chkVolumeKeys);
             ToolTip.SetTip(volumeKeysRow, "When this is off, the keyboard's volume and mute keys change this computer's volume as usual. " +
-                                          "Hotkeys you set on the Hotkeys page keep working.");
+                                          "Hotkeys you set on the Media keys page keep working.");
             _chkAutoStart.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetAutoStartSetting(_chkAutoStart.IsChecked == true); };
             _chkStartMinimized.IsCheckedChanged += (_, _) => { if (_loading) return; _owner.SetStartMinimized(_chkStartMinimized.IsChecked == true); };
             ToolTip.SetTip(_chkStartMinimized, OperatingSystem.IsMacOS()
@@ -2331,7 +2367,7 @@ sealed partial class WiimController
                 cards.Children.Add(Card("Behavior", ToggleRow(AutoStart.Label, _chkAutoStart), ToggleRow(startMinimizedLabel, _chkStartMinimized),
                     mediaControlsRow));
                 cards.Children.Add(Card("Volume and media keys",
-                    Muted("macOS doesn't let apps take over the volume keys. Set your own shortcuts on the Hotkeys page, " +
+                    Muted("macOS doesn't let apps take over the volume keys. Set your own shortcuts on the Media keys page, " +
                           "or run these commands from the Shortcuts app or Automator:"),
                     CommandList()));
             }
@@ -2358,20 +2394,26 @@ sealed partial class WiimController
                 Muted("Shows a blurred copy of the active device's cover behind this window.")));
             var miniAuto = new ToggleSwitch { IsChecked = _owner.MiniPlayerAuto };
             miniAuto.IsCheckedChanged += (_, _) => _owner.MiniPlayerAuto = miniAuto.IsChecked == true;
+            var miniOnTop = new ToggleSwitch { IsChecked = _owner.MiniPlayerOnTop };
+            miniOnTop.IsCheckedChanged += (_, _) => _owner.MiniPlayerOnTop = miniOnTop.IsChecked == true;
+            var compactOnTop = new ToggleSwitch { IsChecked = _owner.MiniPlayerCompactOnTop };
+            compactOnTop.IsCheckedChanged += (_, _) => _owner.MiniPlayerCompactOnTop = compactOnTop.IsChecked == true;
             var miniReset = Pill("Reset positions");
             ToolTip.SetTip(miniReset, "Move the mini players back to the bottom-right corner of the screen, side by side at their normal size");
             miniReset.Click += (_, _) => _owner.ResetMiniPlayerPlacement();
             cards.Children.Add(Card("Mini player",
                 ToggleRow("Open the mini player when the active device switches to Wi-Fi", miniAuto),
+                ToggleRow("Keep the mini player on top of other windows", miniOnTop),
+                ToggleRow("Keep the compact mini player on top of other windows", compactOnTop),
                 LabeledRow("Window positions and sizes", miniReset),
                 Muted("Open a mini player for any device with the mini player button on its card on the Devices page. You can have one open " +
-                      "for each device.")));
+                      "for each device. The button at the top of a mini player switches it between the full and the compact layout.")));
             var trackToasts = new ToggleSwitch { IsChecked = _owner.TrackToasts };
             trackToasts.IsCheckedChanged += (_, _) => _owner.TrackToasts = trackToasts.IsChecked == true;
             cards.Children.Add(Card("Song notifications",
                 ToggleRow("Show a notification when the song changes", trackToasts),
                 Muted("Shows the cover, title and artist of what the active device plays for a few seconds, in the same corner and size as " +
-                      "the volume overlay (set on the Volume keys page). Click it to open the mini player.")));
+                      "the volume overlay (set on the Media keys page). Click it to open the mini player.")));
             var checkUpdates = new ToggleSwitch { IsChecked = _owner._checkUpdates };
             checkUpdates.IsCheckedChanged += (_, _) => _owner.SetCheckUpdates(checkUpdates.IsChecked == true);
             var checkNow = Pill("Check now");
@@ -2447,7 +2489,7 @@ sealed partial class WiimController
                 ToggleRow("Use the desktop's global shortcuts for the volume keys", _chkPortal),
                 _lblPortalStatus,
                 ToggleRow("Include the media keys (play/pause, next, previous)", _chkForwardMedia),
-                Muted("You can also set your own shortcuts on the Hotkeys page. If your desktop doesn't support global shortcuts, " +
+                Muted("You can also set your own shortcuts on the Media keys page. If your desktop doesn't support global shortcuts, " +
                       "bind these commands to the keys in its keyboard settings instead:"),
                 CommandList());
         }
@@ -2478,16 +2520,14 @@ sealed partial class WiimController
             return commands;
         }
 
-        private Control BuildHotkeysPage()
+        private Border BuildShortcutsCard()
         {
             AddHandler(KeyDownEvent, OnRecordKeyDown, RoutingStrategies.Tunnel);
             _owner.HotkeysChanged += RebuildHotkeys;
-            var intro = Card(null,
-                Muted("Set your own keyboard shortcuts for Wiim Control. They work in every program, also when this window is closed."),
-                Muted($"Click a shortcut and press the keys you want. Combine a letter, number, arrow or other key with at least one of " +
-                      $"Ctrl, Alt, Shift or {Hotkey.MetaName}, or use an F-key on its own. Press Esc to cancel."),
-                _lblHotkeyNote);
-            return Page("Hotkeys", null, [], new StackPanel { Children = { intro, Card("Shortcuts", _hotkeyList) } });
+            return Card("Shortcuts",
+                Muted($"Click a shortcut and press a key with Ctrl, Alt, Shift or {Hotkey.MetaName}, or an F-key on its own (Esc cancels). " +
+                      "They work in every program, also when this window is closed."),
+                _lblHotkeyNote, _hotkeyList);
         }
 
         private void RebuildHotkeys()
@@ -2620,7 +2660,6 @@ sealed partial class WiimController
             FillSubwooferCombo(followActive: _followActive);
             FillAmpCombo(_cboOutputAmp);
             FillAmpCombo(_cboInputsAmp);
-            FillAmpCombo(_cboDelayAmp);
             FillEqAmpCombo();
             _cboCorner.SelectedItem = _cboCorner.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is OsdCorner c && c == _owner._osdCorner);
             _cboDuration.SelectedItem = _cboDuration.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag is int ms && ms == _owner._osdDurationMs);

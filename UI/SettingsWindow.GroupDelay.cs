@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
 
 namespace WiimControl;
 
@@ -6,7 +8,6 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private readonly ComboBox _cboDelayAmp = new() { Width = DevicePickerWidth };
         private readonly StackPanel _delayRows = new();
         private Border? _delayCard;
         private int _delayVersion;
@@ -16,8 +17,6 @@ sealed partial class WiimController
         private Border GroupDelayCard()
         {
             if (_delayCard != null) return _delayCard;
-            ToolTip.SetTip(_cboDelayAmp, "The device whose group audio delay is shown");
-            _cboDelayAmp.SelectionChanged += async (_, _) => { if (!_loading) await RefreshGroupDelayAsync(); };
             _delayCard = Card("Group audio delay",
                 Muted("How much each input is delayed when the device plays in a group, so all devices stay in sync. " +
                       "A lower delay keeps the sound in step with the picture, but too low can make some devices lose sound."),
@@ -36,7 +35,7 @@ sealed partial class WiimController
         private async Task RefreshGroupDelayAsync()
         {
             int version = ++_delayVersion;
-            if (AmpOf(_cboDelayAmp) is not { } ip)
+            if (AmpOf(_cboVolumeAmp) is not { } ip)
             {
                 SetRows(_delayRows, []);
                 return;
@@ -71,22 +70,54 @@ sealed partial class WiimController
 
         private Grid SyncDelayRow(string ip, double current, bool micro)
         {
-            double step = micro ? 0.1 : 1;
-            string Format(double ms) => (micro ? ms.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) : Math.Round(ms).ToString(
+            double step = micro ? 0.01 : 1;
+            string Format(double ms) => (micro ? ms.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : Math.Round(ms).ToString(
                 System.Globalization.CultureInfo.InvariantCulture)) + " ms";
-            var box = new NumberBox(-SyncDelayLimitMs, SyncDelayLimitMs, Format, (ms, direction) => Math.Round(ms + step * direction, 1))
+            double Nudge(double ms, int direction) => Math.Round(ms + step * direction, 2);
+            var box = new NumberBox(-SyncDelayLimitMs, SyncDelayLimitMs, Format, Nudge) { Value = current };
+            int limit = (int)SyncDelayLimitMs;
+            var slider = new LevelSlider
             {
-                Width = 140, Value = current
+                Minimum = -limit, Maximum = limit, FillFromCenter = true, MinWidth = 0, Value = (int)Math.Round(current)
             };
-            box.ValueChanged += async (_, _) =>
+            async Task Apply(double ms)
             {
-                if (!await _owner.SetSyncDelayAsync(ip, box.Value, micro))
+                if (!await _owner.SetSyncDelayAsync(ip, ms, micro))
                     await Dialogs.MessageAsync(this, "The device didn't accept the change.", _scale);
                 await RefreshGroupDelayAsync();
-            };
-            var row = LabeledRow("Extra delay", box);
+            }
+            box.ValueChanged += async (_, _) => await Apply(box.Value);
+            slider.ValueChanged += (_, _) => { if (slider.IsDragging) box.Value = slider.Value; };
+            slider.ValueCommitted += async (_, _) => await Apply(slider.Value);
+            Button StepButton(StreamGeometry icon, int direction, string tip)
+            {
+                var (button, _) = IconButton(icon);
+                ToolTip.SetTip(button, tip);
+                button.Click += async (_, _) => await Apply(Math.Clamp(Nudge(box.Value, direction), -SyncDelayLimitMs, SyncDelayLimitMs));
+                return button;
+            }
+            var minus = StepButton(Icons.Minus, -1, micro ? "0.01 ms earlier" : "1 ms earlier");
+            var plus = StepButton(Icons.Plus, 1, micro ? "0.01 ms later" : "1 ms later");
+            var steps = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = FieldGap };
+            steps.Children.Add(minus);
+            Grid.SetColumn(box, 1);
+            steps.Children.Add(box);
+            Grid.SetColumn(plus, 2);
+            steps.Children.Add(plus);
+            var range = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+            range.Children.Add(new TextBlock { Text = $"{-limit} ms", Classes = { "muted", "small" } });
+            var high = new TextBlock { Text = $"{limit} ms", Classes = { "muted", "small" }, HorizontalAlignment = HorizontalAlignment.Right };
+            Grid.SetColumn(high, 1);
+            range.Children.Add(high);
+            var reset = Pill("Reset to default");
+            reset.HorizontalAlignment = HorizontalAlignment.Left;
+            reset.IsEnabled = current != 0;
+            ToolTip.SetTip(reset, "Sets the extra delay back to 0 ms");
+            reset.Click += async (_, _) => await Apply(0);
+            var field = new StackPanel { Width = FieldWidth, Spacing = 6, Children = { steps, slider, range, reset } };
+            var row = LabeledRow("Extra delay", field);
             ToolTip.SetTip(row, "A positive value plays this device later, a negative value plays it earlier. " +
-                                 $"From {-SyncDelayLimitMs:0} to {SyncDelayLimitMs:0} ms; use the arrow keys to nudge it.");
+                                 $"From {-limit} to {limit} ms; use the arrow keys to nudge it.");
             return row;
         }
 

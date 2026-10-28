@@ -9,6 +9,69 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
+        private Control FixedVolumeRow(string ip, bool on)
+        {
+            var toggle = new ToggleSwitch { IsChecked = on };
+            bool reverting = false;
+            toggle.IsCheckedChanged += async (_, _) =>
+            {
+                if (reverting) return;
+                bool wanted = toggle.IsChecked == true;
+                if (wanted && !await Dialogs.ConfirmAsync(this,
+                        "Turning on fixed volume output sets the device volume to 100. This can make the sound suddenly much louder and could " +
+                        "damage speakers or hearing. Only use it when an external amplifier, active speakers or a DAC controls the volume. " +
+                        "Turn it on?", _scale))
+                {
+                    reverting = true;
+                    toggle.IsChecked = false;
+                    reverting = false;
+                    return;
+                }
+                await ChangeOutputAsync(() => _owner.SetFixedVolumeAsync(ip, wanted));
+            };
+            var row = ToggleRow("Fixed volume output", toggle);
+            ToolTip.SetTip(row, "Keeps the device at volume 100 so an external amplifier, active speakers or a DAC controls the volume");
+            return row;
+        }
+
+        private Control OutputLevelRows(string ip, OutputLevel level)
+        {
+            var combo = new ComboBox { Width = WideFieldWidth };
+            foreach (var choice in level.Choices) combo.Items.Add(ComboItem(choice, MillivoltsText(choice.Millivolts)));
+            var current = level.Choices.FirstOrDefault(c => c.Index == level.Current);
+            if (current == null) combo.Items.Insert(0, ComboItem(string.Empty, "Unknown"));
+            combo.SelectedIndex = current == null ? 0 : level.Choices.IndexOf(current);
+            string name = OutputLevelName(level.Mode);
+            combo.SelectionChanged += async (_, _) =>
+            {
+                if ((combo.SelectedItem as ComboBoxItem)?.Tag is not OutputLevelChoice choice || choice == current) return;
+                if (current == null || choice.Millivolts > current.Millivolts)
+                {
+                    string what = level.Mode == HeadphoneOutputMode ? "headphones" : "amplifier or active speakers";
+                    if (!await Dialogs.ConfirmAsync(this,
+                            $"Setting the {name.ToLowerInvariant()} to {MillivoltsText(choice.Millivolts)} makes the sound going to your {what} " +
+                            "louder. Turn their volume down first if you're not sure. Change it?", _scale))
+                    {
+                        await RefreshOutputAsync(quiet: true);
+                        return;
+                    }
+                }
+                await ChangeOutputAsync(() => _owner.SetOutputLevelAsync(ip, level, choice.Index));
+            };
+            var row = LabeledRow(name, combo);
+            ToolTip.SetTip(row, level.Mode == HeadphoneOutputMode
+                ? "How strong the signal from the headphone output is. Choose a lower level for sensitive headphones."
+                : "How strong the signal from the line out is. Match it to the input of your amplifier or active speakers: 2 Vrms is the " +
+                  "usual full line level, lower levels suit inputs that distort or are too loud.");
+            if (level.Mode == HeadphoneOutputMode) return row;
+            var note = new TextBlock
+            {
+                Text = "If you hear some noise and distortion from your audio system, please select a lower level to resolve it.",
+                Classes = { "muted", "small" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            };
+            return new StackPanel { Spacing = 4, Children = { row, note } };
+        }
+
         private Border BuildOutputCard(string ip, OutputState state)
         {
             var rows = new List<Control>();
@@ -26,11 +89,14 @@ sealed partial class WiimController
                 ToolTip.SetTip(combo, "Where the device sends its sound");
                 combo.SelectionChanged += async (_, _) =>
                 {
-                    if ((combo.SelectedItem as ComboBoxItem)?.Tag is OutputChoice choice && choice.Mode != state.ActiveMode)
-                        await ChangeOutputAsync(() => _owner.SetOutputAsync(ip, choice.Code));
+                    if ((combo.SelectedItem as ComboBoxItem)?.Tag is not OutputChoice choice || choice.Mode == state.ActiveMode) return;
+                    await ChangeOutputAsync(() => _owner.SetOutputAsync(ip, choice));
                 };
                 rows.Add(LabeledRow("Output", combo));
             }
+
+            if (state.FixedVolume is bool fixedVolume) rows.Add(FixedVolumeRow(ip, fixedVolume));
+            foreach (var level in state.Levels ?? []) rows.Add(OutputLevelRows(ip, level));
 
             if (state.Usb is { } usb)
             {

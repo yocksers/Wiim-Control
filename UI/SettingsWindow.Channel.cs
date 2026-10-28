@@ -41,7 +41,7 @@ sealed partial class WiimController
         };
 
         private bool IsGrouped(string ip) =>
-            _multiroom != null && (_multiroom.LeaderOf.ContainsKey(ip) || _multiroom.MemberCount(ip) > 0);
+            _multiroom != null && (_multiroom.LeaderOf.ContainsKey(ip) || _multiroom.MemberCount(ip) > 0 || _multiroom.OthersOf(ip).Count > 0);
 
         private void ApplyChannel(string ip)
         {
@@ -61,7 +61,10 @@ sealed partial class WiimController
         private async Task RefreshChannelsAsync()
         {
             var ips = _owner._knownDevices.Select(d => d.Ip).Where(ip => _multiroom == null || _multiroom.Online.Contains(ip)).ToList();
-            var results = await Task.WhenAll(ips.Select(async ip => (Ip: ip, Channel: await _owner.GetChannelAsync(ip))));
+            var results = await Task.WhenAll(ips.Select(async ip => (Ip: ip,
+                Channel: _multiroom?.LeaderOf.ContainsKey(ip) == true && _multiroom.Channels?.TryGetValue(ip, out int followerChannel) == true
+                    ? followerChannel
+                    : await _owner.GetChannelAsync(ip))));
             foreach (var (ip, channel) in results)
             {
                 if (_channelChanging.Contains(ip)) continue;
@@ -77,8 +80,10 @@ sealed partial class WiimController
             int next = NextChannel(current);
             _channels[ip] = next;
             ApplyChannel(ip);
-            bool ok = await _owner.SetChannelAsync(ip, next);
-            int? confirmed = await _owner.GetChannelAsync(ip);
+            string? leader = _multiroom != null && _multiroom.LeaderOf.TryGetValue(ip, out var l) ? l : null;
+            string address = _multiroom?.AddressOf(ip) ?? ip;
+            bool ok = leader != null ? await _owner.SetRoomChannelAsync(leader, address, next) : await _owner.SetChannelAsync(ip, next);
+            int? confirmed = leader != null ? await _owner.GetFollowerChannelAsync(leader, address) : await _owner.GetChannelAsync(ip);
             _channelChanging.Remove(ip);
             if (confirmed is int value) _channels[ip] = value;
             else if (!ok) _channels[ip] = current;

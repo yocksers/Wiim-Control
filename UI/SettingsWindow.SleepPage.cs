@@ -59,10 +59,7 @@ sealed partial class WiimController
             if (version != _sleepVersion) return;
             _lblSleepStatus.Text = string.Empty;
 
-            var rows = new List<Control>
-            {
-                Muted("Each device stops playing when its timer runs out. The timer is kept on the device, so it also runs when this window is closed.")
-            };
+            var rows = new List<Control>();
             _sleepFilling = true;
             for (int i = 0; i < devices.Count; i++)
             {

@@ -44,6 +44,9 @@ sealed partial class WiimController
         private async Task SeekAsync(string ip, int seconds)
         {
             if (_positions.TryGetValue(ip, out var p)) _positions[ip] = (seconds * 1000, DateTime.UtcNow, p.Playing);
+            string target = TargetOf(ip);
+            if (_statuses.TryGetValue(target, out var status))
+                _statuses[target] = status with { PositionMs = seconds * 1000, PositionAt = DateTime.UtcNow };
             await _owner.SeekAsync(TargetOf(ip), seconds);
             await Task.Delay(800);
             if (IsVisible) await RefreshDeviceStatusesAsync();
@@ -92,10 +95,10 @@ sealed partial class WiimController
             c.PositionRow.IsVisible = seekable;
             if (seekable)
             {
-                _positions[ip] = (status.PositionMs, DateTime.UtcNow, status.IsPlaying);
+                _positions[ip] = (status.PositionMs, status.PositionAt, status.IsPlaying);
                 c.Position.Maximum = Math.Max(1, status.DurationMs / 1000);
                 c.Total.Text = FormatTime(status.DurationMs / 1000);
-                ShowPosition(c, status.PositionMs);
+                ShowPosition(c, status.PositionNow);
             }
             else _positions.Remove(ip);
         }

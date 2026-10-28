@@ -14,11 +14,11 @@ sealed partial class WiimController
 
         private Border BuildAmpVolumeCard(Control page)
         {
-            ToolTip.SetTip(_cboVolumeAmp, "The device whose volume settings are shown. They're saved on the device.");
-            _cboVolumeAmp.SelectionChanged += async (_, _) => { if (!_loading) await RefreshAmpVolumeAsync(); };
+            ToolTip.SetTip(_cboVolumeAmp, "The device whose audio settings are shown. They're saved on the device.");
+            _cboVolumeAmp.SelectionChanged += async (_, _) => { if (!_loading) await RefreshAudioSettingsAsync(); };
             page.PropertyChanged += async (_, e) =>
             {
-                if (e.Property == IsVisibleProperty && page.IsVisible) await RefreshAmpVolumeAsync();
+                if (e.Property == IsVisibleProperty && page.IsVisible) await RefreshAudioSettingsAsync();
             };
             return Card("Device volume", _ampVolumeRows);
         }

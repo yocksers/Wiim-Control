@@ -65,9 +65,16 @@ sealed class MacHotkeys : IGlobalHotkeys
 
     private int OnHotKey(IntPtr nextHandler, IntPtr theEvent, IntPtr userData)
     {
-        if (GetEventParameter(theEvent, EventParamDirectObject, TypeEventHotKeyID, IntPtr.Zero,
-                (nuint)Marshal.SizeOf<EventHotKeyID>(), IntPtr.Zero, out var hotKeyId) == 0 && hotKeyId.Signature == Signature)
-            _onPressed((int)hotKeyId.Id);
+        try
+        {
+            if (GetEventParameter(theEvent, EventParamDirectObject, TypeEventHotKeyID, IntPtr.Zero,
+                    (nuint)Marshal.SizeOf<EventHotKeyID>(), IntPtr.Zero, out var hotKeyId) == 0 && hotKeyId.Signature == Signature)
+                _onPressed((int)hotKeyId.Id);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Hotkeys", ex);
+        }
         return 0;
     }
 

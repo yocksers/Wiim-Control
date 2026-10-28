@@ -21,7 +21,8 @@ sealed partial class WiimController
             ToolTip.SetTip(_cboHtFront, "The WiiM device connected to your TV");
             _cboHtFront.SelectionChanged += async (_, _) => { if (!_htFilling) await RefreshHomeTheaterAsync(reloadDevices: false); };
             _htCard = Card("Home theater",
-                Muted("Use other WiiM devices as the center and surround speakers of a WiiM Ultra, Amp Pro or Amp Ultra that's connected to your TV."),
+                Muted("Use other WiiM devices as the center and surround speakers of a WiiM Ultra, Amp Pro, Amp Ultra or Bar that's connected to your TV. " +
+                      "The WiiM Bar plays the center itself, so it only takes surround speakers."),
                 LabeledRow("Front device", _cboHtFront),
                 _htRows);
             return _htCard;
@@ -49,7 +50,7 @@ sealed partial class WiimController
             }
             if ((_cboHtFront.SelectedItem as ComboBoxItem)?.Tag is not string frontIp)
             {
-                SetRows(_htRows, [Muted("None of your devices can be the front of a home theater. That needs a WiiM Ultra, Amp Pro or Amp Ultra.")]);
+                SetRows(_htRows, [Muted("None of your devices can be the front of a home theater. That needs a WiiM Ultra, Amp Pro, Amp Ultra or Bar.")]);
                 return;
             }
             var state = await _owner.GetHomeTheaterAsync(frontIp, _htDevices);
@@ -61,6 +62,7 @@ sealed partial class WiimController
         {
             if (!state.Supported) return [Muted("This device didn't report its home theater settings. Check that it's switched on and reachable.")];
             var others = state.Devices.Where(d => d.Ip != frontIp).ToList();
+            bool soundbar = IsSoundbar(state.Devices.FirstOrDefault(d => d.Ip == frontIp)?.Project);
             if (others.Count == 0) return [Muted("Add another WiiM device on the Devices page to use it as a center or surround speaker.")];
 
             string? Member(params int[] channels) => state.Members.FirstOrDefault(m => channels.Contains(m.Channel))?.Uuid;
@@ -69,31 +71,31 @@ sealed partial class WiimController
             string? left = both ?? Member(SurroundLeftChannel);
             string? right = both ?? Member(SurroundRightChannel);
 
-            ComboBox Picker(string? selected)
+            ComboBox Picker(string? selected, List<HomeTheaterDevice> choices)
             {
                 var combo = new ComboBox { Width = FieldWidth };
                 combo.Items.Add(ComboItem(string.Empty, "None"));
-                foreach (var d in others) combo.Items.Add(ComboItem(d.Uuid, d.Name));
-                int index = others.FindIndex(d => d.Uuid.Equals(selected, StringComparison.OrdinalIgnoreCase));
+                foreach (var d in choices) combo.Items.Add(ComboItem(d.Uuid, d.Name));
+                int index = choices.FindIndex(d => d.Uuid.Equals(selected, StringComparison.OrdinalIgnoreCase));
                 combo.SelectedIndex = index >= 0 ? index + 1 : 0;
                 return combo;
             }
-            var centerBox = Picker(center);
-            var leftBox = Picker(left);
-            var rightBox = Picker(right);
+            var centerBox = Picker(center, others.Where(d => !IsSoundbar(d.Project)).ToList());
+            var leftBox = Picker(left, others);
+            var rightBox = Picker(right, others);
             var surroundLeftRow = LabeledRow("Surround left", leftBox);
-            ToolTip.SetTip(surroundLeftRow, "Pick the same device for left and right to let one device play both surround channels");
+            ToolTip.SetTip(surroundLeftRow, "Pick the same device for left and right to let one device play both surround channels. A WiiM Sound plays one side only.");
             var surroundRightRow = LabeledRow("Surround right", rightBox);
-            ToolTip.SetTip(surroundRightRow, "Pick the same device for left and right to let one device play both surround channels");
+            ToolTip.SetTip(surroundRightRow, "Pick the same device for left and right to let one device play both surround channels. A WiiM Sound plays one side only.");
 
             string status = state.Members.Count == 0 ? "Not set up" : state.Active ? "Active" : "Set up, not active";
             var rows = new List<Control>
             {
                 LabeledRow("Status", Info(status)),
-                LabeledRow("Center", centerBox),
                 surroundLeftRow,
                 surroundRightRow
             };
+            if (!soundbar) rows.Insert(1, LabeledRow("Center", centerBox));
 
             var apply = Pill("Apply", accent: true);
             apply.Click += async (_, _) =>
@@ -102,12 +104,18 @@ sealed partial class WiimController
                 HomeTheaterDevice? Device(string uuid) => others.FirstOrDefault(d => d.Uuid == uuid);
                 string c = Uuid(centerBox), l = Uuid(leftBox), r = Uuid(rightBox);
                 var members = new List<(HomeTheaterDevice, int)>();
-                if (Device(c) is { } centerDevice) members.Add((centerDevice, CenterChannel));
+                if (!soundbar && Device(c) is { } centerDevice) members.Add((centerDevice, CenterChannel));
                 if (l.Length > 0 && l == r) members.Add((Device(l)!, SurroundBothChannel));
                 else
                 {
                     if (Device(l) is { } leftDevice) members.Add((leftDevice, SurroundLeftChannel));
                     if (Device(r) is { } rightDevice) members.Add((rightDevice, SurroundRightChannel));
+                }
+                if (l.Length > 0 && l == r && Device(l) is { } single && IsSingleSpeaker(single.Project))
+                {
+                    await Dialogs.MessageAsync(this,
+                        $"{single.Name} is a single speaker, so it can play surround left or right, but not both. Pick another device for the other side.", _scale);
+                    return;
                 }
                 if (members.Select(m => m.Item1.Uuid).Distinct().Count() != members.Count)
                 {

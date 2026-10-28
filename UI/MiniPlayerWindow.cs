@@ -19,14 +19,24 @@ sealed partial class WiimController
         private const double SlotGap = 12;
         private const double GripSize = 5;
         private const double CornerGripSize = 12;
+        private const double SquareMinSize = 200;
+        private const double CompactWidth = 520;
+        private const double CompactHeight = 100;
+        private const double CompactDefaultWidth = 480;
+        private const double CompactMinWidth = 300;
 
         private readonly WiimController _owner;
-        private readonly Image _backdrop = new() { Stretch = Stretch.UniformToFill, Opacity = 0.45 };
         private readonly Image _cover = new() { Stretch = Stretch.UniformToFill, IsVisible = false };
         private readonly PathIcon _placeholder = new()
         {
             Data = Icons.Music, Width = 96, Height = 96, Foreground = Palette.TextDim,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 60, 0, 0)
+        };
+        private readonly Image _compactCover = new() { Stretch = Stretch.UniformToFill, IsVisible = false };
+        private readonly PathIcon _compactPlaceholder = new()
+        {
+            Data = Icons.Music, Width = 40, Height = 40, Foreground = Palette.TextDim,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
         };
         private readonly TextBlock _deviceName = new()
         {
@@ -34,11 +44,8 @@ sealed partial class WiimController
         };
         private readonly Grid _topBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10), Opacity = 0,
-            Transitions = new Avalonia.Animation.Transitions
-            {
-                new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(150) }
-            }
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10), Opacity = 0,
+            Transitions = Fade()
         };
         private readonly TextBlock _title = new()
         {
@@ -80,6 +87,29 @@ sealed partial class WiimController
         };
         private readonly Button _mute;
         private readonly PathIcon _muteIcon;
+        private readonly Grid _volumeRow = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4, 0, 0)
+        };
+        private readonly StackPanel _controlsStack = new();
+        private readonly Grid _buttons = new() { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,*"), Margin = new Thickness(0, 6, 0, 0) };
+        private readonly Button _close = SmallButton(Icons.Close, 12);
+        private readonly Button _modeButton = SmallButton(Icons.FullScreenExit, 13);
+        private readonly Viewbox _squareView = new() { Stretch = Stretch.Uniform };
+        private readonly Viewbox _compactView = new() { Stretch = Stretch.Uniform };
+        private readonly Panel _compactText = new() { Margin = new Thickness(14, 0, 6, 0) };
+        private readonly StackPanel _compactInfo = new() { VerticalAlignment = VerticalAlignment.Center, Transitions = Fade() };
+        private readonly StackPanel _compactControls = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0, Transitions = Fade() };
+        private readonly StackPanel _compactButtons = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        private readonly StackPanel _compactSide = new()
+        {
+            Spacing = 4, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 2, 0), Opacity = 0, Transitions = Fade()
+        };
+        private readonly ColumnDefinition _progressDone = new(0, GridUnitType.Star);
+        private readonly ColumnDefinition _progressLeft = new(1, GridUnitType.Star);
+        private readonly Grid _compactProgress = new() { Height = 3, VerticalAlignment = VerticalAlignment.Bottom, IsVisible = false };
+        private bool _compact;
+        private bool _hovering;
         private readonly DispatcherTimer _volumeSendTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
         private int? _pendingVolume;
         private bool _volumeSending;
@@ -96,14 +126,12 @@ sealed partial class WiimController
         private string _artUrl = string.Empty;
         private bool _refreshing;
         private bool _pinned;
-        private readonly PathIcon _pinIcon = new() { Width = 13, Height = 13 };
-        private readonly Button _pin = new()
-        {
-            Width = 26, Height = 26, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(0, 0, 6, 0),
-            Background = new SolidColorBrush(Color.Parse("#B0000000")),
-            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center
-        };
+        private readonly Button _pin = SmallButton(Icons.PinOutline, 13);
         private readonly List<Border> _grips = [];
+        private WindowEdge? _resizeEdge;
+        private PixelPoint _resizeStartPointer;
+        private PixelPoint _resizeStartPosition;
+        private Size _resizeStartSize;
 
         internal string Ip { get; }
 
@@ -117,13 +145,12 @@ sealed partial class WiimController
                 $"avares://WiimControl/Assets/{(OperatingSystem.IsWindows() ? "logo.ico" : "tray.png")}")));
             SystemDecorations = SystemDecorations.None;
             Background = new SolidColorBrush(Color.Parse("#0E0E0E"));
-            MinWidth = 200;
-            MinHeight = 200;
-            bool remembered = owner._miniPlayerPlacements.TryGetValue(ip, out var placement);
-            var size = remembered ? placement.Size : new Size(DefaultSize * owner.UiScale, DefaultSize * owner.UiScale);
-            Width = Math.Max(size.Width, MinWidth);
-            Height = Math.Max(size.Height, MinHeight);
             WindowStartupLocation = WindowStartupLocation.Manual;
+            _compact = owner._miniPlayerCompactIps.Contains(ip);
+            ApplyTopmost();
+            ApplyMinimumSize();
+            bool remembered = Placements.TryGetValue(ip, out var placement);
+            SetSize(remembered ? FitAspect(placement.Size) : DefaultWidth);
             Position = remembered && IsOnScreen(placement.Position) ? placement.Position : DefaultPosition(slot);
             _pinned = remembered && placement.Pinned;
 
@@ -197,7 +224,6 @@ sealed partial class WiimController
                 _pollTimer.Stop();
                 _volumeSendTimer.Stop();
                 _clockTimer.Stop();
-                ReleaseBackdrop();
                 ShowArtwork(null);
             };
         }
@@ -207,6 +233,52 @@ sealed partial class WiimController
             FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#C0FFFFFF")), MinWidth = 30, TextAlignment = alignment,
             VerticalAlignment = VerticalAlignment.Center
         };
+
+        private static Avalonia.Animation.Transitions Fade() =>
+        [
+            new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(150) }
+        ];
+
+        private static Button SmallButton(StreamGeometry geometry, double size)
+        {
+            var button = new Button
+            {
+                Content = new PathIcon { Data = geometry, Width = size, Height = size }, Width = 26, Height = 26, MinHeight = 0,
+                Padding = new Thickness(0), Background = new SolidColorBrush(Color.Parse("#B0000000")),
+                HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center
+            };
+            button.Classes.Add("icon");
+            return button;
+        }
+
+        private double Aspect => _compact ? CompactWidth / CompactHeight : 1;
+
+        private double DefaultWidth => (_compact ? CompactDefaultWidth : DefaultSize) * _owner.UiScale;
+
+        private Dictionary<string, MiniPlayerPlacement> Placements => _compact ? _owner._miniPlayerCompactPlacements : _owner._miniPlayerPlacements;
+
+        private double FitAspect(Size size) => Math.Min(size.Width, size.Height * Aspect);
+
+        private void SetSize(double width)
+        {
+            width = Math.Max(width, MinWidth);
+            Width = width;
+            Height = width / Aspect;
+        }
+
+        private void ApplyMinimumSize()
+        {
+            MinWidth = MinHeight = 0;
+            MinWidth = _compact ? CompactMinWidth : SquareMinSize;
+            MinHeight = MinWidth / Aspect;
+        }
+
+        internal void ApplyTopmost() => Topmost = _compact ? _owner.MiniPlayerCompactOnTop : _owner.MiniPlayerOnTop;
+
+        private static void Detach(Control control)
+        {
+            if (control.Parent is Panel panel) panel.Children.Remove(control);
+        }
 
         private static (Button Button, PathIcon Icon) ControlButton(StreamGeometry geometry, double size)
         {
@@ -223,11 +295,14 @@ sealed partial class WiimController
             _positionRow.Children.Add(_position);
             Grid.SetColumn(_total, 2);
             _positionRow.Children.Add(_total);
+            _positionRow.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty) _compactProgress.IsVisible = _positionRow.IsVisible;
+            };
 
             var detailRow = new DockPanel { Margin = new Thickness(0, 3, 0, 0), Children = { _playing, _detail } };
             DockPanel.SetDock(_playing, Dock.Left);
 
-            var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,*"), Margin = new Thickness(0, 6, 0, 0) };
             foreach (var (control, column, align) in new (Control, int, HorizontalAlignment)[]
                      {
                          (_shuffle, 0, HorizontalAlignment.Left), (_previous, 1, HorizontalAlignment.Center),
@@ -239,16 +314,16 @@ sealed partial class WiimController
                 control.VerticalAlignment = VerticalAlignment.Center;
                 control.Margin = new Thickness(column is 1 or 3 ? 12 : 0, 0, column is 1 or 3 ? 12 : 0, 0);
                 Grid.SetColumn(control, column);
-                buttons.Children.Add(control);
+                _buttons.Children.Add(control);
             }
 
-            var volumeRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4, 0, 0) };
-            volumeRow.Children.Add(_mute);
+            _volumeRow.Children.Add(_mute);
             Grid.SetColumn(_volume, 1);
-            volumeRow.Children.Add(_volume);
+            _volumeRow.Children.Add(_volume);
             Grid.SetColumn(_volumeValue, 2);
-            volumeRow.Children.Add(_volumeValue);
+            _volumeRow.Children.Add(_volumeValue);
 
+            _controlsStack.Children.AddRange([_title, _artist, detailRow, _positionRow, _buttons, _volumeRow]);
             var controls = new Border
             {
                 VerticalAlignment = VerticalAlignment.Bottom, Padding = new Thickness(18, 70, 18, 12),
@@ -262,50 +337,55 @@ sealed partial class WiimController
                         new GradientStop(Color.FromArgb(235, 0, 0, 0), 1)
                     }
                 },
-                Child = new StackPanel { Children = { _title, _artist, detailRow, _positionRow, buttons, volumeRow } }
+                Child = _controlsStack
             };
-            var card = new Border
+            _squareView.Child = new Border
             {
-                Width = StageSize, Height = StageSize, CornerRadius = new CornerRadius(6), ClipToBounds = true, Background = Palette.Card,
+                Width = StageSize, Height = StageSize, ClipToBounds = true, Background = Palette.Card,
                 Child = new Grid { Children = { _placeholder, _cover, controls } }
             };
-            var close = new Button
+
+            _compactText.Children.AddRange([_compactInfo, _compactControls]);
+            _compactProgress.ColumnDefinitions.AddRange([_progressDone, _progressLeft]);
+            _compactProgress.Children.Add(new Border { Background = Brushes.White });
+            var compactGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto") };
+            compactGrid.Children.Add(new Panel
             {
-                Content = new PathIcon { Data = Icons.Close, Width = 12, Height = 12 }, Width = 26, Height = 26, MinHeight = 0,
-                Padding = new Thickness(0), Background = new SolidColorBrush(Color.Parse("#B0000000")),
-                HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center
+                Width = CompactHeight, Height = CompactHeight, Background = Palette.Card, Children = { _compactPlaceholder, _compactCover }
+            });
+            foreach (var (control, column) in new (Control, int)[] { (_compactText, 1), (_compactButtons, 2), (_compactSide, 3) })
+            {
+                Grid.SetColumn(control, column);
+                compactGrid.Children.Add(control);
+            }
+            Grid.SetColumnSpan(_compactProgress, 4);
+            compactGrid.Children.Add(_compactProgress);
+            _compactView.Child = new Border
+            {
+                Width = CompactWidth, Height = CompactHeight, ClipToBounds = true, Background = new SolidColorBrush(Color.Parse("#161616")),
+                Child = compactGrid
             };
-            close.Classes.Add("icon");
-            ToolTip.SetTip(close, "Close (Esc)");
-            close.Click += (_, _) => Close();
+
+            ToolTip.SetTip(_close, "Close (Esc)");
+            _close.Click += (_, _) => Close();
+            _modeButton.Click += (_, _) => SetCompact(!_compact);
             var name = new Border
             {
                 Background = new SolidColorBrush(Color.Parse("#B0000000")), CornerRadius = new CornerRadius(11), Padding = new Thickness(10, 4),
                 HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0),
                 Child = _deviceName
             };
-            _pin.Content = _pinIcon;
-            _pin.Classes.Add("icon");
             _pin.Click += (_, _) => SetPinned(!_pinned, save: true);
             _topBar.Children.Add(name);
-            Grid.SetColumn(_pin, 1);
-            _topBar.Children.Add(_pin);
-            Grid.SetColumn(close, 2);
-            _topBar.Children.Add(close);
+            foreach (var (control, column) in new (Control, int)[] { (_modeButton, 1), (_pin, 2), (_close, 3) }) Grid.SetColumn(control, column);
 
-            var root = new Grid
+            var root = new Grid { Background = Brushes.Transparent, Children = { _squareView, _compactView, _topBar } };
+            root.PropertyChanged += (_, e) =>
             {
-                Background = Brushes.Transparent,
-                Children =
-                {
-                    _backdrop,
-                    new Border { Background = new SolidColorBrush(Color.Parse("#99000000")) },
-                    new Viewbox { Stretch = Stretch.Uniform, Margin = new Thickness(8), Child = card },
-                    _topBar,
-                    new Border { BorderBrush = new SolidColorBrush(Color.Parse("#40FFFFFF")), BorderThickness = new Thickness(1), IsHitTestVisible = false }
-                }
+                if (e.Property != IsPointerOverProperty) return;
+                _hovering = root.IsPointerOver;
+                ApplyHover();
             };
-            root.PropertyChanged += (_, e) => { if (e.Property == IsPointerOverProperty) _topBar.Opacity = root.IsPointerOver ? 1 : 0; };
             root.PointerPressed += (_, e) =>
             {
                 if (e.Handled || _pinned || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
@@ -313,19 +393,76 @@ sealed partial class WiimController
                 BeginMoveDrag(e);
             };
             AddResizeGrips(root);
+            ArrangeLayout();
             SetPinned(_pinned, save: false);
             return root;
+        }
+
+        private void ArrangeLayout()
+        {
+            foreach (var part in new Control[] { _title, _artist, _positionRow, _volumeRow, _previous, _playPause, _next, _modeButton, _pin, _close })
+                Detach(part);
+            if (_compact)
+            {
+                _compactInfo.Children.AddRange([_title, _artist]);
+                _compactControls.Children.AddRange([_positionRow, _volumeRow]);
+                _compactButtons.Children.AddRange([_previous, _playPause, _next]);
+                _compactSide.Children.AddRange([_modeButton, _pin, _close]);
+            }
+            else
+            {
+                _controlsStack.Children.Insert(0, _title);
+                _controlsStack.Children.Insert(1, _artist);
+                _controlsStack.Children.Insert(3, _positionRow);
+                _controlsStack.Children.Add(_volumeRow);
+                _buttons.Children.AddRange([_previous, _playPause, _next]);
+                _topBar.Children.AddRange([_modeButton, _pin, _close]);
+            }
+            _modeButton.Margin = _pin.Margin = new Thickness(0, 0, _compact ? 0 : 6, 0);
+            _position.MinWidth = _volume.MinWidth = _compact ? 60 : 160;
+            _squareView.IsVisible = _topBar.IsVisible = !_compact;
+            _compactView.IsVisible = _compact;
+            ((PathIcon)_modeButton.Content!).Data = _compact ? Icons.FullScreen : Icons.FullScreenExit;
+            ToolTip.SetTip(_modeButton, _compact ? "Switch to the full mini player" : "Switch to the compact mini player");
+            ApplyHover();
+        }
+
+        private void ApplyHover()
+        {
+            _topBar.Opacity = _compactSide.Opacity = _compactControls.Opacity = _hovering ? 1 : 0;
+            _compactControls.IsHitTestVisible = _hovering;
+            _compactInfo.Opacity = _hovering ? 0 : 1;
+        }
+
+        private void SetCompact(bool compact)
+        {
+            if (compact == _compact) return;
+            RememberPlacement();
+            var placements = compact ? _owner._miniPlayerCompactPlacements : _owner._miniPlayerPlacements;
+            bool remembered = placements.TryGetValue(Ip, out var placement);
+            _compact = compact;
+            if (compact) _owner._miniPlayerCompactIps.Add(Ip);
+            else _owner._miniPlayerCompactIps.Remove(Ip);
+            ArrangeLayout();
+            ApplyMinimumSize();
+            ApplyTopmost();
+            SetSize(remembered ? FitAspect(placement.Size) : DefaultWidth);
+            if (remembered && IsOnScreen(placement.Position)) Position = placement.Position;
+            SetPinned(remembered && placement.Pinned, save: false);
+            RememberPlacement();
+            _owner.SaveConfig();
         }
 
         private void SetPinned(bool pinned, bool save)
         {
             _pinned = pinned;
-            _pinIcon.Data = pinned ? Icons.Pin : Icons.PinOutline;
-            _pinIcon.Foreground = pinned ? Palette.AccentText : Brushes.White;
+            var pinIcon = (PathIcon)_pin.Content!;
+            pinIcon.Data = pinned ? Icons.Pin : Icons.PinOutline;
+            pinIcon.Foreground = pinned ? Palette.AccentText : Brushes.White;
             ToolTip.SetTip(_pin, pinned ? "Pinned: can't be moved or resized. Click to unpin" : "Pin in place");
             foreach (var grip in _grips) grip.IsHitTestVisible = !pinned;
             if (!save) return;
-            _owner._miniPlayerPlacements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height), pinned);
+            Placements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height), pinned);
             _owner.SaveConfig();
         }
 
@@ -353,11 +490,49 @@ sealed partial class WiimController
                 {
                     if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
                     e.Handled = true;
-                    BeginResizeDrag(edge, e);
+                    _resizeEdge = edge;
+                    _resizeStartPointer = this.PointToScreen(e.GetPosition(this));
+                    _resizeStartPosition = Position;
+                    _resizeStartSize = new Size(Width, Height);
+                    e.Pointer.Capture(grip);
                 };
+                grip.PointerMoved += (_, e) =>
+                {
+                    if (_resizeEdge is { } active) ResizeKeepingShape(active, this.PointToScreen(e.GetPosition(this)));
+                };
+                grip.PointerReleased += (_, _) => _resizeEdge = null;
+                grip.PointerCaptureLost += (_, _) => _resizeEdge = null;
                 _grips.Add(grip);
                 root.Children.Add(grip);
             }
+        }
+
+        private void ResizeKeepingShape(WindowEdge edge, PixelPoint pointer)
+        {
+            double scaling = DesktopScaling, aspect = Aspect;
+            double dx = (pointer.X - _resizeStartPointer.X) / scaling, dy = (pointer.Y - _resizeStartPointer.Y) / scaling * aspect;
+            double grow = edge switch
+            {
+                WindowEdge.East => dx,
+                WindowEdge.West => -dx,
+                WindowEdge.South => dy,
+                WindowEdge.North => -dy,
+                WindowEdge.SouthEast => (dx + dy) / 2,
+                WindowEdge.NorthWest => -(dx + dy) / 2,
+                WindowEdge.NorthEast => (dx - dy) / 2,
+                _ => (dy - dx) / 2
+            };
+            double largest = Screens.ScreenFromWindow(this) is { } screen
+                ? Math.Min(screen.WorkingArea.Width, screen.WorkingArea.Height * aspect) / scaling
+                : double.MaxValue;
+            double width = Math.Clamp(Math.Round(_resizeStartSize.Width + grow), MinWidth, Math.Max(MinWidth, largest));
+            bool left = edge is WindowEdge.West or WindowEdge.NorthWest or WindowEdge.SouthWest;
+            bool top = edge is WindowEdge.North or WindowEdge.NorthWest or WindowEdge.NorthEast;
+            SetSize(width);
+            if (left || top)
+                Position = new PixelPoint(
+                    _resizeStartPosition.X + (left ? (int)Math.Round((_resizeStartSize.Width - Width) * scaling) : 0),
+                    _resizeStartPosition.Y + (top ? (int)Math.Round((_resizeStartSize.Height - Height) * scaling) : 0));
         }
 
         private void SetDeviceName(string name)
@@ -370,7 +545,7 @@ sealed partial class WiimController
         {
             SetPinned(false, save: false);
             WindowState = WindowState.Normal;
-            Width = Height = Math.Max(DefaultSize * _owner.UiScale, MinWidth);
+            SetSize(DefaultWidth);
             Position = DefaultPosition(slot);
         }
 
@@ -396,7 +571,7 @@ sealed partial class WiimController
         private void RememberPlacement()
         {
             if (WindowState != WindowState.Normal || !IsVisible) return;
-            _owner._miniPlayerPlacements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height), _pinned);
+            Placements[Ip] = new MiniPlayerPlacement(Position, new Size(Width, Height), _pinned);
         }
 
         internal void RefreshNow() => _ = RefreshAsync();
@@ -431,7 +606,7 @@ sealed partial class WiimController
             SetDeviceName(_owner.DeviceNameOf(Ip));
             _target = target;
             _status = status;
-            _fetched = DateTime.UtcNow;
+            _fetched = status?.PositionAt ?? DateTime.UtcNow;
             ApplyLock();
             if (status == null)
             {
@@ -439,14 +614,14 @@ sealed partial class WiimController
                 _artist.Text = _detail.Text = string.Empty;
                 _playing.IsVisible = _positionRow.IsVisible = _shuffle.IsVisible = _repeat.IsVisible = false;
                 _playPauseIcon.Data = Icons.Play;
-                _placeholder.Data = Icons.Music;
+                _placeholder.Data = _compactPlaceholder.Data = Icons.Music;
                 SetArtwork(string.Empty);
                 return;
             }
 
             (_title.Text, _artist.Text, _detail.Text) = _owner.NowPlayingTexts(status, target, target != Ip);
             _artist.IsVisible = _artist.Text.Length > 0;
-            _placeholder.Data = Icons.ForInput(InputOfMode(status.Mode));
+            _placeholder.Data = _compactPlaceholder.Data = Icons.ForInput(InputOfMode(status.Mode));
             _playing.IsVisible = status.IsPlaying;
             _playPauseIcon.Data = status.IsPlaying ? Icons.Pause : Icons.Play;
             ToolTip.SetTip(_playPause, status.IsPlaying ? "Pause" : "Play");
@@ -460,7 +635,7 @@ sealed partial class WiimController
             {
                 _position.Maximum = Math.Max(1, status.DurationMs / 1000);
                 _total.Text = FormatTime(status.DurationMs / 1000);
-                ShowPosition(status.PositionMs);
+                ShowPosition(status.PositionNow);
             }
             SetArtwork(status.ArtUrl);
         }
@@ -551,6 +726,8 @@ sealed partial class WiimController
             int seconds = Math.Clamp(positionMs / 1000, 0, _position.Maximum);
             _position.Value = seconds;
             _elapsed.Text = FormatTime(seconds);
+            _progressDone.Width = new GridLength(seconds, GridUnitType.Star);
+            _progressLeft.Width = new GridLength(Math.Max(0, _position.Maximum - seconds), GridUnitType.Star);
         }
 
         private void SetArtwork(string url)
@@ -572,18 +749,9 @@ sealed partial class WiimController
 
         private void ShowArtwork(Bitmap? bitmap)
         {
-            _cover.Source = bitmap;
-            ReleaseBackdrop();
-            _backdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap, WiimController.MiniPlayerBackdropBlur) : null;
-            _cover.IsVisible = bitmap != null;
-            _placeholder.IsVisible = bitmap == null;
-        }
-
-        private void ReleaseBackdrop()
-        {
-            if (_backdrop.Source is not Bitmap old) return;
-            _backdrop.Source = null;
-            _owner.DisposeWhenUnused([old]);
+            _cover.Source = _compactCover.Source = bitmap;
+            _cover.IsVisible = _compactCover.IsVisible = bitmap != null;
+            _placeholder.IsVisible = _compactPlaceholder.IsVisible = bitmap == null;
         }
 
         private async Task TransportAsync(string action)
@@ -596,7 +764,7 @@ sealed partial class WiimController
         {
             if (_status != null)
             {
-                _status = _status with { PositionMs = seconds * 1000 };
+                _status = _status with { PositionMs = seconds * 1000, PositionAt = DateTime.UtcNow };
                 _fetched = DateTime.UtcNow;
             }
             await _owner.SeekAsync(_target, seconds);

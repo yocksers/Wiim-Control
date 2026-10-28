@@ -37,6 +37,8 @@ sealed class TrackToastWindow : Window
     private OsdCorner _corner;
     private Action? _onClick;
 
+    public event Action? VisibilityChanged;
+
     public TrackToastWindow()
     {
         SystemDecorations = SystemDecorations.None;
@@ -67,7 +69,11 @@ sealed class TrackToastWindow : Window
 
         _hideTimer.Tick += (_, _) => HideToast();
         Opened += (_, _) => { WindowChrome.MakeToolWindow(this); Reposition(); };
-        SizeChanged += (_, _) => Reposition();
+        SizeChanged += (_, _) =>
+        {
+            Reposition();
+            if (IsVisible) VisibilityChanged?.Invoke();
+        };
         PointerEntered += (_, _) => _hideTimer.Stop();
         PointerExited += (_, _) => RestartTimer();
         PointerPressed += (_, e) =>
@@ -94,9 +100,11 @@ sealed class TrackToastWindow : Window
         _corner = corner;
         _scaler.Scale = scale;
         _onClick = onClick;
+        bool wasVisible = IsVisible;
         if (!IsVisible) Show();
         Reposition();
         RestartTimer();
+        if (!wasVisible) VisibilityChanged?.Invoke();
     }
 
     private void RestartTimer()
@@ -112,6 +120,7 @@ sealed class TrackToastWindow : Window
         _onClick = null;
         Hide();
         _art.Source = null;
+        VisibilityChanged?.Invoke();
     }
 
     private void Reposition()
