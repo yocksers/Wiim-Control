@@ -100,6 +100,7 @@ library, as the LGPL allows.
 
 Also with thanks to:
 
+- [LRCLIB](https://lrclib.net/), the free community lyrics database.
 - [python-linkplay](https://github.com/Velleman/python-linkplay), whose list of WiiM and LinkPlay project codes is used to
   show each device's model name.
 - [radio-browser.info](https://www.radio-browser.info/), the free community database behind the Radio page.
