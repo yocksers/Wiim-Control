@@ -19,14 +19,13 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            _controller = new WiimController(desktop);
             Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
                 ErrorLog.Write("UI", e.Exception);
                 e.Handled = true;
                 _controller?.ReportError();
             };
-            AppDomain.CurrentDomain.UnhandledException += (_, e) => ErrorLog.Write("Fatal", e.ExceptionObject as Exception);
+            _controller = new WiimController(desktop);
             TaskScheduler.UnobservedTaskException += (_, e) =>
             {
                 ErrorLog.Write("Background", e.Exception);

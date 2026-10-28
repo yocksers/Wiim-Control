@@ -2,6 +2,8 @@ namespace WiimControl;
 
 enum OsdCorner { TopLeft, TopRight, BottomLeft, BottomRight }
 
+enum NowPlayingStyle { Cover, Vinyl, BigVinyl, Cassette, Cd, Reel, Ambient, AmbientControls, Lyrics }
+
 readonly record struct EqBand(int Index, string ParamName, int Value);
 
 sealed record EqState(bool Enabled, string Name, string Source, string PluginUri, List<EqBand> Bands);
@@ -18,9 +20,14 @@ sealed record RoomFitState(bool Enabled, string Active, List<string> Profiles, P
 
 sealed record PeqState(bool Enabled, string Name, bool Split, PeqBand[] Stereo, PeqBand[] Left, PeqBand[] Right);
 
+sealed record OtherFollower(string Address, string Name);
+
 sealed record MultiroomSnapshot(HashSet<string> Online, Dictionary<string, string> LeaderOf, Dictionary<string, string> MemberAddresses,
-    Dictionary<string, int>? Channels = null)
+    Dictionary<string, int>? Channels = null, HashSet<string>? FixedVolume = null, Dictionary<string, List<OtherFollower>>? OtherFollowers = null)
 {
+    public List<OtherFollower> OthersOf(string leaderIp) =>
+        OtherFollowers != null && OtherFollowers.TryGetValue(leaderIp, out var others) ? others : [];
+
     public int MemberCount(string leaderIp) => LeaderOf.Values.Count(v => v == leaderIp);
     public string AddressOf(string ip) => MemberAddresses.TryGetValue(ip, out var address) ? address : ip;
 }
@@ -32,6 +39,22 @@ sealed record DeviceStatus(DeviceVolume Volume, string PlayState, int Mode, stri
     string BluetoothName = "", int SleepSeconds = 0, string SourceLabel = "", string Vendor = "")
 {
     public bool IsPlaying => PlayState.Equals("play", StringComparison.OrdinalIgnoreCase);
+
+    public DateTime PositionAt { get; init; } = DateTime.UtcNow;
+
+    public string AudioFormat { get; init; } = "";
+
+    public string ServiceQuality { get; init; } = "";
+
+    public int PositionNow
+    {
+        get
+        {
+            if (!IsPlaying) return PositionMs;
+            int position = PositionMs + (int)Math.Max(0, (DateTime.UtcNow - PositionAt).TotalMilliseconds);
+            return DurationMs > 0 ? Math.Min(position, DurationMs) : position;
+        }
+    }
 }
 
 readonly record struct DigitalFilter(int Index, string Name);

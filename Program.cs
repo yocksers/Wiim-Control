@@ -8,6 +8,8 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => ErrorLog.Write("Fatal", e.ExceptionObject as Exception);
+
         if (CommandChannel.ParseCommand(args) is { } command)
         {
             if (CommandChannel.Send(command)) return 0;
