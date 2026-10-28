@@ -3,9 +3,8 @@
 A program for **Windows, Linux and macOS** that controls **WiiM devices** (Mini, Pro, Pro Plus, Ultra, Sound, Amp,
 Amp Pro, Amp Ultra and other WiiM/LinkPlay devices) from your PC.
 
-<img width="1508" height="742" alt="{4250AE67-7912-4748-A7A5-78F3565DB24B}" src="https://github.com/user-attachments/assets/a3cd9fb6-5110-46ed-8207-6ed748d54d38" />
-<img width="1479" height="766" alt="{0C5C897E-54D2-4F39-ACAC-0EC8D5C6C2EA}" src="https://github.com/user-attachments/assets/9bfe6fcf-b15d-40d3-aa33-1fba9cccb9d8" />
-
+<img width="428" height="240" alt="1" src="https://github.com/user-attachments/assets/86492f64-243e-4fd6-9bba-1ab5ad0b6814" /><img width="434" height="239" alt="2" src="https://github.com/user-attachments/assets/11b509d7-79a1-4205-9669-1a03fcd8e283" />
+<img width="435" height="236" alt="5" src="https://github.com/user-attachments/assets/532e4b1f-2630-4332-809a-1e5c323fd2fb" /><img width="432" height="238" alt="4" src="https://github.com/user-attachments/assets/fceeb541-1983-4806-8cfe-0b425177837f" />
 
 ## Features
 
