@@ -120,6 +120,7 @@ sealed partial class WiimController
             Album = Prop(lines, "line3").ToString(),
             ArtUrl = image.Length > 0 ? $"http://{roon.Host}:{roon.Port}/api/image/{image}?scale=fit&width=600&height=600&format=image/jpeg" : string.Empty,
             PositionMs = (int)(seek * 1000),
+            PositionAt = DateTime.UtcNow,
             DurationMs = (int)(length * 1000),
             Loop = LoopMode(shuffle, repeat),
             SourceLabel = "Roon"

@@ -16,6 +16,7 @@ sealed partial class WiimController
     ];
 
     private readonly Dictionary<string, (DateTime Time, Dictionary<string, string> Names)> _inputRenames = new();
+    private readonly Dictionary<string, (DateTime Time, bool Ethernet)> _connections = new();
 
     private static bool ReplyIsOk(string? reply) =>
         reply != null && (reply.Trim() == "OK" || reply.Contains("\"OK\"", StringComparison.Ordinal));
@@ -26,10 +27,10 @@ sealed partial class WiimController
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Fetched, int Seconds)> _sleepCache = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Fetched, int Mode)> _lastModes = new();
 
-    internal async Task<int> GetSleepSecondsAsync(string ip)
+    internal async Task<int> GetSleepSecondsAsync(string ip, TimeSpan? maxAge = null)
     {
         var now = DateTime.UtcNow;
-        if (_sleepCache.TryGetValue(ip, out var cached) && now - cached.Fetched < TimeSpan.FromSeconds(30))
+        if (_sleepCache.TryGetValue(ip, out var cached) && now - cached.Fetched < (maxAge ?? TimeSpan.FromSeconds(30)))
             return cached.Seconds > 0 ? Math.Max(0, cached.Seconds - (int)(now - cached.Fetched).TotalSeconds) : 0;
         int seconds = ParseInt(await SendToDeviceAsync(ip, "getShutdown").ConfigureAwait(false)) is int s && s > 0 ? s : 0;
         _sleepCache[ip] = (now, seconds);
@@ -94,7 +95,28 @@ sealed partial class WiimController
     {
         lock (_inputRenames)
             if (_inputRenames.TryGetValue(ip, out var cached) && cached.Names.TryGetValue(RenameKey(input), out var name)) return name;
-        return InputLabel(input);
+        return input.Equals("wifi", StringComparison.OrdinalIgnoreCase) && UsesEthernet(ip) ? "Ethernet" : InputLabel(input);
+    }
+
+    private bool UsesEthernet(string ip)
+    {
+        lock (_connections) return _connections.TryGetValue(ip, out var known) && known.Ethernet;
+    }
+
+    private async Task EnsureConnectionAsync(string ip)
+    {
+        lock (_connections)
+            if (_connections.TryGetValue(ip, out var cached) && DateTime.UtcNow - cached.Time < TimeSpan.FromMinutes(5)) return;
+        var statusEx = await SendToDeviceAsync(ip, "getStatusEx").ConfigureAwait(false);
+        if (statusEx == null) return;
+        lock (_connections) _connections[ip] = (DateTime.UtcNow, IsEthernetConnection(statusEx));
+    }
+
+    internal static bool IsEthernetConnection(string? statusEx)
+    {
+        static bool Assigned(string? address) => address is { Length: > 0 } && address != "0.0.0.0";
+        bool wifi = JsonField(statusEx, "netstat") == "2" || Assigned(JsonField(statusEx, "apcli0"));
+        return !wifi && (Assigned(JsonField(statusEx, "eth0")) || Assigned(JsonField(statusEx, "eth2")));
     }
 
     private async Task<string> GetBluetoothSourceAsync(string ip)

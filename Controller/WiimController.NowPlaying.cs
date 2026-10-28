@@ -40,8 +40,11 @@ sealed partial class WiimController
         var metaTask = SendToDeviceAsync(ip, "getMetaInfo");
         var sleepTask = GetSleepSecondsAsync(ip);
         var renamesTask = EnsureInputRenamesAsync(ip);
-        var timesTask = GetTransportTimesAsync(ip);
-        await Task.WhenAll(statusTask, metaTask, sleepTask, renamesTask).ConfigureAwait(false);
+        var connectionTask = EnsureConnectionAsync(ip);
+        var infoTask = GetTransportInfoAsync(ip);
+        var statusAt = AnsweredAt(statusTask);
+        var timesAt = AnsweredAt(infoTask);
+        await Task.WhenAll(statusTask, metaTask, sleepTask, renamesTask, connectionTask).ConfigureAwait(false);
         var status = statusTask.Result;
         if (!int.TryParse(JsonField(status, "vol"), out int volume)) return null;
 
@@ -55,11 +58,21 @@ sealed partial class WiimController
         int loop = int.TryParse(JsonField(status, "loop"), out int l) ? l : 4;
         int.TryParse(JsonField(status, "curpos"), out int position);
         int.TryParse(JsonField(status, "totlen"), out int duration);
-        if (IsNetworkMode(mode) && await Task.WhenAny(timesTask, Task.Delay(TransportTimesTimeout)).ConfigureAwait(false) == timesTask &&
-            timesTask.Result is { } times)
+        var positionAt = await statusAt.ConfigureAwait(false);
+        bool infoArrived = IsNetworkMode(mode) && await Task.WhenAny(infoTask, Task.Delay(TransportTimesTimeout)).ConfigureAwait(false) == infoTask;
+        string audioFormat = IsDigitalInputMode(mode) ? CurrentAudioFormat(ip, infoTask) : string.Empty;
+        string serviceQuality = infoArrived && IsNetworkMode(mode)
+            ? ServiceQualityOf(infoTask.Result, Clean(JsonField(status, "vendor")) ?? string.Empty)
+            : string.Empty;
+        if (infoArrived && IsNetworkMode(mode) && TransportTimes(infoTask.Result) is { } times)
         {
             duration = times.DurationMs;
-            position = Math.Min(times.PositionMs ?? position, duration);
+            if (times.PositionMs is { } relative && Math.Abs(position - relative) > PositionAgreementMs)
+            {
+                position = relative;
+                positionAt = await timesAt.ConfigureAwait(false);
+            }
+            position = Math.Min(position, duration);
         }
         string bluetooth = mode == 41 ? await GetBluetoothSourceAsync(ip).ConfigureAwait(false) : string.Empty;
         NoteBluetoothSource(ip, mode, bluetooth);
@@ -85,15 +98,94 @@ sealed partial class WiimController
             Math.Max(0, bitRate),
             bluetooth,
             sleepTask.Result,
-            Vendor: Clean(JsonField(status, "vendor")) ?? string.Empty)).ConfigureAwait(false));
+            Vendor: Clean(JsonField(status, "vendor")) ?? string.Empty) { PositionAt = positionAt, AudioFormat = audioFormat, ServiceQuality = serviceQuality }).ConfigureAwait(false));
     }
 
     private static readonly TimeSpan TransportTimesTimeout = TimeSpan.FromSeconds(3);
+    private const int PositionAgreementMs = 2000;
 
-    private async Task<(int? PositionMs, int DurationMs)?> GetTransportTimesAsync(string ip)
+    private async Task<System.Xml.Linq.XElement?> GetTransportInfoAsync(string ip)
     {
         string url = await GetServiceUrlAsync(ip, TransportEventService, "/upnp/control/rendertransport1").ConfigureAwait(false);
-        return TransportTimes(await Upnp.CallAsync(url, TransportEventService, "GetInfoEx", ("InstanceID", "0")).ConfigureAwait(false));
+        return await Upnp.CallAsync(url, TransportEventService, "GetInfoEx", ("InstanceID", "0")).ConfigureAwait(false);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _audioFormats = new();
+
+    private string CurrentAudioFormat(string ip, Task<System.Xml.Linq.XElement?> infoTask)
+    {
+        if (infoTask.IsCompletedSuccessfully) _audioFormats[ip] = AudioFormatOf(infoTask.Result);
+        else
+            _ = infoTask.ContinueWith(t => { if (t.IsCompletedSuccessfully) _audioFormats[ip] = AudioFormatOf(t.Result); },
+                TaskScheduler.Default);
+        return _audioFormats.GetValueOrDefault(ip, string.Empty);
+    }
+
+    private static bool IsDigitalInputMode(int mode) => InputOfMode(mode) is "optical" or "co-axial" or "HDMI";
+
+    private static string SongField(string metadata, string name) =>
+        System.Text.RegularExpressions.Regex.Match(metadata, $@"<song:{name}[^>]*>([^<]*)<") is { Success: true } match
+            ? System.Net.WebUtility.HtmlDecode(match.Groups[1].Value).Trim()
+            : string.Empty;
+
+    internal static string AudioFormatOf(System.Xml.Linq.XElement? infoEx)
+    {
+        string metadata = Child(infoEx, "TrackMetaData");
+        return AudioFormatName(SongField(metadata, "coding_f"), SongField(metadata, "dolby_detail_f"), SongField(metadata, "stream_ch"));
+    }
+
+    internal static string ServiceQualityOf(System.Xml.Linq.XElement? infoEx, string vendor)
+    {
+        string metadata = Child(infoEx, "TrackMetaData");
+        return ServiceQualityName($"{Child(infoEx, "TrackSource")} {vendor}", SongField(metadata, "actualQuality"), SongField(metadata, "quality"),
+            SongField(metadata, "atmos") == "1");
+    }
+
+    internal static string ServiceQualityName(string source, string actualQuality, string quality, bool atmos)
+    {
+        bool From(string name) => source.Contains(name, StringComparison.OrdinalIgnoreCase);
+        if (From("qobuz"))
+            return (actualQuality.Length > 0 ? actualQuality : quality) switch
+            {
+                "1" or "5" => "MP3",
+                "2" or "6" => "CD",
+                "3" or "4" or "7" or "27" => "Hi-Res",
+                _ => string.Empty
+            };
+        if (From("tidal"))
+            return atmos ? string.Empty : actualQuality.ToUpperInvariant() switch
+            {
+                "HI_RES_LOSSLESS" => "FLAC",
+                "HI_RES" => "MQA",
+                "LOSSLESS" => "HIGH",
+                _ => string.Empty
+            };
+        if (From("amazon") || From("prime"))
+            return actualQuality.ToUpperInvariant() switch
+            {
+                "UHD" => "ULTRA HD",
+                "HD" => "HD",
+                _ => string.Empty
+            };
+        return string.Empty;
+    }
+
+    internal static string AudioFormatName(string coding, string dolbyDetail, string channels)
+    {
+        string code = coding.ToUpperInvariant();
+        if (code.Length == 0) return string.Empty;
+        if (dolbyDetail.Equals("Dolby Atmos", StringComparison.OrdinalIgnoreCase)) return "Dolby Atmos";
+        string WithChannels(string name) => channels.Length > 0 ? $"{name} {channels}" : name;
+        return code switch
+        {
+            "LPCM" => channels is "2" or "2.0" ? "Stereo PCM" : channels is "5.1" or "7.1" ? $"Multichannel PCM {channels}" : "LPCM",
+            "DTSUHD" => "DTS:X",
+            "DTSHD" => "DTS-HD",
+            "DTS" or "DTSCD" => "DTS",
+            _ => WithChannels(dolbyDetail.Equals("Multichannel PCM", StringComparison.OrdinalIgnoreCase) || dolbyDetail.Equals("PCM", StringComparison.OrdinalIgnoreCase)
+                ? "Dolby Multichannel PCM"
+                : dolbyDetail.Length > 0 ? dolbyDetail : "Dolby Audio")
+        };
     }
 
     internal static (int? PositionMs, int DurationMs)? TransportTimes(System.Xml.Linq.XElement? infoEx)
@@ -110,6 +202,12 @@ sealed partial class WiimController
     private const int StreamBitDepth = 24;
 
     internal static int TrackBitDepth(int reported) => reported == DecoderBitDepth ? StreamBitDepth : reported;
+
+    private static async Task<DateTime> AnsweredAt(Task task)
+    {
+        await Task.WhenAny(task).ConfigureAwait(false);
+        return DateTime.UtcNow;
+    }
 
     internal async Task<Dictionary<string, DeviceStatus?>> GetAllDeviceStatusesAsync()
     {
@@ -220,13 +318,18 @@ sealed partial class WiimController
         : status.BitDepth > CdBitDepth || status.SampleRate > CdMaxSampleRate ? "Hi-Res Lossless"
         : "Lossless";
 
-    internal static string Quality(DeviceStatus status)
+    internal const string GroupQualityNote = "Group: 48 kHz, 16-bit";
+
+    internal static string Quality(DeviceStatus status, bool grouped = false)
     {
         var parts = new List<string>();
+        if (status.AudioFormat.Length > 0) parts.Add(status.AudioFormat);
         if (status.SampleRate > 0) parts.Add((status.SampleRate / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " kHz");
         if (status.SampleRate > 0 && status.BitDepth > 0) parts.Add($"{status.BitDepth}-bit");
         if (status.BitRate > 0) parts.Add($"{status.BitRate} kbps");
-        if (LosslessTag(status) is { Length: > 0 } tag) parts.Add(tag);
+        if (status.ServiceQuality.Length > 0) parts.Add(status.ServiceQuality);
+        else if (status.AudioFormat.Length == 0 && LosslessTag(status) is { Length: > 0 } tag) parts.Add(tag);
+        if (grouped && (status.SampleRate > CdMaxSampleRate || status.BitDepth > CdBitDepth)) parts.Add(GroupQualityNote);
         return string.Join("  ·  ", parts);
     }
 
@@ -256,10 +359,10 @@ sealed partial class WiimController
         {
             string subtitle = input == "bluetooth" && status.BluetoothName.Length > 0 ? status.BluetoothName
                 : status.IsPlaying ? "Playing" : "Not playing";
-            return (InputName(leaderIp, input), subtitle, Quality(status));
+            return (InputName(leaderIp, input), subtitle, Quality(status, following || IsGrouped(leaderIp)));
         }
         string title = TitleText(status, source);
-        return (title, ArtistText(status, title), DetailText(status, source));
+        return (title, ArtistText(status, title), DetailText(status, source, following || IsGrouped(leaderIp)));
     }
 
     internal static string TitleText(DeviceStatus status, string source) =>
@@ -272,8 +375,8 @@ sealed partial class WiimController
             .Where(t => t.Length > 0 && !t.Equals(title?.Trim(), StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase));
 
-    internal static string DetailText(DeviceStatus status, string source) =>
-        string.Join("  ·  ", new[] { source, Quality(status) }.Where(t => t.Length > 0));
+    internal static string DetailText(DeviceStatus status, string source, bool grouped = false) =>
+        string.Join("  ·  ", new[] { source, Quality(status, grouped) }.Where(t => t.Length > 0));
 
     internal static string NowPlayingLine(DeviceStatus status)
     {
@@ -290,6 +393,7 @@ sealed partial class WiimController
         _nowPlayingTimer.Tick += async (_, _) => await RefreshNowPlayingAsync();
         _nowPlayingTimer.Start();
         _ = RefreshNowPlayingAsync();
+        StartSleepWatch();
     }
 
     private async Task RefreshNowPlayingAsync()

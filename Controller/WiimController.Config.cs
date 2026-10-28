@@ -39,9 +39,18 @@ sealed partial class WiimController
             if (key == "firmwarechecks")  _firmwareChecks = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "instantupdates")  _instantUpdates = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "startminimized")  _startMinimized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
-            if (key == "nowplayingvinyl") _nowPlayingVinyl = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "nowplayingvinyl" && string.Equals(val, "true", StringComparison.OrdinalIgnoreCase)) _nowPlayingStyle = NowPlayingStyle.Vinyl;
+            if (key == "nowplayinglyrics") _nowPlayingLyrics = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "lyricsdelay" && int.TryParse(val, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int lyricsDelay))
+                _lyricsDelayMs = Math.Clamp(lyricsDelay, -LyricsDelayLimitMs, LyricsDelayLimitMs);
+            if (key == "nowplayingstyle" && Enum.TryParse<NowPlayingStyle>(val, true, out var style)) _nowPlayingStyle = style;
+            if (key == "nowplayingbackdrop") ParseStyleLevels(val, _nowPlayingBrightness);
             if (key == "miniplayerauto")  _miniPlayerAuto = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
-            if (key == "miniplayers")     ParseMiniPlayerPlacements(val);
+            if (key == "miniplayerontop") _miniPlayerOnTop = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "miniplayercompactontop") _miniPlayerCompactOnTop = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "miniplayers")     ParseMiniPlayerPlacements(val, _miniPlayerPlacements);
+            if (key == "miniplayerscompact") ParseMiniPlayerPlacements(val, _miniPlayerCompactPlacements);
+            if (key == "miniplayercompact") _miniPlayerCompactIps.UnionWith(val.Split('|', StringSplitOptions.RemoveEmptyEntries));
             if (key == "tracktoasts")     _trackToasts = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "artworkbackground") _artworkBackground = !string.Equals(val, "false", StringComparison.OrdinalIgnoreCase);
             if (key == "skippedversion")  _skippedVersion = val;
@@ -58,6 +67,7 @@ sealed partial class WiimController
             if (key == "hotkeys")         ParseHotkeys(val);
             if (key == "windowmaximized") _windowMaximized = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
             if (key == "sidebarhidden")   _sidebarHidden = string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+            if (key == "collapsedsections") ParseNameSet(_collapsedSections, val);
             LoadThemeSetting(key, val);
             if (key == "windowsize" && val.Split('x') is [var w, var h] &&
                 int.TryParse(w, out int width) && int.TryParse(h, out int height) && width > 0 && height > 0)
@@ -109,11 +119,13 @@ sealed partial class WiimController
                 $"osdCorner={_osdCorner}", $"osdDurationMs={_osdDurationMs}", $"osdScale={_osdScalePercent}",
                 $"disabledOutputs={string.Join('|', _disabledOutputIds)}",
                 $"libraryServer={_libraryServer}", $"radioFavorites={SerializeRadioFavorites()}", $"recent={SerializeRecent()}",
-                $"checkUpdates={_checkUpdates}", $"firmwareChecks={_firmwareChecks}", $"instantUpdates={_instantUpdates}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingVinyl={_nowPlayingVinyl}",
-                $"miniPlayerAuto={_miniPlayerAuto}",
-                $"miniPlayers={SerializeMiniPlayerPlacements()}", $"trackToasts={_trackToasts}", $"artworkBackground={_artworkBackground}",
+                $"checkUpdates={_checkUpdates}", $"firmwareChecks={_firmwareChecks}", $"instantUpdates={_instantUpdates}", $"skippedVersion={_skippedVersion}", $"startMinimized={_startMinimized}", $"nowPlayingStyle={_nowPlayingStyle}", $"nowPlayingBackdrop={SerializeStyleLevels(_nowPlayingBrightness)}", $"nowPlayingLyrics={_nowPlayingLyrics}", $"lyricsDelay={_lyricsDelayMs.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                $"miniPlayerAuto={_miniPlayerAuto}", $"miniPlayerOnTop={_miniPlayerOnTop}", $"miniPlayerCompactOnTop={_miniPlayerCompactOnTop}",
+                $"miniPlayers={SerializeMiniPlayerPlacements(_miniPlayerPlacements)}",
+                $"miniPlayersCompact={SerializeMiniPlayerPlacements(_miniPlayerCompactPlacements)}", $"miniPlayerCompact={string.Join('|', _miniPlayerCompactIps)}",
+                $"trackToasts={_trackToasts}", $"artworkBackground={_artworkBackground}",
                 $"hiddenEqPresets={string.Join('\u0001', _hiddenEqPresets)}", $"hiddenPeqPresets={string.Join('\u0001', _hiddenPeqPresets)}",
-                $"lockedDevices={string.Join('\u0001', _lockedDevices)}",
+                $"lockedDevices={string.Join('\u0001', _lockedDevices)}", $"collapsedSections={string.Join('\u0001', _collapsedSections)}",
                 $"roonCore={_roonCore}", $"roonTokens={SerializeRoonTokens()}", $"sharedFolders={SerializeSharedFolders()}",
                 $"knownDevices={string.Join('\u0002', _knownDevices.Select(d => string.Join('\u0001', d.Name, d.Ip, d.Uuid)))}"
             ]);
@@ -146,11 +158,34 @@ sealed partial class WiimController
         UpdateVolumeKeyRegistration();
     }
     private void SetStartMinimized(bool value) { _startMinimized = value; SaveConfig(); }
-    internal bool NowPlayingVinyl
+    internal NowPlayingStyle NowPlayingStyle
     {
-        get => _nowPlayingVinyl;
-        set { _nowPlayingVinyl = value; SaveConfig(); }
+        get => _nowPlayingStyle;
+        set { _nowPlayingStyle = value; SaveConfig(); }
     }
+
+    private static bool IsAmbientStyle(NowPlayingStyle style) => style is NowPlayingStyle.Ambient or NowPlayingStyle.AmbientControls;
+
+    internal static int DefaultNowPlayingBrightness(NowPlayingStyle style) => IsAmbientStyle(style) ? 63 : 18;
+
+    internal int NowPlayingBrightness(NowPlayingStyle style) =>
+        _nowPlayingBrightness.TryGetValue(style, out int brightness) ? brightness : DefaultNowPlayingBrightness(style);
+
+    internal void SetNowPlayingBrightness(NowPlayingStyle style, int brightness, bool save)
+    {
+        _nowPlayingBrightness[style] = Math.Clamp(brightness, 0, 100);
+        if (save) SaveConfig();
+    }
+
+    private static void ParseStyleLevels(string value, Dictionary<NowPlayingStyle, int> levels)
+    {
+        foreach (var entry in value.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            if (entry.Split(':') is [var name, var number] && Enum.TryParse<NowPlayingStyle>(name, true, out var style) &&
+                int.TryParse(number, out int level))
+                levels[style] = Math.Clamp(level, 0, 100);
+    }
+
+    private static string SerializeStyleLevels(Dictionary<NowPlayingStyle, int> levels) => string.Join(',', levels.Select(l => $"{l.Key}:{l.Value}"));
     private void SetAutoStartSetting(bool value) { AutoStart.SetEnabled(value); SyncTrayCheckboxes(); }
     private void SetForwardMediaKeys(bool value)
     {
@@ -196,6 +231,16 @@ sealed partial class WiimController
     private void SetSidebarHidden(bool hidden)
     {
         _sidebarHidden = hidden;
+        SaveConfig();
+    }
+
+    private readonly HashSet<string> _collapsedSections = [];
+
+    private bool IsSectionCollapsed(string name) => _collapsedSections.Contains(name);
+
+    private void SetSectionCollapsed(string name, bool collapsed)
+    {
+        if (collapsed ? !_collapsedSections.Add(name) : !_collapsedSections.Remove(name)) return;
         SaveConfig();
     }
 

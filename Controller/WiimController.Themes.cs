@@ -1,24 +1,9 @@
-using Avalonia.Controls;
-
 namespace WiimControl;
 
 sealed partial class WiimController
 {
     private List<Theme> _customThemes = [];
     private Theme _activeTheme = ThemeEngine.Dark;
-    private NativeMenu? _mnuThemes;
-
-    private void BuildThemeMenu()
-    {
-        if (_mnuThemes == null) return;
-        _mnuThemes.Items.Clear();
-        foreach (var theme in AllThemes.ToList())
-        {
-            var t = theme;
-            _mnuThemes.Add(Radio(t.Name, t.Name == _activeTheme.Name, () => UseTheme(t)));
-        }
-    }
-
     internal IReadOnlyList<Theme> CustomThemes => _customThemes;
 
     internal IEnumerable<Theme> AllThemes => ThemeEngine.BuiltIn.Concat(_customThemes);
@@ -38,7 +23,6 @@ sealed partial class WiimController
         _activeTheme = theme;
         ThemeEngine.Apply(theme);
         SaveConfig();
-        BuildThemeMenu();
     }
 
     internal void SaveTheme(Theme theme, string? replacing = null)
@@ -53,11 +37,7 @@ sealed partial class WiimController
     {
         _customThemes.RemoveAll(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (_activeTheme.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) UseTheme(ThemeEngine.Dark);
-        else
-        {
-            SaveConfig();
-            BuildThemeMenu();
-        }
+        else SaveConfig();
     }
 
     private void LoadThemeSetting(string key, string value)

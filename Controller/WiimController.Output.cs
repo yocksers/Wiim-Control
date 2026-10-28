@@ -12,7 +12,7 @@ sealed record CastReceiver(string Id, string Name, bool Selected);
 
 sealed record OutputState(List<OutputChoice> Choices, string ActiveMode, bool BluetoothOut, bool CastOut, string BluetoothName,
     List<CastReceiver>? CastReceivers = null, string? CastProfileKey = null, int? CastLatency = null, UsbResolution? Usb = null,
-    SimultaneousLineOut? LineOut = null, int? SwitchDelay = null);
+    SimultaneousLineOut? LineOut = null, int? SwitchDelay = null, bool? FixedVolume = null, List<OutputLevel>? Levels = null);
 
 sealed record UsbResolution(List<int> Rates, List<int> Bits, int Rate, int BitDepth);
 
@@ -112,7 +112,9 @@ sealed partial class WiimController
         var active = SendToDeviceAsync(ip, "getActiveSoundCardOutputMode");
         var bluetooth = SendToDeviceAsync(ip, "getbtstatus");
         var usbCap = SendToDeviceAsync(ip, "getUacOutMaxCap");
-        await Task.WhenAll(list, active, bluetooth, usbCap).ConfigureAwait(false);
+        var statusEx = SendToDeviceAsync(ip, "getStatusEx");
+        var levels = GetOutputLevelsAsync(ip);
+        await Task.WhenAll(list, active, bluetooth, usbCap, statusEx, levels).ConfigureAwait(false);
         if (list.Result == null && active.Result == null) return null;
 
         var choices = new List<OutputChoice>();
@@ -168,16 +170,23 @@ sealed partial class WiimController
         await Task.WhenAll(lineOutTask, delayTask).ConfigureAwait(false);
         var lineOut = lineOutTask.Result;
         int? switchDelay = int.TryParse(delayTask.Result?.Trim(), out int delayMs) ? delayMs : null;
-        if (!castOut) return new OutputState(choices, activeMode, btOut, castOut, btName, Usb: usb, LineOut: lineOut, SwitchDelay: switchDelay);
+        bool? fixedVolume = !IsAmpProject(JsonField(statusEx.Result, "project")) && choices.Any(c => !speakerModes.Contains(c.Mode))
+            ? FixedVolumeOf(statusEx.Result)
+            : null;
+        if (!castOut)
+            return new OutputState(choices, activeMode, btOut, castOut, btName, Usb: usb, LineOut: lineOut, SwitchDelay: switchDelay,
+                FixedVolume: fixedVolume, Levels: levels.Result);
         var receivers = SendToDeviceAsync(ip, "audio_cast:get_speaker_list");
         var profile = SendToDeviceAsync(ip, "audio_cast:speaker_get_transcode_profile");
         var latency = SendToDeviceAsync(ip, "audio_cast:speaker_get_transcode_buffer_time");
         await Task.WhenAll(receivers, profile, latency).ConfigureAwait(false);
         return new OutputState(choices, activeMode, btOut, castOut, btName, ParseCastReceivers(receivers.Result), CastProfileKeyOf(profile.Result),
-            int.TryParse(JsonField(latency.Result, "cache_max_time"), out int ms) ? ms : null, usb, lineOut, switchDelay);
+            int.TryParse(JsonField(latency.Result, "cache_max_time"), out int ms) ? ms : null, usb, lineOut, switchDelay, fixedVolume, levels.Result);
     }
 
     private const string UsbDacOutputMode = "AUDIO_OUTPUT_UAC_CARD_MODE";
+    private const int OutputSwitchChecks = 6;
+    private static readonly TimeSpan OutputSwitchCheckPause = TimeSpan.FromMilliseconds(500);
     internal const string HeadphoneOutputMode = "AUDIO_OUTPUT_PHONE_JACK_MODE";
 
     internal static string UnlistedOutputName(string activeMode) =>
@@ -186,8 +195,32 @@ sealed partial class WiimController
     internal async Task<bool> SetUsbResolutionAsync(string ip, int sampleRate, int bits) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"setUacOutMaxCap:{sampleRate}:{bits}:0").ConfigureAwait(false));
 
-    internal async Task<bool> SetOutputAsync(string ip, int code) =>
-        CommandSucceeded(await SendToDeviceAsync(ip, $"setAudioOutputHardwareMode:{code}").ConfigureAwait(false));
+    internal async Task<bool> SetOutputAsync(string ip, OutputChoice choice)
+    {
+        if (!CommandSucceeded(await SendToDeviceAsync(ip, $"setAudioOutputHardwareMode:{choice.Code}").ConfigureAwait(false))) return false;
+        for (int attempt = 0; attempt < OutputSwitchChecks; attempt++)
+        {
+            if (JsonField(await SendToDeviceAsync(ip, "getActiveSoundCardOutputMode").ConfigureAwait(false), "mode") == choice.Mode) break;
+            await Task.Delay(OutputSwitchCheckPause).ConfigureAwait(false);
+        }
+        return true;
+    }
+
+    private static readonly string[] AmpProjects = ["WiiM_AMP", "WiiM_Amp_4layer", "WiiM_Amp_Pro", "WiiM_Amp_Ultra", "WiiM_CI_MOD_A80", "WiiM_CI_AMP"];
+
+    internal static bool IsAmpProject(string? project) =>
+        project is { Length: > 0 } && AmpProjects.Any(a => project.Contains(a, StringComparison.Ordinal));
+
+    internal static bool? FixedVolumeOf(string? statusEx) => JsonField(statusEx, "volume_control") switch
+    {
+        "1" => true,
+        "0" => false,
+        _ => null
+    };
+
+    internal async Task<bool> SetFixedVolumeAsync(string ip, bool on) =>
+        CommandSucceeded(await SendToDeviceAsync(ip, $"setVolumeControl:{(on ? 1 : 0)}").ConfigureAwait(false));
+
 
     private static List<BluetoothSpeaker> ParseBluetoothList(string? json)
     {

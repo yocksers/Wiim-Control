@@ -12,7 +12,11 @@ sealed partial class WiimController
 
     private readonly Dictionary<string, MiniPlayerWindow> _miniPlayers = new();
     private readonly Dictionary<string, MiniPlayerPlacement> _miniPlayerPlacements = new();
+    private readonly Dictionary<string, MiniPlayerPlacement> _miniPlayerCompactPlacements = new();
+    private readonly HashSet<string> _miniPlayerCompactIps = new();
     private bool _miniPlayerAuto;
+    private bool _miniPlayerOnTop;
+    private bool _miniPlayerCompactOnTop;
     private readonly Dictionary<string, string?> _lastInputs = new();
 
     internal bool MiniPlayerAuto
@@ -22,6 +26,28 @@ sealed partial class WiimController
         {
             _miniPlayerAuto = value;
             UpdateNowPlayingInterval();
+            SaveConfig();
+        }
+    }
+
+    internal bool MiniPlayerOnTop
+    {
+        get => _miniPlayerOnTop;
+        set
+        {
+            _miniPlayerOnTop = value;
+            foreach (var window in _miniPlayers.Values) window.ApplyTopmost();
+            SaveConfig();
+        }
+    }
+
+    internal bool MiniPlayerCompactOnTop
+    {
+        get => _miniPlayerCompactOnTop;
+        set
+        {
+            _miniPlayerCompactOnTop = value;
+            foreach (var window in _miniPlayers.Values) window.ApplyTopmost();
             SaveConfig();
         }
     }
@@ -40,6 +66,14 @@ sealed partial class WiimController
         window.Show();
     }
 
+    internal bool IsMiniPlayerOpen(string ip) => _miniPlayers.ContainsKey(ip);
+
+    internal void ToggleMiniPlayer(string ip)
+    {
+        if (IsMiniPlayerOpen(ip)) CloseMiniPlayer(ip);
+        else ShowMiniPlayer(ip);
+    }
+
     internal void CloseMiniPlayer(string ip)
     {
         if (_miniPlayers.TryGetValue(ip, out var window)) window.Close();
@@ -53,6 +87,7 @@ sealed partial class WiimController
     internal void ResetMiniPlayerPlacement()
     {
         _miniPlayerPlacements.Clear();
+        _miniPlayerCompactPlacements.Clear();
         int slot = 0;
         foreach (var window in _miniPlayers.Values.ToList()) window.PlaceAtDefault(slot++);
         SaveConfig();
@@ -61,23 +96,25 @@ sealed partial class WiimController
     private void MoveMiniPlayerPlacement(string oldIp, string newIp)
     {
         if (_miniPlayerPlacements.Remove(oldIp, out var placement)) _miniPlayerPlacements[newIp] = placement;
+        if (_miniPlayerCompactPlacements.Remove(oldIp, out var compact)) _miniPlayerCompactPlacements[newIp] = compact;
+        if (_miniPlayerCompactIps.Remove(oldIp)) _miniPlayerCompactIps.Add(newIp);
         CloseMiniPlayer(oldIp);
     }
 
     private bool IsMiniPlayerShowingArtwork(Avalonia.Media.Imaging.Bitmap bitmap) =>
         _miniPlayers.Values.Any(w => w.IsShowingArtwork(bitmap));
 
-    private void ParseMiniPlayerPlacements(string value)
+    private static void ParseMiniPlayerPlacements(string value, Dictionary<string, MiniPlayerPlacement> placements)
     {
         foreach (var entry in value.Split('|', StringSplitOptions.RemoveEmptyEntries))
             if (entry.Split(',') is [var ip, var x, var y, var width, var height, .. var rest] && rest.Length <= 1 && ip.Length > 0 &&
                 int.TryParse(x, out int left) && int.TryParse(y, out int top) &&
                 int.TryParse(width, out int w) && int.TryParse(height, out int h) && w > 0 && h > 0)
-                _miniPlayerPlacements[ip] = new MiniPlayerPlacement(new PixelPoint(left, top), new Size(w, h), rest is ["1"]);
+                placements[ip] = new MiniPlayerPlacement(new PixelPoint(left, top), new Size(w, h), rest is ["1"]);
     }
 
-    private string SerializeMiniPlayerPlacements() =>
-        string.Join('|', _miniPlayerPlacements.Select(p =>
+    private static string SerializeMiniPlayerPlacements(Dictionary<string, MiniPlayerPlacement> placements) =>
+        string.Join('|', placements.Select(p =>
             $"{p.Key},{p.Value.Position.X},{p.Value.Position.Y},{(int)p.Value.Size.Width},{(int)p.Value.Size.Height}{(p.Value.Pinned ? ",1" : "")}"));
 
     internal void NoteDeviceInput(string ip, DeviceStatus? status)

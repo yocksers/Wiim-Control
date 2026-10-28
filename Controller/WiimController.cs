@@ -23,7 +23,8 @@ sealed partial class WiimController : IDisposable
     private SettingsWindow?  _settingsWindow;
     private bool             _openingSettings;
     private bool             _startMinimized;
-    private bool             _nowPlayingVinyl;
+    private NowPlayingStyle  _nowPlayingStyle;
+    private readonly Dictionary<NowPlayingStyle, int> _nowPlayingBrightness = new();
     private int              _consecutiveFailures;
     private DateTime         _lastReconnectAttempt = DateTime.MinValue;
     private bool             _logStep;
@@ -197,6 +198,7 @@ sealed partial class WiimController : IDisposable
         _tray?.Dispose();
         _osd?.Close();
         _trackToast?.Close();
+        CloseSleepWarnings();
         StopPcAudio();
         _nowPlayingTimer.Stop();
         _firmwareTimer.Stop();

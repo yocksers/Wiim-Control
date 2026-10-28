@@ -6,12 +6,15 @@ sealed partial class WiimController
 {
     private MultiroomSnapshot? _multiroomCache;
     private DateTime _multiroomCacheTime = DateTime.MinValue;
+    private HashSet<string> _groupedIps = [];
     private static readonly TimeSpan MultiroomCacheLifetime = TimeSpan.FromSeconds(30);
 
     internal string EffectiveGroupLeader =>
         _groupLeaderIp.Length > 0 && _knownDevices.Any(d => d.Ip == _groupLeaderIp) ? _groupLeaderIp : _deviceIp;
 
     private string PlaybackTarget => PlaybackTargetOf(_deviceIp);
+
+    internal bool IsGrouped(string ip) => _groupedIps.Contains(ip);
 
     internal string PlaybackTargetOf(string ip) =>
         _multiroomCache != null && _multiroomCache.LeaderOf.TryGetValue(ip, out var leader) ? leader : ip;
@@ -60,6 +63,7 @@ sealed partial class WiimController
         })).ConfigureAwait(false);
 
         var online = new HashSet<string>();
+        var fixedVolume = new HashSet<string>();
         var uuids = new Dictionary<string, string>();
         foreach (var r in replies)
         {
@@ -70,6 +74,7 @@ sealed partial class WiimController
                 _deviceModels[r.Device.Ip] = ModelName(project);
                 _deviceProjects[r.Device.Ip] = project;
             }
+            if (FixedVolumeOf(r.Status) == true) fixedVolume.Add(r.Device.Ip);
             var uuid = NormalizeUuid(JsonField(r.Status, "uuid") ?? r.Device.Uuid);
             if (uuid.Length > 0) uuids[r.Device.Ip] = uuid;
         }
@@ -77,20 +82,32 @@ sealed partial class WiimController
         var leaderOf = new Dictionary<string, string>();
         var memberAddress = new Dictionary<string, string>();
         var channels = new Dictionary<string, int>();
+        var grouped = new HashSet<string>();
+        var others = new Dictionary<string, List<OtherFollower>>();
         foreach (var r in replies)
         {
+            var names = ParseFollowerStates(r.Slaves).ToDictionary(f => f.Address, f => f.Name);
             foreach (var (slaveIp, slaveUuid, channel) in ParseSlaveList(r.Slaves))
             {
+                grouped.Add(r.Device.Ip);
                 string? known = devices.FirstOrDefault(d => d.Ip == slaveIp).Ip;
                 if (known == null && slaveUuid.Length > 0)
                     known = uuids.FirstOrDefault(u => SameUuid(u.Value, slaveUuid)).Key;
+                if (known == null && slaveIp.Length > 0)
+                {
+                    if (!others.TryGetValue(r.Device.Ip, out var list)) others[r.Device.Ip] = list = [];
+                    list.Add(new OtherFollower(slaveIp, names.GetValueOrDefault(slaveIp) is { Length: > 0 } name ? name : slaveIp));
+                    continue;
+                }
                 if (known == null || known == r.Device.Ip) continue;
                 leaderOf[known] = r.Device.Ip;
                 memberAddress[known] = slaveIp.Length > 0 ? slaveIp : known;
                 if (channel is int c) channels[known] = c;
             }
         }
-        var snapshot = new MultiroomSnapshot(online, leaderOf, memberAddress, channels);
+        grouped.UnionWith(leaderOf.Keys);
+        _groupedIps = grouped;
+        var snapshot = new MultiroomSnapshot(online, leaderOf, memberAddress, channels, fixedVolume, others);
         _multiroomCache = snapshot;
         _multiroomCacheTime = DateTime.UtcNow;
         return snapshot;
@@ -139,6 +156,43 @@ sealed partial class WiimController
         catch (JsonException) { }
         return result;
     }
+
+    internal static List<(string Address, string Name, int? Volume, bool Muted)> ParseFollowerStates(string? json)
+    {
+        var result = new List<(string, string, int?, bool)>();
+        if (json == null) return result;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                !doc.RootElement.TryGetProperty("slave_list", out var list) ||
+                list.ValueKind != JsonValueKind.Array) return result;
+            foreach (var s in list.EnumerateArray())
+            {
+                string ip = s.TryGetProperty("ip", out var ipProp) ? ipProp.ToString() : string.Empty;
+                if (ip.Length == 0) continue;
+                string name = s.TryGetProperty("name", out var nameProp) ? nameProp.ToString() : string.Empty;
+                int? volume = s.TryGetProperty("volume", out var volumeProp) && int.TryParse(volumeProp.ToString(), out int v) ? v : null;
+                bool muted = s.TryGetProperty("mute", out var muteProp) && muteProp.ToString() == "1";
+                result.Add((ip, name, volume, muted));
+            }
+        }
+        catch (JsonException) { }
+        return result;
+    }
+
+    internal async Task<List<(string Address, string Name, int? Volume, bool Muted)>> GetFollowerStatesAsync(string leaderIp) =>
+        ParseFollowerStates(await SendToDeviceAsync(leaderIp, "multiroom:getSlaveList").ConfigureAwait(false));
+
+    internal async Task<int?> GetFollowerChannelAsync(string leaderIp, string address) =>
+        ParseSlaveList(await SendToDeviceAsync(leaderIp, "multiroom:getSlaveList").ConfigureAwait(false))
+            .FirstOrDefault(s => s.Ip == address).Channel;
+
+    internal async Task<bool> SetFollowerVolumeAsync(string leaderIp, string address, int volume) =>
+        CommandSucceeded(await SendToDeviceAsync(leaderIp, $"multiroom:SlaveVolume:{address}:{Math.Clamp(volume, 0, 100)}").ConfigureAwait(false));
+
+    internal async Task<bool> SetAllFollowersMutedAsync(string leaderIp, bool muted) =>
+        CommandSucceeded(await SendToDeviceAsync(leaderIp, $"setPlayerCmd:slave_mute:{(muted ? "mute" : "unmute")}").ConfigureAwait(false));
 
     private static List<(string Ip, int Volume)> ParseSlaveVolumes(string? json)
     {

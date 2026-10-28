@@ -69,7 +69,11 @@ sealed partial class WiimController
         string title = TitleText(status, source);
         string device = DeviceNameOf(deviceIp);
         string footer = source.Length > 0 ? $"{device}  ·  {source}" : device;
-        _trackToast ??= new TrackToastWindow();
+        if (_trackToast == null)
+        {
+            _trackToast = new TrackToastWindow();
+            _trackToast.VisibilityChanged += MakeRoomForTrackToast;
+        }
         _trackToast.ShowTrack(art, title, ArtistText(status, title), footer, _osdCorner, _osdScalePercent / 100.0, () => ShowMiniPlayer(deviceIp));
     }
 }

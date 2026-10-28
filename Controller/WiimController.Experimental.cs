@@ -151,7 +151,7 @@ sealed partial class WiimController
             .Equals("true", StringComparison.OrdinalIgnoreCase) == true;
 
     internal static string SyncDelayText(double ms, bool micro) =>
-        micro ? ms.ToString("0.000", CultureInfo.InvariantCulture) : Math.Round(ms).ToString(CultureInfo.InvariantCulture);
+        micro ? Math.Round(ms, 2, MidpointRounding.AwayFromZero).ToString("0.##", CultureInfo.InvariantCulture) : Math.Round(ms).ToString(CultureInfo.InvariantCulture);
 
     internal async Task<ExperimentalSettings?> GetExperimentalAsync(string ip)
     {

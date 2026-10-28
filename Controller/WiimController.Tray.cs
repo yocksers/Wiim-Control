@@ -8,7 +8,6 @@ namespace WiimControl;
 
 sealed partial class WiimController
 {
-    private static readonly int[] StepChoices = [1, 2, 3, 4, 5, 10];
     private static readonly int[] DurationChoices = [750, 1000, 1500, 2000, 3000, 5000];
 
     private NativeMenuItem? _mnuDeviceStatus;
@@ -16,14 +15,12 @@ sealed partial class WiimController
     private NativeMenuItem? _mnuSuppress;
     private NativeMenuItem? _mnuAutoStart;
     private NativeMenuItem? _mnuForwardMedia;
-    private NativeMenuItem? _mnuLogStep;
-    private NativeMenuItem? _mnuStep;
     private NativeMenu? _mnuPresets;
     private NativeMenu? _mnuDevices;
+    private NativeMenu? _mnuInputs;
+    private List<string> _trayInputs = [];
+    private string _trayInputsIp = string.Empty;
     private NativeMenu? _mnuOutputs;
-    private readonly Dictionary<int, NativeMenuItem> _stepItems = new();
-    private readonly Dictionary<OsdCorner, NativeMenuItem> _cornerItems = new();
-    private readonly Dictionary<int, NativeMenuItem> _durationItems = new();
 
     private static NativeMenuItem Disabled(string header) => new(header) { IsEnabled = false };
 
@@ -66,6 +63,9 @@ sealed partial class WiimController
             menu.Add(_mnuOutputStatus);
         }
         menu.Add(new NativeMenuItemSeparator());
+        menu.Add(MenuAction("Play / Pause", () => _ = SendMediaCommandAsync("playpause")));
+        menu.Add(MenuAction("Stop", () => _ = SendMediaCommandAsync("stop")));
+        menu.Add(new NativeMenuItemSeparator());
         menu.Add(MenuAction("Settings…", ShowSettingsWindow));
         menu.Add(new NativeMenuItemSeparator());
 
@@ -90,50 +90,18 @@ sealed partial class WiimController
             menu.Add(Submenu("Output devices", _mnuOutputs));
         }
 
-        var stepMenu = new NativeMenu();
-        foreach (int step in StepChoices)
+        _mnuInputs = new NativeMenu();
+        _mnuInputs.Opening += (_, _) =>
         {
-            int s = step;
-            var item = Radio(s.ToString(), _volumeStep == s, () => SetVolumeStep(s));
-            _stepItems[s] = item;
-            stepMenu.Add(item);
-        }
-        stepMenu.Add(new NativeMenuItemSeparator());
-        stepMenu.Add(MenuAction("Custom…", async () =>
-        {
-            var raw = await Dialogs.PromptAsync(null, $"Current step: {_volumeStep}\nEnter new step (1–50):", string.Empty, UiScale);
-            if (int.TryParse(raw, out int v) && v is >= 1 and <= 50) SetVolumeStep(v);
-        }));
-        stepMenu.Add(new NativeMenuItemSeparator());
-        _mnuLogStep = Check("Logarithmic step (finer at low volume)", _logStep, SetLogStep);
-        stepMenu.Add(_mnuLogStep);
-        _mnuStep = Submenu($"Volume step: {_volumeStep}", stepMenu);
-        menu.Add(_mnuStep);
-
-        var positionMenu = new NativeMenu();
-        foreach (var corner in Enum.GetValues<OsdCorner>())
-        {
-            var c = corner;
-            var item = Radio(OsdCornerLabel(c), _osdCorner == c, () => SetOsdCorner(c));
-            _cornerItems[c] = item;
-            positionMenu.Add(item);
-        }
-        var durationMenu = new NativeMenu();
-        foreach (int ms in DurationChoices)
-        {
-            int d = ms;
-            var item = Radio(OsdDurationLabel(d), _osdDurationMs == d, () => SetOsdDuration(d));
-            _durationItems[d] = item;
-            durationMenu.Add(item);
-        }
-        var overlayMenu = new NativeMenu();
-        overlayMenu.Add(Submenu("Position", positionMenu));
-        overlayMenu.Add(Submenu("Duration", durationMenu));
-        menu.Add(Submenu("Volume overlay", overlayMenu));
-        _mnuThemes = new NativeMenu();
-        _mnuThemes.Opening += (_, _) => BuildThemeMenu();
-        BuildThemeMenu();
-        menu.Add(Submenu("Theme", _mnuThemes));
+            BuildInputsMenu();
+            _ = UpdateTrayInputsAsync();
+        };
+        BuildInputsMenu();
+        menu.Add(Submenu("Input", _mnuInputs));
+        _mnuDevices = new NativeMenu();
+        _mnuDevices.Opening += (_, _) => BuildDevicesMenu();
+        BuildDevicesMenu();
+        menu.Add(Submenu("Wiim Devices", _mnuDevices));
 
         _mnuPresets = new NativeMenu();
         for (int preset = 1; preset <= 12; preset++)
@@ -146,20 +114,6 @@ sealed partial class WiimController
         menu.Add(BuildSleepMenu());
         if (PcAudioSupported) menu.Add(BuildPcAudioMenuItem());
 
-        menu.Add(MenuAction("Test connection…", async () =>
-        {
-            try
-            {
-                using var resp = await _http.GetAsync($"https://{_deviceIp}/httpapi.asp?command=getPlayerStatus");
-                Notify($"Connected — HTTP {(int)resp.StatusCode}");
-            }
-            catch (Exception ex) { Notify($"Failed: {ex.Message}"); }
-        }));
-
-        _mnuDevices = new NativeMenu();
-        _mnuDevices.Opening += (_, _) => BuildDevicesMenu();
-        BuildDevicesMenu();
-        menu.Add(Submenu("Wiim Devices", _mnuDevices));
         menu.Add(new NativeMenuItemSeparator());
 
         menu.Add(Disabled($"Version {AppVersion}"));
@@ -176,6 +130,7 @@ sealed partial class WiimController
         _tray.Clicked += (_, _) => ShowSettingsWindow();
         if (Application.Current is { } app) TrayIcon.SetIcons(app, [_tray]);
         _ = UpdatePresetNamesAsync();
+        _ = UpdateTrayInputsAsync();
     }
 
     private void ShowSettingsWindow()
@@ -224,10 +179,9 @@ sealed partial class WiimController
     private static string OsdDurationLabel(int ms) => ms % 1000 == 0 ? $"{ms / 1000}s" : $"{ms / 1000.0:0.0}s";
 
     private string OutputStatusText() =>
-        _outputMonitor is null               ? "Output: monitor unavailable"                        :
-        _disabledOutputIds.Count == 0        ? "Output: all devices allowed"                        :
-        _outputMonitor.IsEnabledOutputActive ? "Output: active for current device"                  :
-                                                "Output: inactive — current device not selected";
+        _outputMonitor is null                                                ? "Output: monitor unavailable" :
+        _disabledOutputIds.Count == 0 || _outputMonitor.IsEnabledOutputActive ? $"Controlling {DeviceNameOf(_deviceIp)}" :
+                                                                                $"Not controlling {DeviceNameOf(_deviceIp)} (sound output not selected)";
 
     private void UpdateTrayStatus()
     {
@@ -268,6 +222,50 @@ sealed partial class WiimController
             items[i].Header = presets?.Presets.FirstOrDefault(p => p.Number == i + 1) is { } preset
                 ? $"{i + 1}. {preset.Name}"
                 : $"Preset {i + 1}";
+    }
+
+    private void BuildInputsMenu()
+    {
+        if (_mnuInputs == null) return;
+        _mnuInputs.Items.Clear();
+        string ip = _deviceIp;
+        if (_trayInputsIp != ip || _trayInputs.Count == 0)
+        {
+            _mnuInputs.Add(Disabled("Loading…"));
+            return;
+        }
+        string? current = _lastModes.TryGetValue(ip, out var known) ? InputOfMode(known.Mode) : null;
+        bool locked = IsDeviceLocked(ip);
+        foreach (var input in _trayInputs)
+        {
+            string target = input;
+            var item = Radio(InputName(ip, target), IsSameInput(target, current), () => _ = SwitchInputFromTrayAsync(ip, target));
+            item.IsEnabled = !locked;
+            _mnuInputs.Add(item);
+        }
+    }
+
+    private async Task UpdateTrayInputsAsync()
+    {
+        string ip = _deviceIp;
+        if (string.IsNullOrEmpty(ip) || await GetInputsAsync(ip) is not { } inputs || ip != _deviceIp) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _trayInputs = inputs;
+            _trayInputsIp = ip;
+            BuildInputsMenu();
+        });
+    }
+
+    private async Task SwitchInputFromTrayAsync(string ip, string input)
+    {
+        string leader = PlaybackTargetOf(ip);
+        if (leader != ip && !await Dialogs.ConfirmAsync(null,
+                $"{DeviceNameOf(ip)} is linked to {DeviceNameOf(leader)}. Switching its input takes it out of the group. Switch anyway?", UiScale))
+            return;
+        OnInputChosen(ip);
+        if (!await SwitchInputAsync(ip, input)) Notify("The device didn't switch the input. Check that it's switched on and reachable.");
+        _ = RefreshNowPlayingAsync();
     }
 
     private void BuildDevicesMenu()
@@ -390,10 +388,5 @@ sealed partial class WiimController
         if (_mnuSuppress     != null) _mnuSuppress.IsChecked     = _suppress;
         if (_mnuAutoStart    != null) _mnuAutoStart.IsChecked    = IsAutoStartEnabled();
         if (_mnuForwardMedia != null) _mnuForwardMedia.IsChecked = _forwardMediaKeys;
-        if (_mnuLogStep      != null) _mnuLogStep.IsChecked      = _logStep;
-        if (_mnuStep         != null) _mnuStep.Header            = $"Volume step: {_volumeStep}";
-        foreach (var (step, item) in _stepItems) item.IsChecked = step == _volumeStep;
-        foreach (var (corner, item) in _cornerItems) item.IsChecked = corner == _osdCorner;
-        foreach (var (ms, item) in _durationItems) item.IsChecked = ms == _osdDurationMs;
     }
 }

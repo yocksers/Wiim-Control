@@ -11,7 +11,6 @@ sealed partial class WiimController
     private const int BackdropCacheSize = 8;
     private const int NowPlayingBackdropSize = 256;
     private const float NowPlayingBackdropBlur = 3;
-    internal const float MiniPlayerBackdropBlur = 9;
 
     private bool _artworkBackground = true;
     private string _activeArtUrl = string.Empty;

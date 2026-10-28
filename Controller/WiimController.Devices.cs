@@ -28,6 +28,7 @@ sealed partial class WiimController
         SaveConfig();
         _ = RefreshNowPlayingAsync();
         SyncPcAudioUi();
+        _ = UpdateTrayInputsAsync();
         _settingsWindow?.OnActiveDeviceChanged();
     }
 

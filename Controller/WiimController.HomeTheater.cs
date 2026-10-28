@@ -17,7 +17,14 @@ sealed partial class WiimController
     internal const int SurroundBothChannel = 10;
     private const int HomeTheaterGroupType = 3;
     private const string HomeTheaterGroupName = "Home Theater";
-    private static readonly string[] HomeTheaterFronts = ["WiiM_Ultra", "WiiM_Amp_Ultra", "WiiM_Amp_Pro"];
+    private static readonly string[] HomeTheaterFronts = ["WiiM_Ultra", "WiiM_Amp_Ultra", "WiiM_Amp_Pro", "WiiM_Bar"];
+
+    internal static bool IsSoundbar(string? project) => project?.StartsWith("WiiM_Bar", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static readonly string[] SingleSpeakerProjects = ["WiiM_Sound", "AudioPro_A10MkII", "AudioPro_C10MkII"];
+
+    internal static bool IsSingleSpeaker(string? project) =>
+        project is { Length: > 0 } && SingleSpeakerProjects.Any(p => project.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 
     internal static bool CanBeHomeTheaterFront(string? project) =>
         project is { Length: > 0 } && HomeTheaterFronts.Any(p => project.StartsWith(p, StringComparison.OrdinalIgnoreCase));
