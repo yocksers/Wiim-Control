@@ -1,0 +1,240 @@
+﻿using Avalonia;
+using Avalonia.Controls;
+
+namespace WiimControl;
+
+sealed partial class WiimController
+{
+    private sealed partial class SettingsWindow
+    {
+        private sealed partial class SubwooferPage(SettingsWindow window)
+        {
+            private readonly ComboBox _cboSubAmp = new() { Width = DevicePickerWidth };
+            private readonly TextBlock _lblSubStatus = Subtitle();
+            private readonly StackPanel _subRows = new();
+            private readonly SemaphoreSlim _subGate = new(1, 1);
+            private int _subVersion;
+
+            public const string SectionHighPass = "High-pass filter";
+            public const string SectionSubOut = "Sub out";
+
+            private sealed record SubwooferState(string Ip, bool Reachable, SubwooferInfo? Sub, HighPassFilter? HighPass, List<PairedSub>? WiimSubs,
+                bool WiredOutput)
+            {
+                public bool SubAvailable => WiredOutput || WiimSubs?.Any(s => s.Online) == true;
+            }
+
+            private string _subSection = SectionSubOut;
+            private SubwooferState? _subCache;
+
+            public void FillDevices() => FillSubwooferCombo(followActive: window._followActive);
+
+            public Control Build()
+            {
+                ToolTip.SetTip(_cboSubAmp, "The device whose subwoofer settings are shown");
+                _cboSubAmp.SelectionChanged += async (_, _) => { if (!window._loading) await RefreshSubwooferAsync(); };
+                var refresh = Pill("Refresh");
+                refresh.Click += async (_, _) => await RefreshSubwooferAsync();
+                var page = window.Page(SectionSubOut, _lblSubStatus, [_cboSubAmp, refresh], _subRows);
+                window._sectionHandlers[page] = section =>
+                {
+                    _subSection = section;
+                    FillSubwooferCombo(followActive: false);
+                    bool cached = _subCache != null && _subCache.Ip == AmpOf(_cboSubAmp);
+                    SetRows(_subRows, cached ? SubwooferCards(_subCache!) : []);
+                    if (page.IsVisible) _ = RefreshSubwooferAsync(quiet: cached);
+                };
+                page.PropertyChanged += async (_, e) =>
+                {
+                    if (e.Property != IsVisibleProperty || !page.IsVisible) return;
+                    await CheckSubwooferDevicesAsync();
+                    await RefreshSubwooferAsync(quiet: _subCache?.Ip == AmpOf(_cboSubAmp));
+                };
+                return page;
+            }
+
+            public async Task RefreshSubwooferAsync(bool quiet = false)
+            {
+                int version = ++_subVersion;
+                if (AmpOf(_cboSubAmp) is not { } ip)
+                {
+                    _lblSubStatus.Text = string.Empty;
+                    SetRows(_subRows, [Muted(window._owner._knownDevices.Count == 0 ? "Add a WiiM device on the Devices page first."
+                        : _subSection == SectionHighPass ? "None of your devices has a high-pass filter."
+                        : "None of your devices has a subwoofer output or can pair a WiiM subwoofer.")]);
+                    return;
+                }
+                if (!quiet) _lblSubStatus.Text = "Loading…";
+                var (reachable, sub, highPass, wiimSubs, wired) = await window._owner.GetSubwooferAsync(ip);
+                if (version != _subVersion) return;
+                _lblSubStatus.Text = reachable ? string.Empty : "Not reachable";
+                var state = new SubwooferState(ip, reachable, sub, highPass, wiimSubs, wired);
+                if (reachable) _subCache = state;
+                SetRows(_subRows, SubwooferCards(state));
+            }
+
+            private List<Control> SubwooferCards(SubwooferState state)
+            {
+                if (!state.Reachable) return [Muted("Couldn't reach this device.")];
+                const string noSubOut = "This device has no subwoofer output. The WiiM Amp, Amp Pro, Amp Ultra and Ultra have one.";
+                string? waiting = state.SubAvailable ? null
+                    : state.WiimSubs is { Count: > 0 } ? "Your WiiM subwoofer is offline. These settings can be changed again when it's back."
+                    : "This device has no subwoofer output of its own. These settings are used with a WiiM subwoofer: pair one under Sub out to change them.";
+                if (_subSection == SectionHighPass)
+                {
+                    if (state.HighPass == null) return [Muted("This device doesn't have a high-pass filter.")];
+                    bool subActive = state.SubAvailable && state.Sub is { Enabled: true, Plugged: true };
+                    return [BuildHighPassCard(state.Ip, state.HighPass, subActive)];
+                }
+                List<Control> cards;
+                if (!state.WiredOutput && state.WiimSubs != null)
+                {
+                    cards = !state.SubAvailable
+                        ? [Muted(state.WiimSubs.Count > 0
+                            ? "Your WiiM subwoofer is offline. Its settings are shown here again when it's back."
+                            : "This device has no subwoofer output of its own, but it can use a wireless WiiM Sub Pro. Pair one below; " +
+                              "its settings are shown here once it's connected.")]
+                        : state.Sub != null ? [BuildSubwooferCard(state.Ip, state.Sub)] : [];
+                }
+                else cards = state.Sub != null ? WithWaiting(BuildSubwooferCard(state.Ip, state.Sub), waiting) : [Muted(noSubOut)];
+                if (state.WiimSubs != null) cards.Add(BuildWiimSubCard(state.Ip, state.WiimSubs, state.WiredOutput));
+                return cards;
+            }
+
+            private static List<Control> WithWaiting(Control card, string? waiting)
+            {
+                if (waiting == null) return [card];
+                card.IsEnabled = false;
+                card.Opacity = 0.5;
+                return [Muted(waiting), card];
+            }
+
+            private async Task CheckSubwooferDevicesAsync()
+            {
+                var devices = window._owner._knownDevices.ToList();
+                if (devices.All(d => window._owner.SubwooferSupport(d.Ip) != null && window._owner.HighPassSupport(d.Ip) != null)) return;
+                await Task.WhenAll(devices.Select(d => window._owner.CheckSubwooferSupportAsync(d.Ip)));
+                FillSubwooferCombo(followActive: false);
+            }
+
+            private void FillSubwooferCombo(bool followActive)
+            {
+                var devices = window._owner._knownDevices
+                    .Where(d => (_subSection == SectionHighPass ? window._owner.HighPassSupport(d.Ip) : window._owner.SubwooferSupport(d.Ip)) != false).ToList();
+                string? selected = (followActive ? null : AmpOf(_cboSubAmp)) ?? window._owner._deviceIp;
+                if (!devices.Any(d => d.Ip == selected))
+                    selected = devices.Any(d => d.Ip == window._owner._deviceIp) ? window._owner._deviceIp : devices.Select(d => d.Ip).FirstOrDefault();
+                bool wasLoading = window._loading;
+                window._loading = true;
+                _cboSubAmp.Items.Clear();
+                foreach (var d in devices) _cboSubAmp.Items.Add(ComboItem(d.Ip, d.Name));
+                int index = devices.FindIndex(d => d.Ip == selected);
+                _cboSubAmp.SelectedIndex = index >= 0 ? index : _cboSubAmp.Items.Count > 0 ? 0 : -1;
+                window._loading = wasLoading;
+            }
+
+            private async Task ChangeSubAsync(Func<Task<bool>> change)
+            {
+                await _subGate.WaitAsync();
+                bool ok;
+                try
+                {
+                    _lblSubStatus.Text = "Saving…";
+                    ok = await change();
+                }
+                finally { _subGate.Release(); }
+                if (!ok) await Dialogs.MessageAsync(window, "The device didn't accept the change.", window._scale);
+                if (_subGate.CurrentCount == 0) return;
+                await RefreshSubwooferAsync(quiet: true);
+            }
+
+            private Grid SubToggle(string text, bool value, Func<bool, Task<bool>> apply)
+            {
+                var toggle = new ToggleSwitch { IsChecked = value };
+                toggle.IsCheckedChanged += async (_, _) => await ChangeSubAsync(() => apply(toggle.IsChecked == true));
+                return ToggleRow(text, toggle);
+            }
+
+            private Border BuildSubwooferCard(string ip, SubwooferInfo sub)
+            {
+                var rows = new List<Control>
+                {
+                    SubToggle("Subwoofer output", sub.Enabled, on => window._owner.SetSubwooferAsync(ip, "status", on ? 1 : 0)),
+                    LabeledRow("Subwoofer connected", Info(sub.Plugged ? "Yes" : "No"))
+                };
+
+                var level = AmpSlider(-15, 15, (int)Math.Round(sub.Level), v => Invariant($"{v:+0;-0;0} dB"), true, out var levelRow);
+                level.ValueCommitted += async (_, _) => await ChangeSubAsync(() => window._owner.SetSubwooferAsync(ip, "level", level.Value));
+                rows.Add(LabeledRow("Level", levelRow));
+
+                var cross = AmpSlider(30, 250, (int)Math.Round(sub.Crossover), v => $"{v} Hz", false, out var crossRow);
+                cross.ValueCommitted += async (_, _) => await ChangeSubAsync(() => window._owner.SetSubwooferAsync(ip, "cross", cross.Value));
+                var crossLabel = LabeledRow("Crossover", crossRow);
+                crossLabel.IsEnabled = !sub.Bypass;
+                crossLabel.Opacity = sub.Bypass ? 0.45 : 1;
+                rows.Add(crossLabel);
+
+                rows.Add(LabeledRow("Phase", SegmentSwitch([(0, "0°"), (180, "180°")], sub.Phase >= 90 ? 180 : 0, FieldWidth,
+                    value => ChangeSubAsync(() => window._owner.SetSubwooferAsync(ip, "phase", value)))));
+
+                if (sub.Delay is double delay)
+                {
+                    var delaySlider = AmpSlider(-2000, 2000, (int)Math.Round(delay * 10), v => Invariant($"{v / 10.0:0.0} ms"), true, out var delayRow);
+                    delaySlider.ValueCommitted += async (_, _) =>
+                        await ChangeSubAsync(() => window._owner.SetSubwooferAsync(ip, "sub_delay", delaySlider.Value / 10.0));
+                    rows.Add(LabeledRow("Delay", delayRow));
+                }
+
+                var bypass = SubToggle("Subwoofer bypass mode", sub.Bypass, on => window._owner.SetSubwooferAsync(ip, "sub_filter", on ? 0 : 1));
+                ToolTip.SetTip(bypass, "Sends the sound to the subwoofer without the crossover, so it gets the full frequency range");
+                rows.Add(bypass);
+
+                var mainBass = SubToggle("Main speakers output bass", !sub.MainHighPass, on => window._owner.SetSubwooferAsync(ip, "main_filter", on ? 0 : 1));
+                ToolTip.SetTip(mainBass, "Lets the main speakers also play bass while the subwoofer is active");
+                rows.Add(mainBass);
+                return Card("Subwoofer", rows.ToArray());
+            }
+
+            private Border BuildHighPassCard(string ip, HighPassFilter filter, bool subwooferActive)
+            {
+                var rows = new List<Control>
+                {
+                    Muted(subwooferActive
+                        ? "A subwoofer is connected, so the subwoofer crossover filters the bass for the main speakers instead."
+                        : "Stops the amplifier sending the deepest bass to the main speakers, which they can't play anyway. They play cleaner and " +
+                          "stay better controlled when the music gets loud.")
+                };
+                var toggle = SubToggle("High-pass filter", filter.Enabled, on => window._owner.SetHighPassEnabledAsync(ip, on));
+                const int Custom = -1;
+                bool preset = HighPassFrequencies.Contains(filter.Frequency);
+                var frequency = new ComboBox { Width = FieldWidth };
+                foreach (int hz in HighPassFrequencies) frequency.Items.Add(ComboItem(hz, $"{hz} Hz"));
+                frequency.Items.Add(ComboItem(Custom, "Custom"));
+                frequency.SelectedItem = frequency.Items.OfType<ComboBoxItem>().First(i => i.Tag is int hz && hz == (preset ? filter.Frequency : Custom));
+                var custom = AmpSlider(HighPassMin, HighPassMax, Math.Clamp(filter.Frequency, HighPassMin, HighPassMax), v => $"{v} Hz", false, out var customSlider);
+                custom.ValueCommitted += async (_, _) =>
+                {
+                    if (custom.Value != filter.Frequency) await ChangeSubAsync(() => window._owner.SetHighPassFrequencyAsync(ip, custom.Value));
+                };
+                var customRow = LabeledRow("Custom frequency", customSlider);
+                customRow.IsVisible = !preset;
+                frequency.SelectionChanged += async (_, _) =>
+                {
+                    if ((frequency.SelectedItem as ComboBoxItem)?.Tag is not int hz) return;
+                    customRow.IsVisible = hz == Custom;
+                    if (hz != Custom && hz != filter.Frequency) await ChangeSubAsync(() => window._owner.SetHighPassFrequencyAsync(ip, hz));
+                };
+                var frequencyRow = LabeledRow("Cut-off frequency", frequency);
+                ToolTip.SetTip(frequencyRow, "Sound below this frequency is filtered out of the main speakers");
+                var frequencyRows = new StackPanel { Children = { frequencyRow, customRow } };
+                frequencyRows.IsEnabled = filter.Enabled && !subwooferActive;
+                frequencyRows.Opacity = frequencyRows.IsEnabled ? 1 : 0.45;
+                toggle.IsEnabled = !subwooferActive;
+                toggle.Opacity = subwooferActive ? 0.45 : 1;
+                rows.Add(toggle);
+                rows.Add(frequencyRows);
+                return Card("High-pass filter", rows.ToArray());
+            }
+        }
+    }
+}

@@ -1,0 +1,90 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+
+namespace WiimControl;
+
+sealed partial class WiimController
+{
+    private sealed partial class SettingsWindow
+    {
+        private sealed partial class EqPage
+        {
+            private readonly Button _btnRoomFitCurve = Pill("Show curve");
+            private readonly Button _btnRoomFitDelete = Pill("Delete");
+
+            private async Task DeleteRoomFitProfileAsync()
+            {
+                if ((_cboRoomFit.SelectedItem as ComboBoxItem)?.Tag is not string name) return;
+                if (!await Dialogs.ConfirmAsync(window, $"Delete the RoomFit profile \"{name}\" from {window.DeviceName(_eqDeviceIp)}? This can't be undone.", window._scale))
+                    return;
+                if (!await window._owner.DeleteRoomFitProfileAsync(_eqDeviceIp, name))
+                    await Dialogs.MessageAsync(window, "The device didn't delete the RoomFit profile.", window._scale);
+                await RefreshEqAsync();
+            }
+
+            private async Task ShowRoomFitCurveAsync()
+            {
+                var state = await window._owner.GetRoomFitStateAsync(_eqDeviceIp);
+                if (state == null)
+                {
+                    await Dialogs.MessageAsync(window, "Couldn't read RoomFit from the device.", window._scale);
+                    return;
+                }
+
+                string name = state.Active.Length > 0 ? state.Active : "No profile selected";
+                var content = new StackPanel { Width = 680, Spacing = 6 };
+                content.Children.Add(new TextBlock { Text = name, Classes = { "heading" } });
+                content.Children.Add(Muted(state.Enabled
+                    ? "The correction the device applies now. To see another profile, pick it in RoomFit profile first."
+                    : "RoomFit is off, so the device doesn't apply this correction now."));
+                var channels = state.Left is { } left && state.Right is { } right
+                    ? new[] { ("Left", left), ("Right", right) }
+                    : [(string.Empty, state.Stereo)];
+                content.Children.Add(Muted("Scroll over a graph to zoom in, hold Shift while scrolling to move along, and double-click it to see the whole range."));
+                var graphs = channels.Select(c => new PeqGraph { Bands = c.Item2, Height = 240, Editable = false }).ToArray();
+                for (int i = 0; i < channels.Length; i++)
+                {
+                    var (label, bands) = channels[i];
+                    if (label.Length > 0)
+                        content.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+                    content.Children.Add(graphs[i]);
+                    content.Children.Add(RoomFitFilterTable(bands));
+                }
+                await Dialogs.ContentAsync(window, new ScrollViewer { Content = content, MaxHeight = 720 }, window._scale);
+            }
+
+            private static Control RoomFitFilterTable(PeqBand[] bands)
+            {
+                var active = bands.Select((b, i) => (Band: b, Number: i + 1)).Where(b => b.Band.Filter != PeqFilter.Off).ToList();
+                if (active.Count == 0) return Muted("No filters.");
+
+                var table = new Grid { ColumnDefinitions = new ColumnDefinitions("44,*,*,*,*"), Margin = new Thickness(0, 6, 0, 0) };
+                void Cell(string text, int row, int column, bool muted = false)
+                {
+                    var cell = new TextBlock { Text = text, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2) };
+                    if (muted) cell.Classes.Add("muted");
+                    Grid.SetRow(cell, row);
+                    Grid.SetColumn(cell, column);
+                    table.Children.Add(cell);
+                }
+
+                table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                string[] titles = ["", "Filter", "Frequency", "Gain", "Q"];
+                for (int c = 0; c < titles.Length; c++) Cell(titles[c], 0, c, muted: true);
+                for (int r = 0; r < active.Count; r++)
+                {
+                    var (band, number) = active[r];
+                    table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                    Cell(number.ToString(System.Globalization.CultureInfo.InvariantCulture), r + 1, 0, muted: true);
+                    Cell(PeqFilterLabels.FirstOrDefault(f => f.Filter == band.Filter).Label ?? "Peak", r + 1, 1);
+                    Cell(FormatFrequency(band.Frequency), r + 1, 2);
+                    Cell(FormatGain(band.Gain), r + 1, 3);
+                    Cell(FormatQ(band.Q), r + 1, 4);
+                }
+                return table;
+            }
+        }
+    }
+}
