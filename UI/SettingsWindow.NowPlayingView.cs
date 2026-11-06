@@ -108,7 +108,7 @@ sealed partial class WiimController
             _npCoverContent.Children.Add(_npCover);
             _npCoverContent.Children.Add(_npCoverOld);
             _npCoverCard.Child = _npCoverContent;
-            _npCoverCard.RenderTransform = _npCoverFlip;
+            _npCoverCard.RenderTransform = new TransformGroup { Children = { _npCoverFlip, _mascotCoverScale, _mascotCoverShift } };
             _npDisc.RenderTransform = _npDiscSlide;
             _npSheen.RenderTransform = _npSheenSlide;
             _npCassette.RenderTransform = _npCassetteSlide;
@@ -152,7 +152,7 @@ sealed partial class WiimController
             };
             var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { close, _npDevice } };
             _npTopBar.Children.Add(left);
-            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _npLyricsDelayButton, _npLyricsButton, BuildBrightnessButton(), _npFullScreen.Button, _npStyleButton } };
+            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { BuildNowPlayingDeviceButton(), GroupsButton(), _npLyricsDelayButton, _npLyricsButton, BuildBrightnessButton(), _npFullScreen.Button, _npStyleButton } };
             Grid.SetColumn(right, 2);
             _npTopBar.Children.Add(right);
 
@@ -216,6 +216,30 @@ sealed partial class WiimController
                 }
             };
         }
+
+        private Button BuildNowPlayingDeviceButton()
+        {
+            var button = new Button
+            {
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 6,
+                    Children = { new TextBlock { Text = "Device" }, new PathIcon { Data = Icons.ChevronDown, Width = 12, Height = 12 } }
+                }
+            };
+            button.Classes.Add("pill");
+            ToolTip.SetTip(button, "Show another device in the big player");
+            button.Click += (_, _) => ShowDropdown(button, _owner._knownDevices.Select(device => new DropdownChoice(device.Name, device.Ip == _npIp,
+                CanShowInNowPlaying(device.Ip), () =>
+                {
+                    if (device.Ip != _npIp) ShowNowPlayingView(device.Ip);
+                    return Task.CompletedTask;
+                })).ToList());
+            return button;
+        }
+
+        private bool CanShowInNowPlaying(string ip) =>
+            !(_statuses.TryGetValue(TargetOf(ip), out var status) && UncontrolledInputs.Contains(InputOfMode(status.Mode)));
 
         private void ShowNowPlayingView(string ip)
         {

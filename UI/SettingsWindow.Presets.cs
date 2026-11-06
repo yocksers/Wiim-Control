@@ -23,6 +23,8 @@ sealed partial class WiimController
                 Classes = { "muted" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), IsVisible = false
             };
 
+            private Version? _routineVersion;
+
             private string? SelectedPresetAmpIp => (_cboPresetAmp.SelectedItem as ComboBoxItem)?.Tag as string;
 
             public bool ShowsImage(Bitmap bitmap) => _presetImages.Any(i => ReferenceEquals(i.Source, bitmap));
@@ -39,7 +41,7 @@ sealed partial class WiimController
                         _presetHint,
                         _presetTiles,
                         Muted("Click a preset to play it, or to run a routine (for example switching the output and EQ). Use the buttons under " +
-                              "a preset to save what's playing to it, rename it or clear it. Routines are made in the WiiM Home app.")
+                              "a preset to save what's playing to it, rename it, make or edit a routine, or clear it.")
                     }
                 };
                 return window.Page("Presets", _lblPresetStatus, [_cboPresetAmp, btnRefresh], body);
@@ -66,8 +68,11 @@ sealed partial class WiimController
                     return;
                 }
                 _lblPresetStatus.Text = "Loading…";
+                var versionTask = window._owner.GetRoutineVersionAsync(ip);
                 var presets = await window._owner.GetPresetsAsync(ip);
+                var version = await versionTask;
                 if (ip != SelectedPresetAmpIp) return;
+                _routineVersion = version;
 
                 _presetTiles.Children.Clear();
                 _presetImages.Clear();
@@ -137,6 +142,10 @@ sealed partial class WiimController
                 Action(Icons.Plus, preset == null ? "Save what's playing to this preset" : "Replace this preset with what's playing",
                     () => SavePlayingToPresetAsync(ip, number, preset));
                 if (preset is { IsRoutine: false }) Action(Icons.Edit, "Rename this preset", () => RenamePresetAsync(ip, preset));
+                if (preset is { IsRoutine: true } && _routineVersion != null) Action(Icons.Edit, "Edit this routine", () => EditRoutineAsync(ip, number));
+                if (preset is not { IsRoutine: true } && _routineVersion != null)
+                    Action(Icons.Settings, preset == null ? "Make a routine for this preset, for example to switch the output and EQ"
+                        : "Choose settings to apply when this preset plays, like the output, EQ or volume", () => EditRoutineAsync(ip, number));
                 if (preset != null) Action(Icons.Delete, "Clear this preset", () => ClearPresetAsync(ip, preset));
                 text.Children.Add(actions);
 

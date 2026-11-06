@@ -377,17 +377,16 @@ sealed partial class WiimController
                 (inputsPage, () => inputs.RefreshInputsAsync()), (subwooferPage, () => subwoofer.RefreshSubwooferAsync())
             ]);
 
-            var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 0) };
+            var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 0), RenderTransform = new TranslateTransform(0, 6) };
             brand.Children.Add(new TextBlock { Text = "Wiim Control", Classes = { "small" } });
             brand.Children.Add(new TextBlock { Text = $"v{AppVersion}", Classes = { "small", "muted" } });
 
             var hideMenu = MenuButton(Icons.HideMenu, "Hide the menu", hidden: true);
             hideMenu.Margin = new Thickness(0, 0, 14, -12);
             DockPanel.SetDock(hideMenu, Dock.Right);
+            var header = new StackPanel { Children = { new DockPanel { Children = { hideMenu, brand } }, _lblDeviceName, _lblDeviceIp } };
+            DockPanel.SetDock(header, Dock.Top);
             var sidebarItems = new StackPanel();
-            sidebarItems.Children.Add(new DockPanel { Children = { hideMenu, brand } });
-            sidebarItems.Children.Add(_lblDeviceName);
-            sidebarItems.Children.Add(_lblDeviceIp);
             sidebarItems.Children.Add(NavSection("Devices", NavGroup(Nav("Devices", Icons.Speaker, devicesPage), Nav("Multiroom", Icons.Link, multiroomPage),
                 Nav("Presets", Icons.Star, presetsPage))));
             sidebarItems.Children.Add(NavSection("Music", NavGroup(
@@ -421,7 +420,7 @@ sealed partial class WiimController
             var sidebar = new Border
             {
                 Background = Palette.Sidebar, Width = 250, Padding = new Thickness(12, 16),
-                Child = new DockPanel { Children = { coffee, MenuScroller(sidebarItems) } }
+                Child = new DockPanel { Children = { header, coffee, MenuScroller(sidebarItems) } }
             };
 
             _showMenuButton = MenuButton(Icons.Menu, "Show the menu", hidden: false);
@@ -440,18 +439,12 @@ sealed partial class WiimController
             return new Panel { Children = { _backdropA, _backdropB, _backdropScrim, root, BuildNowPlayingOverlay() } };
         }
 
-        private const double MenuScrollBarRoom = 18;
+        private const double MenuScrollBarRoom = 9;
 
         private static ScrollViewer MenuScroller(Control items)
         {
-            var scroller = new ScrollViewer { Content = items, AllowAutoHide = false, Classes = { "menu" } };
-            scroller.PropertyChanged += (_, e) =>
-            {
-                if (e.Property != ScrollViewer.ExtentProperty && e.Property != ScrollViewer.ViewportProperty) return;
-                bool scrolls = scroller.Extent.Height > scroller.Viewport.Height + 0.5;
-                items.Margin = new Thickness(0, 0, scrolls ? MenuScrollBarRoom : 0, 0);
-            };
-            return scroller;
+            items.Margin = new Thickness(0, 0, MenuScrollBarRoom, 0);
+            return new ScrollViewer { Content = items, AllowAutoHide = false, Classes = { "menu" } };
         }
 
         private Button MenuButton(StreamGeometry icon, string tip, bool hidden)
@@ -501,7 +494,7 @@ sealed partial class WiimController
             DockPanel.SetDock(chevron, Dock.Right);
             var header = new Button
             {
-                Classes = { "section" }, Margin = new Thickness(4, 22, 4, 6),
+                Classes = { "section" }, Margin = new Thickness(4, 22, 16, 6),
                 Content = new DockPanel
                 {
                     Children = { chevron, new TextBlock { Text = name, Classes = { "small", "muted" }, VerticalAlignment = VerticalAlignment.Center } }
@@ -622,8 +615,7 @@ sealed partial class WiimController
 
             var current = _owner._knownDevices.FirstOrDefault(d => d.Ip == _owner._deviceIp);
             _lblDeviceName.Text = current.Name ?? "No device";
-            _lblDeviceIp.Text = _owner._deviceIp +
-                (_owner._outputMonitor is { IsEnabledOutputActive: false } ? "  ·  inactive output" : "");
+            _lblDeviceIp.Text = _owner._deviceIp;
             RebuildDeviceCards();
 
             UpdateDisplayNav();

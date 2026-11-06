@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
@@ -95,7 +95,8 @@ sealed partial class WiimController
         {
             bool paused = _npControls?.Playing.IsVisible != true;
             if (paused && _mascotLastVisitKind != MascotVisit.Paused) return MascotVisit.Paused;
-            var kinds = Enum.GetValues<MascotVisit>().Where(k => k != MascotVisit.Paused).ToArray();
+            if (LyricsShown && !paused && _mascotLastVisitKind != MascotVisit.Karaoke && Random.Shared.NextDouble() < MascotKaraokeChance) return MascotVisit.Karaoke;
+            var kinds = Enum.GetValues<MascotVisit>().Where(k => k is not (MascotVisit.Paused or MascotVisit.Karaoke)).ToArray();
             return PickOther(kinds, _mascotLastVisitKind ?? MascotVisit.Paused, _mascotLastVisitKind != null);
         }
 
@@ -140,6 +141,7 @@ sealed partial class WiimController
             MascotVisit.Paused => 4.0,
             MascotVisit.Selfie => 3.4,
             MascotVisit.Balloon => 6.8,
+            MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke => MascotIdleLength(),
             _ => MascotActSeconds
         };
 
@@ -285,6 +287,9 @@ sealed partial class WiimController
                     _mascotShadow.Opacity = offset < -10 ? 0 : 1;
                     break;
                 }
+                case MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke:
+                    offset = StepMascotIdle(s);
+                    break;
                 default:
                     Pose(lean: 0, bounce: Math.Sin(s * 2) * 2, arms: (20, -150 + Math.Sin(s * 10) * 28), legs: (0, 0));
                     break;

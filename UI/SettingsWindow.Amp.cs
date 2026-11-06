@@ -80,8 +80,10 @@ sealed partial class WiimController
                 }
                 if (!quiet) window._lblAmpStatus.Text = "Loading…";
                 int version = ++_ampVersion;
+                var status = _ampSection == SectionDisplay ? window._owner.GetDeviceStatusAsync(window.TargetOf(ip)) : Task.FromResult<DeviceStatus?>(null);
                 var settings = await window._owner.GetAmpSettingsAsync(ip, _screenInputIp == ip ? _screenInput : null, _ampSection == SectionExperimental,
                     _ampSection == SectionDeviceInfo);
+                _screenSpotify = (await status)?.Mode == SpotifyMode;
                 if (ip != SelectedAmpIp || version != _ampVersion) return;
                 if (settings != null) _ampCache = (ip, settings);
                 if (settings?.Screen != null && settings.ScreenUi != null && !window._owner.HasScreen(ip))

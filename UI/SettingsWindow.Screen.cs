@@ -18,6 +18,8 @@ sealed partial class WiimController
             private const int MaxScreenBrightness = 16;
             private string? _screenInput;
             private string? _screenInputIp;
+            private const int SpotifyMode = 31;
+            private bool _screenSpotify;
 
             private static readonly (string Hex, string Name)[] ClockColorChoices =
             [
@@ -94,6 +96,7 @@ sealed partial class WiimController
                 if (View("standby_view") is { Choices.Count: > 1 } standby)
                     standbyTab.Add(Choice("Standby screen", "standby_view", StyleChoices(standby), standby.Value, v => window._owner.SetScreenViewAsync(ip, ui, ("standby_view", v))));
 
+                Control? inputPills = null;
                 if (ui.Inputs is { Count: > 0 } inputs && ui.InputKey != null)
                 {
                     var pills = new WrapPanel { ItemSpacing = 8, LineSpacing = 8, Margin = new Thickness(0, 6, 0, 4) };
@@ -105,6 +108,7 @@ sealed partial class WiimController
                             await RefreshAmpAsync(quiet: true);
                         });
                     playbackTab.Add(pills);
+                    inputPills = pills;
                 }
                 if (ui.InputScreenOn is bool inputScreenOn)
                     playbackTab.Add(AmpToggle("Screen on for this input", inputScreenOn,
@@ -158,6 +162,11 @@ sealed partial class WiimController
                 if (ui.InputKey != null && ui.InputKey != ui.PlayingInputKey)
                     playbackTab.Add(Muted("These are saved for that input and show the next time it plays."));
 
+                if (_screenSpotify && ui.SpotifySeparateUi && (ui.InputKey == null || InputOfUiKey(ui.InputKey) == "wifi"))
+                {
+                    var message = Muted("Playback screen options are not available during Spotify playback.");
+                    playbackTab = inputPills == null ? [message] : [inputPills, message];
+                }
                 var tabs = new List<(string Name, List<Control> Rows)> { ("Clock style", clockTab), ("Standby screen", standbyTab), ("Playback", playbackTab) }
                     .Where(tab => tab.Rows.Count > 0).ToList();
                 if (tabs.Count == 0) return rows;

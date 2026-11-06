@@ -13,11 +13,11 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private enum MascotState { Gone, Push, Dance, WalkOff, RushIn, PushOut, Enter, RunOff, React, Poke, Dizzy, Zip, ZipFall, FlipArt, Whoosh, Act, Stroll, Peek, Skate, Exit, Fly }
+        private enum MascotState { Gone, Push, Dance, WalkOff, RushIn, PushOut, Enter, RunOff, React, Poke, Dizzy, Zip, ZipFall, FlipArt, Whoosh, Act, Stroll, Peek, Skate, Exit, Fly, Magic, Paint, Crate, Ufo }
 
-        private enum MascotVisit { Dance, Loud, Wave, Peekaboo, Polish, AirGuitar, Conductor, Paused, Selfie, Skateboard, Balloon, Superhero }
+        private enum MascotVisit { Dance, Loud, Wave, Peekaboo, Polish, AirGuitar, Conductor, Paused, Selfie, Skateboard, Balloon, Superhero, Fishing, Climb, SkipRope, PaperPlane, Sweep, Karaoke }
 
-        private enum MascotSwap { Push, Zip, Flip, Whoosh }
+        private enum MascotSwap { Push, Zip, Flip, Whoosh, Magic, Paint, Crate, Ufo }
 
         private enum MascotMood { Normal, Loud, Quiet }
 
@@ -110,8 +110,9 @@ sealed partial class WiimController
         private MascotSwap _mascotSwap;
         private bool _mascotSwapped;
 
-        private bool MascotBusy => _mascotState is MascotState.Push or MascotState.RushIn or MascotState.PushOut or MascotState.Zip or MascotState.FlipArt or MascotState.Whoosh ||
-                                   _mascotState == MascotState.Enter && _mascotAfterEnter == MascotState.FlipArt;
+        private bool MascotBusy => _mascotState is MascotState.Push or MascotState.RushIn or MascotState.PushOut or MascotState.Zip or MascotState.FlipArt or MascotState.Whoosh
+                                       or MascotState.Magic or MascotState.Paint or MascotState.Crate or MascotState.Ufo ||
+                                   _mascotState == MascotState.Enter && _mascotAfterEnter is MascotState.FlipArt or MascotState.Magic or MascotState.Paint or MascotState.Crate or MascotState.Ufo;
 
         private void BuildMascot()
         {
@@ -185,10 +186,12 @@ sealed partial class WiimController
             figure.Children.Add(Limb(_mascotLeftArm, 24, 110, 8, 46, limbs, foot: false));
             figure.Children.Add(Limb(_mascotRightArm, 176, 110, 8, 46, limbs, foot: false));
             BuildMascotProps(figure);
+            BuildMascotIdle(figure);
             _mascot.Children.Add(figure);
             _mascot.Children.Add(_mascotNotes);
             _mascotVisitTimer.Tick += (_, _) => CheckMascotVisit();
             _zipLayer.Children.Add(_zipWire);
+            BuildMascotTricks(figure);
             _mascotTimer.Host = this;
             _mascotTimer.Tick += (_, _) => StepMascot();
             _mascot.PointerPressed += (_, e) =>
@@ -247,6 +250,7 @@ sealed partial class WiimController
         private void MascotVolumeChanged()
         {
             if (_owner.NowPlayingStyle != NowPlayingStyle.Mascot || !_npOverlay.IsVisible) return;
+            if (_npIp is { } ip && _volumes.TryGetValue(TargetOf(ip), out var level)) MascotVolumeTurned(level.Muted ? 0 : level.Volume);
             var mood = CurrentMood();
             if (mood == _mascotMoodSeen) return;
             _mascotMoodSeen = mood;
@@ -297,9 +301,14 @@ sealed partial class WiimController
                 _npCoverCard.ClearValue(Canvas.TopProperty);
                 _npCoverCard.Opacity = 1;
                 _zipLayer.IsVisible = false;
+                HideMascotTricks();
+                HideMascotStageProps();
+                ResetCoverPlacement();
+                ApplyMascotHeadroom(0);
                 return;
             }
             _mascotMoodSeen = CurrentMood();
+            _mascotVolumeSeen = _npIp is { } ip && _volumes.TryGetValue(TargetOf(ip), out var level) ? (level.Muted ? 0 : level.Volume) : null;
             _mascotLastActive = _mascotLastArtChange = DateTime.UtcNow;
             StartMascotPush();
         }
@@ -314,6 +323,8 @@ sealed partial class WiimController
 
         private void StartMascotSwap()
         {
+            HideMascotTricks();
+            ResetCoverPlacement();
             _npFadeTimer.Stop();
             _npCoverOld.Opacity = 1;
             foreach (var (_, faded) in _npArtShapes) faded.Opacity = 1;
@@ -324,7 +335,8 @@ sealed partial class WiimController
             _mascotLastArtChange = DateTime.UtcNow;
             _mascot.ZIndex = 0;
             ClearMascotNotes();
-            _mascotSwap = PickOther(Enum.GetValues<MascotSwap>(), _mascotSwap, _mascotSwapped);
+            var regular = Enum.GetValues<MascotSwap>().Where(kind => kind != MascotSwap.Ufo).ToArray();
+            _mascotSwap = Random.Shared.NextDouble() < MascotUfoChance ? MascotSwap.Ufo : PickOther(regular, _mascotSwap, _mascotSwapped);
             _mascotSwapped = true;
             _zipLayer.IsVisible = false;
             _npCoverCard.ClearValue(Canvas.TopProperty);
@@ -341,6 +353,18 @@ sealed partial class WiimController
             {
                 Canvas.SetLeft(_npCoverCard, MascotCoverLeft);
                 StartMascotEnter(MascotState.FlipArt, MascotRushSpeed);
+                return;
+            }
+            if (_mascotSwap is MascotSwap.Magic or MascotSwap.Paint or MascotSwap.Crate or MascotSwap.Ufo)
+            {
+                Canvas.SetLeft(_npCoverCard, MascotCoverLeft);
+                StartMascotEnter(_mascotSwap switch
+                {
+                    MascotSwap.Magic => MascotState.Magic,
+                    MascotSwap.Paint => MascotState.Paint,
+                    MascotSwap.Crate => MascotState.Crate,
+                    _ => MascotState.Ufo
+                }, MascotRushSpeed);
                 return;
             }
             _mascotRunFrom = _mascotState == MascotState.Gone ? MascotRushStart : Canvas.GetLeft(_mascot);
@@ -448,6 +472,11 @@ sealed partial class WiimController
             _mascotFacing.ScaleX = 1;
             if (_mascotState != MascotState.Gone) _mascotLastActive = DateTime.UtcNow;
             HideMascotProps();
+            HideMascotIdle();
+            HideMascotTricks();
+            HideMascotStageProps();
+            _mascotScale.ScaleX = _mascotScale.ScaleY = 1;
+            _mascotHeadroom = 0;
             _mascotEyes.ScaleX = _mascotEyes.ScaleY = 1;
             _mascotGaze.X = _mascotGaze.Y = 0;
             _mascotShadow.Opacity = 1;
@@ -476,6 +505,11 @@ sealed partial class WiimController
                     Canvas.SetLeft(_mascot, MascotDanceSpot);
                     if (mood != MascotMood.Normal) MoodPose(s, mood);
                     else CheerDance(s, jump);
+                    if (LyricsShown && _npControls?.Playing.IsVisible == true)
+                    {
+                        _mascotRightArm.Angle = -150;
+                        Sing(s, LyricsSinging());
+                    }
                     if (s >= MascotDanceSeconds)
                     {
                         _mascotRunFrom = Canvas.GetLeft(_mascot);
@@ -571,6 +605,18 @@ sealed partial class WiimController
                 }
                 case MascotState.Fly:
                     top = MascotOffsetTop() + StepMascotFly(s);
+                    break;
+                case MascotState.Magic:
+                    top = MascotOffsetTop() + StepMascotMagic(s);
+                    break;
+                case MascotState.Paint:
+                    top = MascotOffsetTop() + StepMascotPaint(s);
+                    break;
+                case MascotState.Crate:
+                    top = MascotOffsetTop() + StepMascotCrate(s);
+                    break;
+                case MascotState.Ufo:
+                    top = MascotOffsetTop() + StepMascotUfo(s);
                     break;
                 case MascotState.Exit:
                     top = MascotOffsetTop() + StepMascotExit(s);
@@ -678,9 +724,12 @@ sealed partial class WiimController
                 case MascotState.React:
                 {
                     Canvas.SetLeft(_mascot, MascotDanceSpot);
-                    if (mood != MascotMood.Normal) MoodPose(s, mood);
-                    else Pose(lean: 0, bounce: Math.Sin(s * 2) * 2, arms: (20, -150 + Math.Sin(s * 10) * 25), legs: (0, 0));
-                    if (s >= MascotReactSeconds)
+                    if (!VolumePose(s))
+                    {
+                        if (mood != MascotMood.Normal) MoodPose(s, mood);
+                        else Pose(lean: 0, bounce: Math.Sin(s * 2) * 2, arms: (20, -150 + Math.Sin(s * 10) * 25), legs: (0, 0));
+                    }
+                    if (s >= MascotReactSeconds && !VolumeTurnedRecently)
                     {
                         _mascotRunFrom = MascotDanceSpot;
                         SetMascotState(MascotState.WalkOff);
@@ -751,6 +800,8 @@ sealed partial class WiimController
                     break;
                 }
             }
+            VolumeWind(s);
+            ApplyMascotHeadroom(_mascotHeadroom);
             Canvas.SetTop(_mascot, top);
         }
 

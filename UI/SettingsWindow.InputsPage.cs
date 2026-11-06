@@ -39,7 +39,9 @@ sealed partial class WiimController
                     return;
                 }
                 if (!quiet) _lblInputsStatus.Text = "Loading…";
+                var scenesTask = window._owner.GetInputScenesAsync(ip);
                 var page = await window._owner.GetInputsPageAsync(ip);
+                var scenes = await scenesTask;
                 if (version != _inputsVersion) return;
                 _lblInputsStatus.Text = page.Reachable ? string.Empty : "Not reachable";
                 var cards = new List<Control>();
@@ -47,6 +49,7 @@ sealed partial class WiimController
                 else
                 {
                     if (page.Inputs is { Count: > 0 } inputs) cards.Add(BuildInputsCard(ip, inputs));
+                    if (scenes != null && page.Inputs is { Count: > 0 } sceneInputs) cards.Add(BuildInputScenesCard(ip, scenes, sceneInputs));
                     if (page.Options is { } options && BuildInputSettingsCard(ip, options, page.Inputs) is { } settingsCard) cards.Add(settingsCard);
                     if (cards.Count == 0) cards.Add(Muted("This device has no input settings."));
                 }
