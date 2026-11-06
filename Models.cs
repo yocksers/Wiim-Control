@@ -91,7 +91,7 @@ sealed record WallpaperInfo(string RawJson, List<string> Current, int MaxNumber,
 sealed record ScreenUi(string? InputKey, string? Input, bool? Clock24, bool? StandbyScreenOff, int? StartPage,
     Dictionary<string, ScreenView> Views, List<string>? Inputs = null, string? PlayingInputKey = null, bool? InputScreenOn = null,
     bool? HideCoverIcon = null, Dictionary<int, string>? ClockColors = null, int? ClockBackground = null, int? ClockColor = null,
-    int? VuMeterMode = null, bool? HideVuMeterTitle = null);
+    int? VuMeterMode = null, bool? HideVuMeterTitle = null, bool SpotifySeparateUi = false);
 
 sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? StatusLight, bool? ButtonsLocked,
     int? OutputHardware, string? FilterMode, List<DigitalFilter> Filters, int? Filter, SubwooferInfo? Subwoofer,
