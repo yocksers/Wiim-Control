@@ -117,8 +117,13 @@ sealed partial class WiimController
             "audioOutput" => RoutineOutputName(Field("output"), Field("devHexName")),
             "EQ" => Field("name") is { Length: > 0 } eq ? $"EQ {eq}" : "EQ",
             "subwoofer" => Field("subOutput") == "1" ? "Subwoofer on" : "Subwoofer off",
-            "volume" => Field("volume") is { Length: > 0 } volume ? $"Volume {volume}" : "Volume",
-            "source" or "input" => Field("source") is { Length: > 0 } source ? InputLabel(source) : null,
+            "volume" => Field("vol") is { Length: > 0 } volume ? $"Volume {volume}" : null,
+            "audioInput" => Field("input") is { Length: > 0 } input ? InputLabel(input) : null,
+            "aliveTime" => int.TryParse(Field("duration"), out int seconds) && seconds > 0
+                ? seconds % 3600 == 0 ? $"Stops after {seconds / 3600} h" : $"Stops after {seconds / 60} min"
+                : null,
+            "nameGroup" => Field("group_name") is { Length: > 0 } group ? group : Field("group_id").Length == 0 && payload.ValueKind == JsonValueKind.Object ? "This device only" : null,
+            "screenController" => Field("disable") switch { "0" => "Screen on", "1" => "Screen off", _ => null },
             "loopMode" => null,
             _ => null
         };

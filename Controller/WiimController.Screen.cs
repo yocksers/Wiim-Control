@@ -86,7 +86,8 @@ sealed partial class WiimController
             return new ScreenUi(inputKey, inputKey != null ? InputOfUiKey(inputKey) : null, Flag("clock_24_hours"), Flag("standby_turn_off_screen"),
                 startPage, views, inputKeys, playingKey,
                 UiInt(prefer?["screen_on"]) is int screenOn ? screenOn != 0 : null, Flag("hidden_sub_cover_view_icon"), clockColors,
-                UiInt(extra?["clock_view_bg"]), UiInt(extra?["clock_view_color"]), ParseVuMeterMode(vuMeterTask.Result), hideVuMeterTitle);
+                UiInt(extra?["clock_view_bg"]), UiInt(extra?["clock_view_color"]), ParseVuMeterMode(vuMeterTask.Result), hideVuMeterTitle,
+                UiInt(features?["spotify_separate_ui"]) is > 0);
         }
         catch (Exception) { return null; }
     }

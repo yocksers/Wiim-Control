@@ -217,7 +217,7 @@ sealed partial class WiimController
         (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?? "1.0").Split('+')[0];
 
-    private string TrayText() => $"Wiim Control v{AppVersion} [{_deviceIp}]{(_outputMonitor is { IsEnabledOutputActive: false } ? " (inactive output)" : "")}";
+    private string TrayText() => $"Wiim Control v{AppVersion} [{_deviceIp}]";
 
     private static string OsdCornerLabel(OsdCorner c) => c switch
     {
