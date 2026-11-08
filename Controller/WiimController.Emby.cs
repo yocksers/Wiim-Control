@@ -80,7 +80,7 @@ sealed partial class WiimController
     {
         try
         {
-            using var response = await HttpFor(request.RequestUri!.ToString()).SendAsync(request).ConfigureAwait(false);
+            using var response = await MusicServerHttpFor(request.RequestUri!.ToString()).SendAsync(request).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return (null, response.StatusCode);
             return (await response.Content.ReadAsStringAsync().ConfigureAwait(false), response.StatusCode);
         }

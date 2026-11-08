@@ -27,15 +27,21 @@ sealed partial class WiimController
     private string _lastRequestError = string.Empty;
     private DateTime _lastRequestErrorTime = DateTime.MinValue;
 
-    private static HttpClient CreateHttpClient() => new(new SocketsHttpHandler
+    private static HttpClient CreateHttpClient(double timeoutSeconds = 5) => new(new SocketsHttpHandler
     {
         ConnectTimeout = TimeSpan.FromSeconds(3),
         PooledConnectionIdleTimeout = TimeSpan.FromSeconds(4),
         SslOptions = { RemoteCertificateValidationCallback = (_, _, _, _) => true }
     })
     {
-        Timeout = TimeSpan.FromSeconds(5)
+        Timeout = TimeSpan.FromSeconds(timeoutSeconds)
     };
+
+    private static readonly TimeSpan MusicServerTimeout = TimeSpan.FromSeconds(30);
+    private readonly HttpClient _musicServerLocalHttp = CreateHttpClient(MusicServerTimeout.TotalSeconds);
+    private readonly HttpClient _musicServerWebHttp = new(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(10) }) { Timeout = MusicServerTimeout };
+
+    private HttpClient MusicServerHttpFor(string url) => IsLocalAddress(url) ? _musicServerLocalHttp : _musicServerWebHttp;
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 

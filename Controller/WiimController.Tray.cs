@@ -429,6 +429,12 @@ sealed partial class WiimController
         _osd.ShowMessage(message, _osdCorner, 3000, _osdScalePercent / 100.0);
     });
 
+    private void WarmUpVolumeOsd()
+    {
+        _osd ??= new VolumeOsdWindow();
+        _osd.WarmUp(_osdScalePercent / 100.0);
+    }
+
     private void ShowVolumeOsd(int volume, bool muted) => Dispatcher.UIThread.Post(() =>
     {
         _osd ??= new VolumeOsdWindow();

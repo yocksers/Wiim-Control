@@ -132,6 +132,7 @@ sealed partial class WiimController : IDisposable
         }
 
         StartHotkeys();
+        Dispatcher.UIThread.Post(WarmUpVolumeOsd, DispatcherPriority.Background);
         _ = FillMissingDeviceIdsAsync();
         if (_roonTokens.Count > 0) _ = GetRoonAsync();
         if (!_startMinimized && _lifetime.Args?.Contains(AutoStart.MinimizedArgument) != true) ShowSettingsWindow();

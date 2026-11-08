@@ -16,6 +16,9 @@ sealed partial class WiimController
     private const string ShareRootId = "0";
     private const int MaxCoverBytes = 8 * 1024 * 1024;
     private static readonly TimeSpan ShareTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ShareListTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ShareListingLifetime = TimeSpan.FromMinutes(2);
+    private readonly Dictionary<string, (DateTime At, List<FileDirectoryInformation> Entries)> _shareListings = new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly Dictionary<string, string> ShareAudioTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -92,14 +95,32 @@ sealed partial class WiimController
         SaveConfig();
     }
 
-    internal async Task<BrowsePage?> BrowseShareAsync(MediaServer server, string id, int start, int count)
+    private async Task<List<FileDirectoryInformation>?> ListShareFolderAsync(SharedFolder folder, string path, bool fresh)
+    {
+        string key = $"{folder.Host}|{folder.Share}|{folder.User}|{path}";
+        lock (_shareListings)
+        {
+            if (!fresh && _shareListings.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.At < ShareListingLifetime) return cached.Entries;
+        }
+        var (entries, _) = await WithShareAsync(folder, store => ListDirectory(store, path), ShareListTimeout).ConfigureAwait(false);
+        lock (_shareListings)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var old in _shareListings.Where(p => now - p.Value.At >= ShareListingLifetime).Select(p => p.Key).ToList()) _shareListings.Remove(old);
+            if (entries != null) _shareListings[key] = (now, entries);
+            else _shareListings.Remove(key);
+        }
+        return entries;
+    }
+
+    internal async Task<BrowsePage?> BrowseShareAsync(MediaServer server, string id, int start, int count, bool fresh = false)
     {
         if (ShareOf(server) is not { } folder) return null;
         string path = id == ShareRootId ? folder.Folder : id;
-        var listing = WithShareAsync(folder, store => ListDirectory(store, path));
+        var listing = ListShareFolderAsync(folder, path, fresh);
         var host = DeviceHostAsync(folder.Host);
         await Task.WhenAll(listing, host).ConfigureAwait(false);
-        if (listing.Result.Result is not { } entries) return null;
+        if (listing.Result is not { } entries) return null;
 
         var visible = entries.Where(e => e.FileName is not ("." or "..") && !e.FileName.StartsWith('.') && !e.FileName.StartsWith('$') &&
                 (e.FileAttributes & (SmbFileAttributes.Hidden | SmbFileAttributes.System)) == 0)
@@ -167,19 +188,23 @@ sealed partial class WiimController
 
     private const string GuestUser = "guest";
 
-    private static async Task<(T? Result, ShareProblem? Error)> WithShareAsync<T>(SharedFolder folder, Func<ISMBFileStore, T?> work) where T : class
+    private static async Task<(T? Result, ShareProblem? Error)> WithShareAsync<T>(SharedFolder folder, Func<ISMBFileStore, T?> work,
+        TimeSpan? workTimeout = null) where T : class
     {
-        var result = await TryShareAsync(folder, work).ConfigureAwait(false);
+        var result = await TryShareAsync(folder, work, workTimeout ?? ShareTimeout).ConfigureAwait(false);
         if (folder.User.Length > 0 || result.Error is not { LoginRefused: true }) return result;
-        var guest = await TryShareAsync(folder with { User = GuestUser, Password = string.Empty }, work).ConfigureAwait(false);
+        var guest = await TryShareAsync(folder with { User = GuestUser, Password = string.Empty }, work, workTimeout ?? ShareTimeout).ConfigureAwait(false);
         return guest.Error == null ? guest : result;
     }
 
-    private static async Task<(T? Result, ShareProblem? Error)> TryShareAsync<T>(SharedFolder folder, Func<ISMBFileStore, T?> work) where T : class
+    private static async Task<(T? Result, ShareProblem? Error)> TryShareAsync<T>(SharedFolder folder, Func<ISMBFileStore, T?> work, TimeSpan workTimeout)
+        where T : class
     {
-        var client = new SMB2Client((int)ShareTimeout.TotalMilliseconds / 2);
-        var task = Task.Run(() => UseShare(folder, work, client));
-        if (await Task.WhenAny(task, Task.Delay(ShareTimeout)).ConfigureAwait(false) != task)
+        var client = new SMB2Client((int)Math.Max(ShareTimeout.TotalMilliseconds, workTimeout.TotalMilliseconds) / 2);
+        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var task = Task.Run(() => UseShare(folder, work, client, connected));
+        var first = await Task.WhenAny(task, connected.Task, Task.Delay(ShareTimeout)).ConfigureAwait(false);
+        if (first != task && (first != connected.Task || await Task.WhenAny(task, Task.Delay(workTimeout)).ConfigureAwait(false) != task))
         {
             try { client.Disconnect(); }
             catch (Exception) { }
@@ -193,7 +218,8 @@ sealed partial class WiimController
         ? $"{folder.Host} doesn't let guests open {folder.Share}. Enter the user name and password for it, the same ones you use in the WiiM Home app."
         : $"{folder.Host} didn't let {folder.User} open {folder.Share}. Check the user name and password. Some computers and NAS drives treat an unknown user name as a guest instead of saying it's wrong.";
 
-    private static (T? Result, ShareProblem? Error) UseShare<T>(SharedFolder folder, Func<ISMBFileStore, T?> work, SMB2Client client) where T : class
+    private static (T? Result, ShareProblem? Error) UseShare<T>(SharedFolder folder, Func<ISMBFileStore, T?> work, SMB2Client client,
+        TaskCompletionSource connected) where T : class
     {
         bool loggedIn = false;
         try
@@ -220,6 +246,7 @@ sealed partial class WiimController
                 return (null, status == NTStatus.STATUS_BAD_NETWORK_NAME ? new ShareProblem($"{folder.Host} has no shared folder called {folder.Share}.", false)
                     : status == NTStatus.STATUS_ACCESS_DENIED ? new ShareProblem(ShareDeniedMessage(folder), true)
                     : new ShareProblem($"Couldn't open {folder.Share} on {folder.Host} ({status}).", false));
+            connected.TrySetResult();
             try { return (work(store), null); }
             finally { store.Disconnect(); }
         }
