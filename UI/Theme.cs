@@ -145,6 +145,9 @@ static class ThemeEngine
             resources["SystemAccentColorLight3"] = Mix(accent, Colors.White, 0.45);
             double scale = Math.Clamp(theme.Roundness, MinRoundness, MaxRoundness) / 100.0;
             foreach (var (key, radius) in Radii) resources[key] = new CornerRadius(radius * scale);
+            double cardRadius = Radii.First(r => r.Key == "Wc.RadiusCard").Radius * scale;
+            resources["Wc.RadiusCardTop"] = new CornerRadius(cardRadius, cardRadius, 0, 0);
+            resources["Wc.RadiusCardBottom"] = new CornerRadius(0, 0, cardRadius, cardRadius);
         }
         if (Application.Current is { } app) app.RequestedThemeVariant = IsLight(theme) ? ThemeVariant.Light : ThemeVariant.Dark;
         Redraw();

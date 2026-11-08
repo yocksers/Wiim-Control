@@ -51,20 +51,10 @@ sealed partial class WiimController
                     switches.Children.Add(ServiceToggle(ip, SqueezeliteService, "Squeezelite", squeezeOn,
                         on => window._owner.SetStreamServiceActiveAsync(ip, SqueezeliteService, on), () => window._owner.GetStreamServiceActiveAsync(ip, SqueezeliteService),
                         $"Lets {device} play from a Lyrion Music Server"));
-                var (refresh, _) = IconButton(Icons.Refresh);
-                refresh.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-                ToolTip.SetTip(refresh, "Refresh the switches and the music list");
-                refresh.Click += async (_, _) =>
-                {
-                    refresh.IsEnabled = false;
-                    try { await Task.WhenAll(RefreshLibraryServiceAsync(), LoadLibraryFolderAsync()); }
-                    finally { refresh.IsEnabled = true; }
-                };
                 if (roon is bool roonOn)
                     switches.Children.Add(ServiceToggle(ip, RoonReadyService, "Roon Ready", roonOn,
                         on => window._owner.SetStreamServiceActiveAsync(ip, RoonReadyService, on), () => window._owner.GetStreamServiceActiveAsync(ip, RoonReadyService),
                         $"Lets Roon play to {device}. When it's off, the device doesn't show up in Roon."));
-                if (squeezelite != null || roon != null) switches.Children.Add(refresh);
                 var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
                 header.Children.Add(new TextBlock
                 {
@@ -72,11 +62,7 @@ sealed partial class WiimController
                     TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis
                 });
                 Control right = switches.Children.Count > 0 ? switches
-                    : new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 12,
-                        Children = { Muted("Not reported. Check that the device is switched on and reachable."), refresh }
-                    };
+                    : Muted("Not reported. Check that the device is switched on and reachable.");
                 Grid.SetColumn(right, 1);
                 header.Children.Add(right);
 

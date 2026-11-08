@@ -70,7 +70,7 @@ sealed partial class WiimController
             BoxShadow = BoxShadows.Parse("0 12 48 0 #E0000000")
         };
         private readonly Grid _npCoverContent = new();
-        private readonly TextBlock _npDevice = new() { Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock _npDeviceMenuLabel = new() { Text = "Device", MaxWidth = 300, TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Button _npStyleButton = new();
         private string? _npIp;
         private NowPlayingControls? _npControls;
@@ -150,9 +150,9 @@ sealed partial class WiimController
                 _npRestoreState = null;
                 ApplyFullScreenButton();
             };
-            var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { close, _npDevice } };
+            var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { close } };
             _npTopBar.Children.Add(left);
-            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { BuildNowPlayingDeviceButton(), GroupsButton(), _npLyricsDelayButton, _npLyricsButton, BuildBrightnessButton(), _npFullScreen.Button, _npStyleButton } };
+            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { BuildNowPlayingDeviceButton(), _npLyricsDelayButton, _npLyricsButton, BuildBrightnessButton(), _npFullScreen.Button, _npStyleButton } };
             Grid.SetColumn(right, 2);
             _npTopBar.Children.Add(right);
 
@@ -224,18 +224,40 @@ sealed partial class WiimController
                 Content = new StackPanel
                 {
                     Orientation = Orientation.Horizontal, Spacing = 6,
-                    Children = { new TextBlock { Text = "Device" }, new PathIcon { Data = Icons.ChevronDown, Width = 12, Height = 12 } }
+                    Children = { _npDeviceMenuLabel, new PathIcon { Data = Icons.ChevronDown, Width = 12, Height = 12 } }
                 }
             };
             button.Classes.Add("pill");
-            ToolTip.SetTip(button, "Show another device in the big player");
-            button.Click += (_, _) => ShowDropdown(button, _owner._knownDevices.Select(device => new DropdownChoice(device.Name, device.Ip == _npIp,
-                CanShowInNowPlaying(device.Ip), () =>
-                {
-                    if (device.Ip != _npIp) ShowNowPlayingView(device.Ip);
-                    return Task.CompletedTask;
-                })).ToList());
+            ToolTip.SetTip(button, "Show another device in the big player, or switch a group on or off");
+            button.Click += async (_, _) =>
+            {
+                var groups = await LoadGroupChoicesAsync(button, _npDeviceMenuLabel, NowPlayingMenuText);
+                var choices = new List<DropdownChoice> { DropdownHeading("Devices") };
+                choices.AddRange(_owner._knownDevices.Select(device => new DropdownChoice(device.Name, device.Ip == _npIp,
+                    CanShowInNowPlaying(device.Ip), () =>
+                    {
+                        if (device.Ip != _npIp) ShowNowPlayingView(device.Ip);
+                        return Task.CompletedTask;
+                    })));
+                choices.Add(DropdownHeading("Groups (switch on/off)"));
+                if (groups.Count == 0) choices.Add(NoSavedGroupsChoice());
+                else choices.AddRange(groups);
+                ShowDropdown(button, choices);
+            };
             return button;
+        }
+
+        private string NowPlayingMenuText()
+        {
+            if (string.IsNullOrEmpty(_npIp)) return "Device";
+            string name = DeviceName(_npIp);
+            return GroupNameOf(_npIp) is { } group ? $"{name}  ·  {group}" : name;
+        }
+
+        private void UpdateNowPlayingMenuLabels()
+        {
+            if (string.IsNullOrEmpty(_npIp) || _npDeviceMenuLabel.Text == "Switching…") return;
+            _npDeviceMenuLabel.Text = NowPlayingMenuText();
         }
 
         private bool CanShowInNowPlaying(string ip) =>
@@ -244,7 +266,7 @@ sealed partial class WiimController
         private void ShowNowPlayingView(string ip)
         {
             _npIp = ip;
-            _npDevice.Text = DeviceName(ip);
+            UpdateNowPlayingMenuLabels();
             var art = new ArtworkView { IsVisible = false };
             bool loading = false;
             art.BitmapChanged += () =>

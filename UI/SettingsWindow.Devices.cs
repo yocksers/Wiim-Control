@@ -41,12 +41,33 @@ sealed partial class WiimController
                 _ = _eq.RefreshEqAsync();
                 _ = RefreshMultiroomAsync();
             };
-            return Page("Devices", _lblDeviceCount, [LayoutButton(), GroupsButton(), btnDiscover, btnAdd], BuildDevicesBody(), scroll: false);
+            return Page("Devices", _lblDeviceCount, [LayoutButton(), GroupsButton(_devicesGroupMenuLabel, () => GroupMenuText(_owner._deviceIp)), btnDiscover, btnAdd], BuildDevicesBody(), scroll: false);
         }
 
-        private Button GroupsButton()
+        private readonly TextBlock _devicesGroupMenuLabel = new() { MaxWidth = 200, TextTrimming = TextTrimming.CharacterEllipsis };
+
+        private string? GroupNameOf(string ip)
         {
-            var label = new TextBlock { Text = "Groups" };
+            if (_multiroom == null) return null;
+            string leader = TargetOf(ip);
+            if (ActiveSavedGroup(_multiroom, leader) is { } group) return group.Name;
+            return _multiroom.MemberCount(leader) + _multiroom.OthersOf(leader).Count > 0 ? "Unsaved group" : null;
+        }
+
+        private string GroupMenuText(string? ip)
+        {
+            if (string.IsNullOrEmpty(ip) || _multiroom == null) return "Group";
+            return GroupNameOf(ip) ?? "No group";
+        }
+
+        private void UpdateDevicesGroupMenuLabel()
+        {
+            if (_devicesGroupMenuLabel.Text != "Switching…") _devicesGroupMenuLabel.Text = GroupMenuText(_owner._deviceIp);
+        }
+
+        private Button GroupsButton(TextBlock label, Func<string> text)
+        {
+            label.Text = text();
             var button = new Button
             {
                 Content = new StackPanel
@@ -57,11 +78,20 @@ sealed partial class WiimController
             };
             button.Classes.Add("pill");
             ToolTip.SetTip(button, "Switch on groups");
-            button.Click += async (_, _) => await ShowGroupsMenuAsync(button, label);
+            button.Click += async (_, _) => await ShowGroupsMenuAsync(button, label, text);
             return button;
         }
 
-        private async Task ShowGroupsMenuAsync(Button button, TextBlock label)
+        private async Task ShowGroupsMenuAsync(Button button, TextBlock label, Func<string> text)
+        {
+            var choices = await LoadGroupChoicesAsync(button, label, text);
+            if (choices.Count == 0) choices.Add(NoSavedGroupsChoice());
+            ShowDropdown(button, choices);
+        }
+
+        private static DropdownChoice NoSavedGroupsChoice() => new("There are no saved groups yet", false, false, () => Task.CompletedTask);
+
+        private async Task<List<DropdownChoice>> LoadGroupChoicesAsync(Button button, TextBlock label, Func<string> text)
         {
             button.IsEnabled = false;
             var savedGroups = _owner.GetSavedGroupsAsync();
@@ -69,9 +99,10 @@ sealed partial class WiimController
             _savedGroups = await savedGroups;
             _multiroom = snapshot;
             button.IsEnabled = true;
+            label.Text = text();
 
             var active = _savedGroups.Where(saved => ActiveSavedGroup(snapshot, saved.LeaderIp)?.Id == saved.Id).ToList();
-            var choices = _savedGroups.Select(group => new DropdownChoice(group.Name, active.Contains(group), snapshot.Online.Contains(group.LeaderIp), async () =>
+            return _savedGroups.Select(group => new DropdownChoice(group.Name, active.Contains(group), snapshot.Online.Contains(group.LeaderIp), async () =>
             {
                 bool on = active.Contains(group);
                 button.IsEnabled = false;
@@ -79,12 +110,10 @@ sealed partial class WiimController
                 try { await ChangeGroupAsync(() => on ? _owner.SwitchOffSavedGroupAsync(group) : _owner.SwitchOnSavedGroupAsync(group)); }
                 finally
                 {
-                    label.Text = "Groups";
+                    label.Text = text();
                     button.IsEnabled = true;
                 }
             })).ToList();
-            if (choices.Count == 0) choices.Add(new DropdownChoice("There are no saved groups yet", false, false, () => Task.CompletedTask));
-            ShowDropdown(button, choices);
         }
 
         internal void OnFirmwareChecked() => Dispatcher.UIThread.Post(() =>
@@ -136,6 +165,7 @@ sealed partial class WiimController
 
         private void RebuildDeviceCards()
         {
+            UpdateDevicesGroupMenuLabel();
             UpdatePlayerBar();
             _positions.Clear();
             var devices = _owner._knownDevices.ToList();
@@ -151,6 +181,11 @@ sealed partial class WiimController
                     var members = GroupMembers(d.Ip);
                     var slot = CardSlot(d.Ip, _owner.CompactDevices ? CompactDeviceCard(d) : DeviceCard(d, position, devices.Count));
                     card = new CachedCard(key, slot, !_owner.CompactDevices && members.Count > 1 ? BuildGroupMembersCard(members) : null);
+                    if (card.Members != null && slot.Children.FirstOrDefault() is Border deviceCard)
+                    {
+                        deviceCard.Classes.Add("joinedTop");
+                        card.Members.Classes.Add("joinedBottom");
+                    }
                 }
                 cards.Add((d.Ip, card));
             }

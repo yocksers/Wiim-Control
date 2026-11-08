@@ -28,6 +28,7 @@ sealed partial class WiimController
             var savedGroups = _owner.GetSavedGroupsAsync();
             _multiroom = await _owner.GetMultiroomSnapshotAsync();
             _savedGroups = await savedGroups;
+            UpdateNowPlayingMenuLabels();
             UpdateDisplayNav();
             RebuildMultiroom();
             RebuildDeviceCards();

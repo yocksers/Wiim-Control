@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace WiimControl;
@@ -16,6 +17,11 @@ sealed partial class WiimController
         private sealed partial class LibraryPage(SettingsWindow window)
         {
             private const int LibraryPageSize = 200;
+
+            private sealed record LibraryPlace(string FolderId, int Loaded, double Offset, string? OpenedId);
+
+            private readonly Dictionary<int, LibraryPlace> _libraryPlaces = new();
+            private readonly Dictionary<string, Border> _libraryRowsById = new();
 
             private readonly ComboBox _cboLibraryServer = new() { Width = 220, PlaceholderText = "No music server" };
             private readonly ComboBox _cboLibraryAmp = new() { Width = 200 };
@@ -35,6 +41,8 @@ sealed partial class WiimController
             private bool _libraryLoadFailed;
             private bool _libraryFilling;
             private bool _libraryPlaying;
+            private int? _libraryMoreVersion;
+            private bool _libraryAutoMoreFailed;
 
             private MediaServer? SelectedLibraryServer => (_cboLibraryServer.SelectedItem as ComboBoxItem)?.Tag as MediaServer;
 
@@ -63,16 +71,31 @@ sealed partial class WiimController
                     await OpenLibraryRootAsync(server);
                 };
                 _btnLibraryPlayAll.Click += async (_, _) => await PlayLibraryFolderAsync();
-                _btnLibraryMore.Click += async (_, _) => await LoadMoreLibraryAsync();
+                _btnLibraryMore.Click += async (_, _) => await LoadMoreLibraryAsync(auto: false);
+                _libraryScroll.ScrollChanged += (_, _) => MaybeLoadMoreLibrary();
                 _btnLibraryPlayAll.IsVisible = _btnLibraryMore.IsVisible = false;
                 _btnLibraryMore.Margin = new Thickness(0, 10, 0, 0);
                 _btnLibraryMore.HorizontalAlignment = HorizontalAlignment.Center;
 
                 _cboLibraryAmp.SelectionChanged += (_, _) => { if (!window._loading) _ = RefreshLibraryServiceAsync(); };
+                var (refresh, _) = IconButton(Icons.Refresh);
+                refresh.VerticalAlignment = VerticalAlignment.Center;
+                ToolTip.SetTip(refresh, "Read this folder again from the server, for example after adding music");
+                refresh.Click += async (_, _) =>
+                {
+                    refresh.IsEnabled = false;
+                    try { await Task.WhenAll(RefreshLibraryServiceAsync(), RefreshLibraryFolderAsync()); }
+                    finally { refresh.IsEnabled = true; }
+                };
                 var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 12) };
                 top.Children.Add(_libraryCrumbs);
-                Grid.SetColumn(_btnLibraryPlayAll, 1);
-                top.Children.Add(_btnLibraryPlayAll);
+                var actions = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
+                    Children = { _btnLibraryPlayAll, refresh }
+                };
+                Grid.SetColumn(actions, 1);
+                top.Children.Add(actions);
                 _libraryScroll.Content = new StackPanel { Children = { _libraryRows, _btnLibraryMore } };
                 var body = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
                 body.Children.Add(_libraryServiceHost);
@@ -95,9 +118,11 @@ sealed partial class WiimController
                 return page;
             }
 
-            private Task<BrowsePage?> BrowseLibraryAsync(MediaServer server, string id, int start, int count) =>
+            private static int LibraryPageSizeOf(MediaServer server) => server.IsShare ? int.MaxValue : LibraryPageSize;
+
+            private Task<BrowsePage?> BrowseLibraryAsync(MediaServer server, string id, int start, int count, bool fresh = false) =>
                 server.IsRoon ? window._owner.RoonBrowseAsync(server, RoonPath, start, count)
-                : server.IsShare ? window._owner.BrowseShareAsync(server, id, start, count)
+                : server.IsShare ? window._owner.BrowseShareAsync(server, id, start, count, fresh)
                 : server.IsEmbyJellyfin ? window._owner.BrowseEmbyAsync(server, id, start, count)
                 : server.IsLyrion ? Lms.BrowseAsync(server, id, start, count)
                 : Upnp.BrowseAsync(server, id, start, count);
@@ -153,29 +178,52 @@ sealed partial class WiimController
                 if (server.IsRoon) window._owner.UseRoonCore(server.ContentDirectoryUrl);
                 _ = RefreshLibraryServiceAsync();
                 _libraryPath.Clear();
+                _libraryPlaces.Clear();
                 _libraryPath.Add(("0", server.Name));
                 await LoadLibraryFolderAsync();
             }
 
+            private void SaveLibraryPlace(int depth, string? openedId)
+            {
+                if (depth < 1 || depth != _libraryPath.Count) return;
+                int level = depth - 1;
+                foreach (int deeper in _libraryPlaces.Keys.Where(k => k >= level).ToList()) _libraryPlaces.Remove(deeper);
+                _libraryPlaces[level] = new LibraryPlace(_libraryPath[level].Id, _libraryEntries.Count, _libraryScroll.Offset.Y, openedId);
+            }
+
+            private Task RefreshLibraryFolderAsync()
+            {
+                SaveLibraryPlace(_libraryPath.Count, null);
+                return LoadLibraryFolderAsync(fresh: true);
+            }
+
             private async Task OpenLibraryFolderAsync(MediaEntry folder, int depth)
             {
+                SaveLibraryPlace(depth, folder.Id);
                 if (IsRoonInput(folder) && await OpenRoonInputAsync(folder, depth)) return;
                 if (_libraryPath.Count > depth) _libraryPath.RemoveRange(depth, _libraryPath.Count - depth);
                 _libraryPath.Add((folder.Id, folder.Title));
                 await LoadLibraryFolderAsync();
             }
 
-            private async Task LoadLibraryFolderAsync()
+            private async Task LoadLibraryFolderAsync(bool fresh = false)
             {
                 if (SelectedLibraryServer is not { } server || _libraryPath.Count == 0) return;
                 int version = ++_libraryFolderVersion;
+                int level = _libraryPath.Count - 1;
+                LibraryPlace? place = _libraryPlaces.Remove(level, out var saved) && saved.FolderId == _libraryPath[level].Id ? saved : null;
+                foreach (int deeper in _libraryPlaces.Keys.Where(k => k > level).ToList()) _libraryPlaces.Remove(deeper);
                 UpdateLibraryCrumbs();
                 _lblLibraryStatus.Text = "Loading…";
-                var page = await BrowseLibraryAsync(server, _libraryPath[^1].Id, 0, LibraryPageSize);
+                int count = Math.Max(LibraryPageSizeOf(server), place?.Loaded ?? 0);
+                var page = await BrowseLibraryAsync(server, _libraryPath[^1].Id, 0, count, fresh);
                 if (version != _libraryFolderVersion) return;
 
                 _libraryLoadFailed = page == null;
                 ClearLibraryRows();
+                _libraryAutoMoreFailed = false;
+                _btnLibraryMore.Content = "Load more";
+                _btnLibraryMore.IsEnabled = true;
                 _libraryScroll.Offset = default;
                 if (page == null && server.IsRoon && window._owner.RoonStatus == RoonState.WaitingForApproval)
                 {
@@ -209,19 +257,85 @@ sealed partial class WiimController
                 _libraryTotal = page.Total;
                 AddLibraryEntries(page.Entries);
                 if (_libraryRows.Children.Count == 0) _libraryRows.Children.Add(Muted("This folder is empty."));
+                if (place != null) await RestoreLibraryPlaceAsync(server, place);
             }
 
-            private async Task LoadMoreLibraryAsync()
+            private bool LibraryLoadingMore => _libraryMoreVersion == _libraryFolderVersion;
+
+            private void MaybeLoadMoreLibrary()
             {
-                if (SelectedLibraryServer is not { } server || _libraryPath.Count == 0) return;
+                if (LibraryLoadingMore || _libraryAutoMoreFailed || !_btnLibraryMore.IsVisible) return;
+                if (_libraryScroll.Offset.Y + _libraryScroll.Viewport.Height < _libraryScroll.Extent.Height - 800) return;
+                _ = LoadMoreLibraryAsync(auto: true);
+            }
+
+            private async Task RestoreLibraryPlaceAsync(MediaServer server, LibraryPlace place)
+            {
                 int version = _libraryFolderVersion;
+                _libraryMoreVersion = version;
+                try
+                {
+                    while (_libraryEntries.Count < place.Loaded && _libraryEntries.Count < _libraryTotal)
+                    {
+                        var more = await BrowseLibraryAsync(server, _libraryPath[^1].Id, _libraryEntries.Count, LibraryPageSizeOf(server));
+                        if (version != _libraryFolderVersion || more == null) return;
+                        _libraryTotal = more.Entries.Count == 0 ? _libraryEntries.Count : more.Total;
+                        AddLibraryEntries(more.Entries);
+                    }
+                }
+                finally
+                {
+                    if (_libraryMoreVersion == version) _libraryMoreVersion = null;
+                }
+                if (version != _libraryFolderVersion) return;
+                _libraryScroll.UpdateLayout();
+                _libraryScroll.Offset = new Vector(0, place.Offset);
+                _libraryScroll.UpdateLayout();
+                if (place.OpenedId == null || !_libraryRowsById.TryGetValue(place.OpenedId, out var row)) return;
+                if (row.TranslatePoint(default, _libraryRows) is { } top)
+                {
+                    double viewport = _libraryScroll.Viewport.Height, offset = _libraryScroll.Offset.Y;
+                    if (top.Y < offset || top.Y + row.Bounds.Height > offset + viewport)
+                        _libraryScroll.Offset = new Vector(0, Math.Max(0, top.Y - (viewport - row.Bounds.Height) / 2));
+                }
+                row.Background = Palette.CardActive;
+                DispatcherTimer.RunOnce(() =>
+                {
+                    if (version == _libraryFolderVersion) row.Background = row.IsPointerOver ? Palette.Card : Brushes.Transparent;
+                }, TimeSpan.FromSeconds(1.5));
+            }
+
+            private async Task LoadMoreLibraryAsync(bool auto)
+            {
+                if (SelectedLibraryServer is not { } server || _libraryPath.Count == 0 || LibraryLoadingMore) return;
+                if (!auto) _libraryAutoMoreFailed = false;
+                int version = _libraryFolderVersion;
+                _libraryMoreVersion = version;
                 _btnLibraryMore.IsEnabled = false;
-                var page = await BrowseLibraryAsync(server, _libraryPath[^1].Id, _libraryEntries.Count, LibraryPageSize);
-                _btnLibraryMore.IsEnabled = true;
-                if (version != _libraryFolderVersion || page == null) return;
-                _libraryTotal = page.Total;
-                if (page.Entries.Count == 0) _libraryTotal = _libraryEntries.Count;
-                AddLibraryEntries(page.Entries);
+                _btnLibraryMore.Content = "Loading more…";
+                try
+                {
+                    var page = await BrowseLibraryAsync(server, _libraryPath[^1].Id, _libraryEntries.Count, LibraryPageSizeOf(server));
+                    if (version != _libraryFolderVersion) return;
+                    if (page == null)
+                    {
+                        _libraryAutoMoreFailed = true;
+                        _btnLibraryMore.Content = "Couldn't load more. Try again";
+                        return;
+                    }
+                    _btnLibraryMore.Content = "Load more";
+                    _libraryTotal = page.Total;
+                    if (page.Entries.Count == 0) _libraryTotal = _libraryEntries.Count;
+                    AddLibraryEntries(page.Entries);
+                }
+                finally
+                {
+                    if (_libraryMoreVersion == version)
+                    {
+                        _libraryMoreVersion = null;
+                        _btnLibraryMore.IsEnabled = true;
+                    }
+                }
             }
 
             private void AddLibraryEntries(List<MediaEntry> entries)
@@ -231,7 +345,10 @@ sealed partial class WiimController
                 for (int i = first; i < _libraryEntries.Count; i++)
                 {
                     var entry = _libraryEntries[i];
-                    if (entry.IsContainer || entry.IsAudio) _libraryRows.Children.Add(LibraryRow(entry, i));
+                    if (!entry.IsContainer && !entry.IsAudio) continue;
+                    var row = LibraryRow(entry, i);
+                    _libraryRows.Children.Add(row);
+                    _libraryRowsById.TryAdd(entry.Id, row);
                 }
                 UpdateLibraryButtons();
                 UpdateLibraryStatus();
@@ -289,12 +406,13 @@ sealed partial class WiimController
             {
                 _libraryFolderVersion++;
                 _libraryRows.Children.Clear();
+                _libraryRowsById.Clear();
                 foreach (var bitmap in _libraryBitmaps) bitmap.Dispose();
                 _libraryBitmaps.Clear();
                 _libraryArt.Clear();
             }
 
-            private Control LibraryRow(MediaEntry entry, int index)
+            private Border LibraryRow(MediaEntry entry, int index)
             {
                 var icon = new PathIcon
                 {
