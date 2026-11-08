@@ -54,6 +54,15 @@
     <Style Selector="Border.card.active">
       <Setter Property="Background" Value="{DynamicResource Wc.CardActive}" />
     </Style>
+    <Style Selector="Border.card.joinedTop">
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusCardTop}" />
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="Border.card.joinedBottom">
+      <Setter Property="CornerRadius" Value="{DynamicResource Wc.RadiusCardBottom}" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Wc.Window}" />
+    </Style>
     <Style Selector="Window.artwork Border.card">
       <Setter Property="Background" Value="{DynamicResource Wc.CardGlass}" />
     </Style>
