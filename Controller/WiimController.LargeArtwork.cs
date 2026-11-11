@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 
 namespace WiimControl;
 
@@ -57,7 +56,7 @@ sealed partial class WiimController
     {
         try
         {
-            var bytes = await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false);
+            var bytes = await ArtworkBytesAsync(url).ConfigureAwait(false);
             return await Task.Run(() =>
             {
                 int width;

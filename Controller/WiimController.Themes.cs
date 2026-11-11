@@ -4,7 +4,6 @@ sealed partial class WiimController
 {
     private List<Theme> _customThemes = [];
     private Theme _activeTheme = ThemeEngine.Dark;
-    internal IReadOnlyList<Theme> CustomThemes => _customThemes;
 
     internal IEnumerable<Theme> AllThemes => ThemeEngine.BuiltIn.Concat(_customThemes);
 

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -218,7 +217,9 @@ sealed partial class WiimController
     }
 
     internal async Task<bool> SendTransportAsync(string ip, string action) =>
-        await TryExternalCommandAsync(ip, action).ConfigureAwait(false) ||
+        action is "onepause" or "next" or "prev" && ControlsComputerPlayback(ip)
+            ? await ControlComputerPlaybackAsync(action == "onepause" ? "playpause" : action).ConfigureAwait(false)
+            : await TryExternalCommandAsync(ip, action).ConfigureAwait(false) ||
         CommandSucceeded(await SendToDeviceAsync(ip, $"setPlayerCmd:{action}").ConfigureAwait(false));
 
     internal async Task<Bitmap?> GetArtworkAsync(string url)
@@ -232,7 +233,7 @@ sealed partial class WiimController
             }
         try
         {
-            var bytes = await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false);
+            var bytes = await ArtworkBytesAsync(url).ConfigureAwait(false);
             using var stream = new MemoryStream(bytes);
             var thumbnail = Bitmap.DecodeToWidth(stream, 160, BitmapInterpolationMode.HighQuality);
             var evicted = new List<Bitmap>();

@@ -39,9 +39,6 @@ sealed partial class WiimController
         return CommandSucceeded(await SendToDeviceAsync(ip, $"Squeezelite:connectServer:{server}").ConfigureAwait(false));
     }
 
-    internal async Task<bool> DiscoverSqueezeliteAsync(string ip) =>
-        CommandSucceeded(await SendToDeviceAsync(ip, "Squeezelite:discover").ConfigureAwait(false));
-
     private async Task<(MediaServer Server, string Player)?> GetLyrionLinkAsync(string ip, MediaServer? server = null)
     {
         if (_lyrionLinks.TryGetValue(ip, out var cached) && (server == null || cached.Server.Udn == server.Udn)) return cached;

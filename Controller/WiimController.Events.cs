@@ -13,10 +13,13 @@ sealed partial class WiimController
     private const int UpnpPort = 49152;
     private const string TransportEventService = "urn:schemas-upnp-org:service:AVTransport:1";
     private const string VolumeEventService = "urn:schemas-upnp-org:service:RenderingControl:1";
+    private const string QueueEventService = "urn:schemas-wiimu-com:service:PlayQueue:1";
+    private const string QueueEventKey = "pq";
     private static readonly (string Service, string Key, string Fallback)[] EventServices =
     [
         (TransportEventService, "av", "/upnp/event/rendertransport1"),
-        (VolumeEventService, "rc", "/upnp/event/rendercontrol1")
+        (VolumeEventService, "rc", "/upnp/event/rendercontrol1"),
+        (QueueEventService, QueueEventKey, "/upnp/event/PlayQueue1")
     ];
     private static readonly TimeSpan SubscriptionLength = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan RenewBefore = TimeSpan.FromMinutes(3);
@@ -55,7 +58,8 @@ sealed partial class WiimController
     }
 
     internal bool HasInstantUpdates(string ip) =>
-        _subscriptions.Values.Count(s => s.Ip == ip && s.Sid.Length > 0 && s.Expires > DateTime.UtcNow) == EventServices.Length;
+        _subscriptions.Values.Count(s => s.Ip == ip && s.Key != QueueEventKey && s.Sid.Length > 0 && s.Expires > DateTime.UtcNow) ==
+        EventServices.Count(s => s.Key != QueueEventKey);
 
     private void StartInstantUpdates()
     {
@@ -112,7 +116,7 @@ sealed partial class WiimController
                 }
                 if (existing is { Sid.Length: > 0 } && existing.Expires - DateTime.UtcNow > RenewBefore)
                     continue;
-                work.Add(SubscribeAsync(ip, key, path, existing ?? new EventSubscription
+                work.Add(SubscribeAsync(ip, path, existing ?? new EventSubscription
                 {
                     Ip = ip, Key = key, EventUrl = await GetEventUrlAsync(ip, service, fallback)
                 }));
@@ -146,7 +150,7 @@ sealed partial class WiimController
         return url;
     }
 
-    private async Task SubscribeAsync(string ip, string key, string path, EventSubscription subscription)
+    private async Task SubscribeAsync(string ip, string path, EventSubscription subscription)
     {
         if (CallbackFor(ip, path) is not { } callback) return;
         bool renew = subscription.Sid.Length > 0;
@@ -269,6 +273,19 @@ sealed partial class WiimController
 
     private void OnDeviceEvent(string ip, string key, Dictionary<string, string> change)
     {
+        if (key == QueueEventKey)
+        {
+            if (!change.ContainsKey("SetKeyMapping")) return;
+            string presetsKey = $"{ip}|{key}";
+            if (!_eventRefreshPending.Add(presetsKey)) return;
+            DispatcherTimer.RunOnce(() =>
+            {
+                _eventRefreshPending.Remove(presetsKey);
+                _settingsWindow?.OnPresetsChanged(ip);
+            }, EventRefreshDelay);
+            return;
+        }
+        if (key == "rc" && change.TryGetValue("commonevent", out var common)) OnCommonEvent(ip, common);
         bool volumeEvent = key == "rc" && !IsBluetoothFromThisComputer(ip);
         if (volumeEvent)
         {
@@ -287,7 +304,7 @@ sealed partial class WiimController
             _eventRefreshPending.Remove(pendingKey);
             foreach (var window in _miniPlayers.Values.Where(w => w.Ip == ip || PlaybackTargetOf(w.Ip) == ip).ToList()) window.RefreshNow();
             if (volumeEvent) return;
-            _settingsWindow?.OnDeviceEvent(ip);
+            _settingsWindow?.OnDeviceEvent();
             if (ip == _deviceIp || ip == PlaybackTarget) await RefreshNowPlayingAsync();
         }, EventRefreshDelay);
     }

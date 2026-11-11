@@ -62,6 +62,7 @@ sealed partial class WiimController
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:loopmode:{mode}").ConfigureAwait(false));
 
     internal async Task<bool> SeekAsync(string ip, int seconds) =>
+        ControlsComputerPlayback(ip) ? await SeekComputerPlaybackAsync(seconds).ConfigureAwait(false) :
         await TryExternalCommandAsync(ip, "seek", seconds).ConfigureAwait(false) ||
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:seek:{Math.Max(0, seconds)}").ConfigureAwait(false));
 

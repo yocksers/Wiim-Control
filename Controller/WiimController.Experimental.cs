@@ -9,12 +9,12 @@ sealed record ExperimentalSettings(
     string? DolbyEffect, List<string> DolbyEffects,
     string? VoiceLevel, List<string> VoiceLevels,
     bool? AmazonHd, bool? AlexaMusicHd, bool? TidalMqa,
-    bool? HideSsid, bool? SmartDns, bool? DnsSpeedCheck,
+    bool? HideSsid, bool? DnsSpeedCheck,
     string? Language, List<(string Code, string Name)> Languages, HighPassFilter? HiddenHighPass = null)
 {
     public bool IsEmpty => TriggerOn == null && TriggerOnReboot == null && SoundModes.Count == 0 && DolbyEffects.Count == 0 &&
                            VoiceLevels.Count == 0 && AmazonHd == null && AlexaMusicHd == null && TidalMqa == null && HideSsid == null &&
-                           SmartDns == null && DnsSpeedCheck == null && Languages.Count < 2 && HiddenHighPass == null;
+                           DnsSpeedCheck == null && Languages.Count < 2 && HiddenHighPass == null;
 }
 
 sealed record SyncAudio(double? ExtraDelayMs, bool MicroDelay, int? LegacyGroupDelay);
@@ -165,11 +165,10 @@ sealed partial class WiimController
         var amazonHd = SendToDeviceAsync(ip, "GetAmazonHD");
         var alexaHd = SendToDeviceAsync(ip, "getAvsMusicHDEnable");
         var tidalMqa = SendToDeviceAsync(ip, "getTidalMQAOnOff");
-        var smartDns = SendToDeviceAsync(ip, "getSmartDNSEnable");
         var dnsSpeed = SendToDeviceAsync(ip, "getSmartDNSSpeedCheckEnable");
         var highPass = SendToDeviceAsync(ip, "getMainProtect");
         await Task.WhenAll(statusEx, capability, trigger, triggerReboot, soundMode, soundEffect, voiceLevel, amazonHd, alexaHd, tidalMqa,
-            smartDns, dnsSpeed, highPass).ConfigureAwait(false);
+            dnsSpeed, highPass).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
 
         var modes = ParseSoundModes(soundMode.Result);
@@ -183,7 +182,7 @@ sealed partial class WiimController
             ParseFlag(trigger.Result), ParseFlag(triggerReboot.Result),
             modes.Current, modes.Modes, effects.Current, effects.Effects, levels.Current, levels.Levels,
             ParseFlag(amazonHd.Result), ParseFlag(alexaHd.Result), ParseFlag(tidalMqa.Result),
-            ParseFlag(JsonField(statusEx.Result, "hideSSID")), ParseFlag(smartDns.Result), ParseFlag(dnsSpeed.Result),
+            ParseFlag(JsonField(statusEx.Result, "hideSSID")), ParseFlag(dnsSpeed.Result),
             language, languages, HiddenHighPass(capability.Result, highPass.Result));
     }
 
@@ -203,7 +202,6 @@ sealed partial class WiimController
     internal Task<bool> SetAlexaMusicHdAsync(string ip, bool on) => SendSettingAsync(ip, $"setAvsMusicHDEnable:{Bit(on)}");
     internal Task<bool> SetTidalMqaAsync(string ip, bool on) => SendSettingAsync(ip, $"setTidalMQAOnOff:{Bit(on)}");
     internal Task<bool> SetHideSsidAsync(string ip, bool on) => SendSettingAsync(ip, $"setHideSSID:{Bit(on)}");
-    internal Task<bool> SetSmartDnsAsync(string ip, bool on) => SendSettingAsync(ip, $"setSmartDNSEnable:{Bit(on)}");
     internal Task<bool> SetDnsSpeedCheckAsync(string ip, bool on) => SendSettingAsync(ip, $"setSmartDNSSpeedCheckEnable:{Bit(on)}");
     internal Task<bool> SetPromptLanguageAsync(string ip, string code) => SendSettingAsync(ip, $"setLanguage:{code}");
 

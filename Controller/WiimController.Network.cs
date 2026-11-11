@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace WiimControl;
 
-sealed record NetworkSettings(string? Band, string? Roam, string? Ipv6, string? Dns, string? PowerMode, string? StaticIp = null);
+sealed record NetworkSettings(string? Band, string? Roam, string? Ipv6, string? Dns, string? PowerMode, string? StaticIp = null, string? SmartDns = null);
 
 sealed partial class WiimController
 {
@@ -16,8 +16,9 @@ sealed partial class WiimController
         var dns = SendToDeviceAsync(ip, "getNetworkPreferDNS");
         var power = SendToDeviceAsync(ip, "getPowerModeTime");
         var staticIp = SendToDeviceAsync(ip, "getStaticIpInfo");
-        await Task.WhenAll(band, roam, ipv6, dns, power, staticIp).ConfigureAwait(false);
-        return new NetworkSettings(band.Result, roam.Result, ipv6.Result, dns.Result, power.Result, staticIp.Result);
+        var smartDns = SendToDeviceAsync(ip, "getSmartDNSEnable");
+        await Task.WhenAll(band, roam, ipv6, dns, power, staticIp, smartDns).ConfigureAwait(false);
+        return new NetworkSettings(band.Result, roam.Result, ipv6.Result, dns.Result, power.Result, staticIp.Result, smartDns.Result);
     }
 
     internal static NetworkInfo? ParseNetworkInfo(string? statusEx, NetworkSettings settings)
@@ -46,7 +47,8 @@ sealed partial class WiimController
             ParseFlag(settings.Band), ParseFlag(settings.Roam), ParseFlag(settings.Ipv6),
             dnsKnown ? (dns == "0.0.0.0" ? string.Empty : dns) : null, standby,
             ParseIpConfig(settings.StaticIp, isWired, isWired ? wired : wireless),
-            ParseFlag(Field("internet")), Number("wlanNoise") is int noise and < 0 ? noise : null, CleanMac(Field("MAC")));
+            ParseFlag(Field("internet")), Number("wlanNoise") is int noise and < 0 ? noise : null, CleanMac(Field("MAC")),
+            dnsKnown ? ParseFlag(settings.SmartDns) : null);
     }
 
     internal static string SignalName(int rssi) => rssi switch
@@ -84,6 +86,15 @@ sealed partial class WiimController
     {
         string value = dns.Length > 0 ? dns : "0.0.0.0";
         return SetAndConfirmAsync(ip, $"setNetworkPreferDNS:{value}", "getNetworkPreferDNS", value);
+    }
+
+    internal Task<bool> SetAutomaticDnsAsync(string ip) => SetAndConfirmAsync(ip, "setSmartDNSEnable:1", "getSmartDNSEnable", "1");
+
+    internal async Task<bool> SetManualDnsAsync(string ip, string dns)
+    {
+        await SendToDeviceAsync(ip, "setSmartDNSEnable:0").ConfigureAwait(false);
+        return await SetPreferredDnsAsync(ip, dns).ConfigureAwait(false) &&
+               (await SendToDeviceAsync(ip, "getSmartDNSEnable").ConfigureAwait(false))?.Trim() == "0";
     }
 
     internal async Task<bool> SetStandbyAsync(string ip, int seconds) =>

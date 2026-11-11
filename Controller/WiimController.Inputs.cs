@@ -76,13 +76,13 @@ sealed partial class WiimController
     internal async Task<List<InputVisibility>?> GetInputVisibilityAsync(string ip) =>
         ParseInputs(await SendToDeviceAsync(ip, "getAudioInputEnable").ConfigureAwait(false));
 
-    internal async Task<List<string>?> GetInputsAsync(string ip)
-    {
-        var inputs = await GetInputVisibilityAsync(ip).ConfigureAwait(false)
-            ?? ParseInputs(await SendToDeviceAsync(ip, "getAudioInputCapbility").ConfigureAwait(false))
-            ?? InputsFromPlmSupport(await SendToDeviceAsync(ip, "getStatusEx").ConfigureAwait(false));
-        return inputs?.Where(i => i.Shown).Select(i => i.Mode).ToList();
-    }
+    internal async Task<List<string>?> GetInputsAsync(string ip) =>
+        (await GetAllInputsAsync(ip).ConfigureAwait(false))?.Where(i => i.Shown).Select(i => i.Mode).ToList();
+
+    internal async Task<List<InputVisibility>?> GetAllInputsAsync(string ip) =>
+        await GetInputVisibilityAsync(ip).ConfigureAwait(false)
+        ?? ParseInputs(await SendToDeviceAsync(ip, "getAudioInputCapbility").ConfigureAwait(false))
+        ?? InputsFromPlmSupport(await SendToDeviceAsync(ip, "getStatusEx").ConfigureAwait(false));
 
     internal async Task<bool> SetInputShownAsync(string ip, string mode, bool shown)
     {

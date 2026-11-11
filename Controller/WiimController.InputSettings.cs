@@ -52,6 +52,7 @@ sealed partial class WiimController
         }
         catch (JsonException) { }
 
+        bool lineInResolution = HasLineInResolution(statusEx, inputCards.Result);
         string? source = standbySource.Result?.Trim();
         if (source is null || source.Length == 0 || source.Contains("unknown", StringComparison.OrdinalIgnoreCase) || source.Contains('{')) source = null;
         return new InputSettings(gainEnabled, gains, min, max,
@@ -61,8 +62,8 @@ sealed partial class WiimController
             ParseFlag(tvSpeakers.Result),
             ParseFlag(standbyOn.Result), source,
             ParseFlag(perSourceVolume.Result),
-            lineInCap.Result?.Trim().Split(':') is [var rate, ..] && int.TryParse(rate, out int r) ? r : null,
-            lineInCap.Result?.Trim().Split(':') is [_, var depth, ..] && int.TryParse(depth, out int d) ? d : null,
+            lineInResolution && lineInCap.Result?.Trim().Split(':') is [var rate, ..] && int.TryParse(rate, out int r) ? r : null,
+            lineInResolution && lineInCap.Result?.Trim().Split(':') is [_, var depth, ..] && int.TryParse(depth, out int d) ? d : null,
             HasReduceNoise(inputCards.Result, JsonField(statusEx, "project")) ? ParseFlag(reduceNoise.Result) : null);
     }
 
@@ -76,6 +77,29 @@ sealed partial class WiimController
                 Prop(card, "mode").ToString() == "HDMI" && Prop(Prop(card, "soundCard"), "supportDolbyAudio").ToString().Length > 0);
         }
         catch (JsonException) { return false; }
+    }
+
+    private static readonly string[] LineInResolutionProjects =
+        ["WiiM_Pro_Plus", "WiiM_AMP", "WiiM_Amp_Pro", "WiiM_Amp_Ultra", "WiiM_CI_MOD_A80", "WiiM_Ultra", "WiiM_CI_MOD_S"];
+
+    private static readonly string[] LineInResolutionProjectIds = ["208", "87", "216", "86", "222", "223", "232", "220", "221"];
+
+    internal static bool HasLineInResolution(string? statusEx, string? inputModeList)
+    {
+        if (double.TryParse(JsonField(statusEx, "deviceSettingVer"), NumberStyles.Float, CultureInfo.InvariantCulture, out double version) &&
+            version >= 1.0)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(inputModeList ?? string.Empty);
+                return doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.EnumerateArray()
+                    .FirstOrDefault(card => Prop(card, "mode").ToString() is "line-in" or "auxIn") is { ValueKind: JsonValueKind.Object } lineIn &&
+                    Prop(Prop(lineIn, "soundCard"), "HiFiSRCVersion").ToString().Length > 0;
+            }
+            catch (JsonException) { return false; }
+        }
+        string project = JsonField(statusEx, "project") ?? string.Empty;
+        return LineInResolutionProjects.Any(name => project.Contains(name, StringComparison.Ordinal)) || LineInResolutionProjectIds.Contains(project);
     }
 
     internal async Task<bool> SetReduceNoiseAsync(string ip, bool on) =>

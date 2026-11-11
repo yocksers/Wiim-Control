@@ -109,7 +109,7 @@ sealed partial class WiimController
         return true;
     }
 
-    internal async Task<BrowsePage?> RoonBrowseAsync(MediaServer server, IReadOnlyList<(string Id, string Title)> path, int start, int count)
+    internal async Task<BrowsePage?> RoonBrowseAsync(IReadOnlyList<(string Id, string Title)> path, int start, int count)
     {
         if (await GetRegisteredRoonAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false) is not { } roon) return null;
         await _roonBrowseGate.WaitAsync().ConfigureAwait(false);

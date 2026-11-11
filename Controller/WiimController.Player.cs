@@ -39,6 +39,11 @@ sealed partial class WiimController
             _           => action
         };
         string target = PlaybackTarget;
+        if (action is "playpause" or "next" or "prev" && ControlsComputerPlayback(target))
+        {
+            await ControlComputerPlaybackAsync(action).ConfigureAwait(false);
+            return;
+        }
         if (BlockedByLock(_deviceIp, target)) return;
         if (await TryExternalCommandAsync(target, wiimCmd).ConfigureAwait(false)) return;
         await SendPlayerCommandAsync(target, $"setPlayerCmd:{wiimCmd}").ConfigureAwait(false);

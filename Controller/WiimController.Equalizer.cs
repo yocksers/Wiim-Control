@@ -8,6 +8,7 @@ sealed partial class WiimController
     private async Task<string?> SendEqCommandAsync(string ip, string command)
     {
         if (string.IsNullOrEmpty(ip)) return null;
+        NoteOwnEqChange(ip, command);
         try
         {
             var body = await GetAmpStringAsync($"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);

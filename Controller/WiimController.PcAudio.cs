@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Sockets;
-using Avalonia.Controls;
 using Avalonia.Threading;
 
 namespace WiimControl;

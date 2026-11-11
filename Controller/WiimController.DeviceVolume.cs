@@ -9,13 +9,6 @@ sealed partial class WiimController
         return new DeviceVolume(Math.Clamp(volume, 0, 100), JsonField(json, "mute") == "1");
     }
 
-    internal async Task<Dictionary<string, DeviceVolume?>> GetAllDeviceVolumesAsync()
-    {
-        var devices = _knownDevices.Select(d => d.Ip).Distinct().ToList();
-        var volumes = await Task.WhenAll(devices.Select(GetDeviceVolumeAsync)).ConfigureAwait(false);
-        return devices.Zip(volumes).ToDictionary(p => p.First, p => p.Second);
-    }
-
     internal async Task<bool> SetDeviceVolumeAsync(string ip, int volume)
     {
         volume = Math.Clamp(volume, 0, 100);

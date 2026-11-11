@@ -96,6 +96,9 @@ sealed partial class WiimController
             _disabledOutputIds = IdSet(value);
             _legacyEnabledOutputIds = null;
         }),
+        Flag("onlineArtwork", () => _onlineArtwork, value => _onlineArtwork = value),
+        Text("computerInputs", () => string.Join('|', _computerInputs), value => _computerInputs = ComputerInputSet(value)),
+        Text("computerOutputs", () => string.Join('|', _computerOutputs.Select(o => $"{o.Key}>{o.Value}")), ParseComputerOutputs),
         Text("libraryServer", () => _libraryServer, value => _libraryServer = value),
         Text("radioFavorites", SerializeRadioFavorites, value => _radioFavorites = ParseRadioFavorites(value)),
         Text("recent", SerializeRecent, value => _recent = ParseRecent(value)),
@@ -104,11 +107,17 @@ sealed partial class WiimController
         Flag("instantUpdates", () => _instantUpdates, value => _instantUpdates = value, onUnlessFalse: true),
         Text("skippedVersion", () => _skippedVersion, value => _skippedVersion = value),
         Flag("startMinimized", () => _startMinimized, value => _startMinimized = value),
-        Flag("compactDevices", () => _compactDevices, value => _compactDevices = value),
+        Legacy("compactDevices", value => { if (IsWord(value, "true")) _deviceLayout = DeviceLayout.Compact; }),
+        Choice("deviceLayout", () => _deviceLayout, value => _deviceLayout = value),
         Legacy("nowPlayingVinyl", value => { if (IsWord(value, "true")) _nowPlayingStyle = NowPlayingStyle.Vinyl; }),
-        Choice("nowPlayingStyle", () => _nowPlayingStyle, value => _nowPlayingStyle = value),
+        new("nowPlayingStyle", () => _nowPlayingStyle.ToString(), value =>
+        {
+            if (IsWord(value, "AmbientControls")) _nowPlayingStyle = NowPlayingStyle.Ambient;
+            else if (Enum.TryParse<NowPlayingStyle>(value, true, out var style)) _nowPlayingStyle = style;
+        }),
         Text("nowPlayingBackdrop", () => SerializeStyleLevels(_nowPlayingBrightness), value => ParseStyleLevels(value, _nowPlayingBrightness)),
         Flag("nowPlayingLyrics", () => _nowPlayingLyrics, value => _nowPlayingLyrics = value),
+        Flag("nowPlayingControls", () => _nowPlayingControls, value => _nowPlayingControls = value, onUnlessFalse: true),
         Number("lyricsDelay", () => _lyricsDelayMs, value => _lyricsDelayMs = Math.Clamp(value, -LyricsDelayLimitMs, LyricsDelayLimitMs)),
         Flag("miniPlayerAuto", () => _miniPlayerAuto, value => _miniPlayerAuto = value),
         Flag("miniPlayerOnTop", () => _miniPlayerOnTop, value => _miniPlayerOnTop = value),
@@ -183,11 +192,12 @@ sealed partial class WiimController
         UpdateVolumeKeyRegistration();
     }
     private void SetStartMinimized(bool value) { _startMinimized = value; SaveConfig(); }
-    private bool _compactDevices;
-    internal bool CompactDevices
+    private DeviceLayout _deviceLayout;
+    internal bool CompactDevices => _deviceLayout == DeviceLayout.Compact;
+    internal DeviceLayout DeviceLayout
     {
-        get => _compactDevices;
-        set { _compactDevices = value; SaveConfig(); }
+        get => _deviceLayout;
+        set { _deviceLayout = value; SaveConfig(); }
     }
     internal NowPlayingStyle NowPlayingStyle
     {
@@ -195,9 +205,7 @@ sealed partial class WiimController
         set { _nowPlayingStyle = value; SaveConfig(); }
     }
 
-    private static bool IsAmbientStyle(NowPlayingStyle style) => style is NowPlayingStyle.Ambient or NowPlayingStyle.AmbientControls;
-
-    internal static int DefaultNowPlayingBrightness(NowPlayingStyle style) => IsAmbientStyle(style) ? 63 : 18;
+    internal static int DefaultNowPlayingBrightness(NowPlayingStyle style) => style == NowPlayingStyle.Ambient ? 63 : 18;
 
     internal int NowPlayingBrightness(NowPlayingStyle style) =>
         _nowPlayingBrightness.TryGetValue(style, out int brightness) ? brightness : DefaultNowPlayingBrightness(style);

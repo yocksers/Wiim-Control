@@ -2,12 +2,19 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using YamlDotNet.Core;
+using YamlDotNet.RepresentationModel;
 
 namespace WiimControl;
 
-sealed record LyricLine(int TimeMs, string Text);
+sealed record LyricWord(int TimeMs, string Text);
 
-sealed record Lyrics(IReadOnlyList<LyricLine> Synced, string Plain, bool Instrumental);
+sealed record LyricLine(int TimeMs, string Text, IReadOnlyList<LyricWord>? Words = null, int EndMs = 0);
+
+sealed record Lyrics(IReadOnlyList<LyricLine> Synced, string Plain, bool Instrumental)
+{
+    public bool WordSynced => Synced.Any(line => line.Words is { Count: > 0 });
+}
 
 sealed class LyricsServiceException(bool busy) : Exception
 {
@@ -26,6 +33,14 @@ sealed partial class WiimController
     {
         get => _nowPlayingLyrics;
         set { _nowPlayingLyrics = value; SaveConfig(); }
+    }
+
+    private bool _nowPlayingControls = true;
+
+    internal bool NowPlayingControlsShown
+    {
+        get => _nowPlayingControls;
+        set { _nowPlayingControls = value; SaveConfig(); }
     }
 
     internal const int LyricsDelayLimitMs = 1000;
@@ -66,6 +81,7 @@ sealed partial class WiimController
         }
 
         string artistQuery = Uri.EscapeDataString(artist);
+        Lyrics? exactFound = null;
         if (durationSeconds > 0 && album.Length > 0 && artist.Length > 0)
         {
             string? exact = await AskAsync(
@@ -74,7 +90,8 @@ sealed partial class WiimController
             if (exact != null)
             {
                 using var doc = JsonDocument.Parse(exact);
-                if (ToLyrics(doc.RootElement) is { } found) return found;
+                exactFound = ToLyrics(doc.RootElement);
+                if (exactFound is { WordSynced: true }) return exactFound;
             }
         }
         string simple = TitleExtras().Replace(title, string.Empty).Split(" - ")[0].Trim();
@@ -83,8 +100,11 @@ sealed partial class WiimController
             string query = artist.Length > 0 ? $"search?track_name={Uri.EscapeDataString(name)}&artist_name={artistQuery}" : $"search?q={Uri.EscapeDataString(name)}";
             if (await AskAsync(query).ConfigureAwait(false) is not { } results) continue;
             using var doc = JsonDocument.Parse(results);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array && BestLyrics(doc.RootElement, durationSeconds) is { } best) return best;
+            if (doc.RootElement.ValueKind != JsonValueKind.Array || BestLyrics(doc.RootElement, durationSeconds) is not { } best) continue;
+            if (exactFound == null || best.WordSynced || exactFound.Synced.Count == 0 && best.Synced.Count > 0) return best;
+            break;
         }
+        if (exactFound != null) return exactFound;
         if (failed) throw new LyricsServiceException(busy);
         return null;
     }
@@ -115,7 +135,8 @@ sealed partial class WiimController
                 ? Math.Abs(seconds - durationSeconds) : 0))
             .Where(c => c.Lyrics != null && c.Off <= LyricsDurationTolerance)
             .ToList();
-        return candidates.OrderBy(c => c.Lyrics!.Synced.Count > 0 ? 0 : 1).ThenBy(c => c.Off).Select(c => c.Lyrics).FirstOrDefault();
+        return candidates.OrderBy(c => c.Lyrics!.WordSynced ? 0 : c.Lyrics.Synced.Count > 0 ? 1 : 2).ThenBy(c => c.Off).Select(c => c.Lyrics)
+            .FirstOrDefault();
     }
 
     private static Lyrics? ToLyrics(JsonElement item)
@@ -124,10 +145,51 @@ sealed partial class WiimController
         bool instrumental = item.TryGetProperty("instrumental", out var flag) && flag.ValueKind == JsonValueKind.True;
         string synced = item.TryGetProperty("syncedLyrics", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() ?? "" : "";
         string plain = item.TryGetProperty("plainLyrics", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : "";
-        var lines = ParseSyncedLyrics(synced);
+        bool wordSync = item.TryGetProperty("hasWordSync", out var w) && w.ValueKind == JsonValueKind.True;
+        string lyricsFile = item.TryGetProperty("lyricsfile", out var f) && f.ValueKind == JsonValueKind.String ? f.GetString() ?? "" : "";
+        var lines = wordSync && ParseWordLyrics(lyricsFile) is { Count: > 0 } words ? words : ParseSyncedLyrics(synced);
         if (lines.Count == 0 && plain.Trim().Length == 0 && !instrumental) return null;
         return new Lyrics(lines, plain.Trim(), instrumental);
     }
+
+    internal static List<LyricLine>? ParseWordLyrics(string text)
+    {
+        if (text.Trim().Length == 0) return null;
+        try
+        {
+            var yaml = new YamlStream();
+            yaml.Load(new StringReader(text));
+            if (yaml.Documents.Count == 0 || yaml.Documents[0].RootNode is not YamlMappingNode root ||
+                Child(root, "lines") is not YamlSequenceNode items) return null;
+            var lines = new List<LyricLine>();
+            foreach (var item in items.OfType<YamlMappingNode>())
+            {
+                var words = new List<LyricWord>();
+                if (Child(item, "words") is YamlSequenceNode wordItems)
+                    foreach (var word in wordItems.OfType<YamlMappingNode>())
+                        if (Milliseconds(word, "start_ms") is int start && Scalar(word, "text") is { Length: > 0 } wordText)
+                            words.Add(new LyricWord(start, wordText));
+                words.Sort((a, b) => a.TimeMs.CompareTo(b.TimeMs));
+                int? lineStart = Milliseconds(item, "start_ms") ?? (words.Count > 0 ? words[0].TimeMs : null);
+                if (lineStart is not int time) continue;
+                string lineText = words.Count > 0 ? string.Concat(words.Select(word => word.Text)).Trim() : (Scalar(item, "text") ?? string.Empty).Trim();
+                lines.Add(new LyricLine(time, lineText, words.Count > 0 ? words : null, Milliseconds(item, "end_ms") ?? 0));
+            }
+            return lines.Any(line => line.Words != null) ? lines.OrderBy(line => line.TimeMs).ToList() : null;
+        }
+        catch (YamlException)
+        {
+            return null;
+        }
+    }
+
+    private static YamlNode? Child(YamlMappingNode node, string key) =>
+        node.Children.TryGetValue(new YamlScalarNode(key), out var value) ? value : null;
+
+    private static string? Scalar(YamlMappingNode node, string key) => Child(node, key) is YamlScalarNode { Value: { } value } ? value : null;
+
+    private static int? Milliseconds(YamlMappingNode node, string key) =>
+        int.TryParse(Scalar(node, key), NumberStyles.Integer, CultureInfo.InvariantCulture, out int ms) && ms >= 0 ? ms : null;
 
     internal static List<LyricLine> ParseSyncedLyrics(string text)
     {

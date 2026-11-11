@@ -98,6 +98,7 @@ sealed partial class WiimController : IDisposable
         UpdateMediaSession();
         StartFirmwareChecks();
         StartUpdateChecks();
+        StartComputerPlayback();
         CommandChannel.StartServer(cmd => Dispatcher.UIThread.Post(() => HandleCommand(cmd)), _shutdown.Token);
 
         if (OperatingSystem.IsWindows())
@@ -198,6 +199,7 @@ sealed partial class WiimController : IDisposable
         _linuxShortcuts?.Dispose();
         _tray?.Dispose();
         _osd?.Close();
+        StopComputerPlayback();
         _trackToast?.Close();
         CloseSleepWarnings();
         StopPcAudio();
