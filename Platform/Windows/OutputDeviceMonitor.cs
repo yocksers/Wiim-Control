@@ -88,6 +88,21 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
         return result;
     }
 
+    public static string? GetDefaultOutputId()
+    {
+        var type = Type.GetTypeFromCLSID(CLSID_MMDeviceEnumerator);
+        if (type is null) return null;
+        var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(type)!;
+        try
+        {
+            if (enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia, out var device) != 0 || device is null) return null;
+            try { return device.GetId(out var id) == 0 ? id : null; }
+            finally { Marshal.ReleaseComObject(device); }
+        }
+        catch { return null; }
+        finally { Marshal.ReleaseComObject(enumerator); }
+    }
+
     private bool CheckDefaultDevice()
     {
         try

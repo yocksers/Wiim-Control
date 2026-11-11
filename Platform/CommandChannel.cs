@@ -18,8 +18,6 @@ static class CommandChannel
         ["--settings"] = "show"
     };
 
-    public static IReadOnlyDictionary<string, string> SupportedArguments => Arguments;
-
     public static string? ParseCommand(string[] args) =>
         args.Select(a => Arguments.TryGetValue(a, out var command) ? command : null).FirstOrDefault(c => c != null);
 
