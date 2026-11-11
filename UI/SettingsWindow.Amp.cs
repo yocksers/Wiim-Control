@@ -1,12 +1,9 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Platform;
 using Avalonia.Platform.Storage;
-using Avalonia.Threading;
 
 namespace WiimControl;
 
@@ -95,8 +92,18 @@ sealed partial class WiimController
                 SetRows(window._ampList, settings == null ? [Muted("Couldn't reach this device.")] : BuildAmpCards(ip, settings));
             }
 
+            private DateTime _lastOwnChange;
+
+            public void OnScreenChanged(string ip)
+            {
+                if (_ampSection == SectionDisplay && SelectedAmpIp == ip && DateTime.UtcNow - _lastOwnChange > OwnChangeQuiet &&
+                    window._ampGate.CurrentCount > 0)
+                    _ = RefreshAmpAsync(quiet: true);
+            }
+
             private async Task ChangeAmpAsync(Func<Task<bool>> change)
             {
+                _lastOwnChange = DateTime.UtcNow;
                 await window._ampGate.WaitAsync();
                 bool ok;
                 try

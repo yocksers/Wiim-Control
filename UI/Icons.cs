@@ -1,11 +1,20 @@
+using Avalonia.Controls;
 using Avalonia.Media;
 
 namespace WiimControl;
 
 static class Icons
 {
+    public static void SetPlayPause(PathIcon icon, bool playing)
+    {
+        icon.Data = playing ? Pause : Play;
+        double size = double.IsNaN(icon.Width) ? 20 : icon.Width;
+        icon.RenderTransform = playing ? null : new TranslateTransform(size * 0.08, 0);
+    }
+
     public static readonly StreamGeometry Speaker = StreamGeometry.Parse("M12,12A3,3 0 0,0 9,15A3,3 0 0,0 12,18A3,3 0 0,0 15,15A3,3 0 0,0 12,12M12,20A5,5 0 0,1 7,15A5,5 0 0,1 12,10A5,5 0 0,1 17,15A5,5 0 0,1 12,20M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8C10.89,8 10,7.1 10,6C10,4.89 10.89,4 12,4M17,2H7C5.89,2 5,2.89 5,4V20A2,2 0 0,0 7,22H17A2,2 0 0,0 19,20V4C19,2.89 18.1,2 17,2Z");
     public static readonly StreamGeometry Link = StreamGeometry.Parse("M10.59,13.41C11,13.8 11,14.44 10.59,14.83C10.2,15.22 9.56,15.22 9.17,14.83C7.22,12.88 7.22,9.71 9.17,7.76V7.76L12.71,4.22C14.66,2.27 17.83,2.27 19.78,4.22C21.73,6.17 21.73,9.34 19.78,11.29L18.29,12.78C18.3,11.96 18.17,11.14 17.89,10.36L18.36,9.88C19.54,8.71 19.54,6.81 18.36,5.64C17.19,4.46 15.29,4.46 14.12,5.64L10.59,9.17C9.41,10.34 9.41,12.24 10.59,13.41M13.41,9.17C13.8,8.78 14.44,8.78 14.83,9.17C16.78,11.12 16.78,14.29 14.83,16.24V16.24L11.29,19.78C9.34,21.73 6.17,21.73 4.22,19.78C2.27,17.83 2.27,14.66 4.22,12.71L5.71,11.22C5.7,12.04 5.83,12.86 6.11,13.65L5.64,14.12C4.46,15.29 4.46,17.19 5.64,18.36C6.81,19.54 8.71,19.54 9.88,18.36L13.41,14.83C14.59,13.66 14.59,11.76 13.41,10.59C13,10.2 13,9.56 13.41,9.17Z");
+    public static readonly StreamGeometry Room = StreamGeometry.Parse("M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z");
     public static readonly StreamGeometry Equalizer = StreamGeometry.Parse("M7 3H5V9H7V3M19 3H17V13H19V3M3 13H5V21H7V13H9V11H3V13M15 7H13V3H11V7H9V9H15V7M11 21H13V11H11V21M15 15V17H17V21H19V17H21V15H15Z");
     public static readonly StreamGeometry Volume = StreamGeometry.Parse("M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z");
     public static readonly StreamGeometry Mute = StreamGeometry.Parse("M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L12,10.73M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.5,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z");
@@ -100,6 +109,7 @@ static class Icons
         "M5,13L9,17L7.6,18.42L1.18,12L7.6,5.58L9,7L5,11H21V13H5M21,6V8H11V6H21M21,16V18H11V16H21Z");
     public static readonly StreamGeometry ChevronDown = StreamGeometry.Parse("M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z");
     public static readonly StreamGeometry ChevronUp = StreamGeometry.Parse("M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z");
+    public static readonly StreamGeometry ViewDashboard = StreamGeometry.Parse("M13,3V9H21V3M13,21H21V11H13M3,21H11V15H3M3,13H11V3H3V13Z");
     public static readonly StreamGeometry ViewGrid = StreamGeometry.Parse("M3,11H11V3H3M3,21H11V13H3M13,21H21V13H13M13,3V11H21V3");
     public static readonly StreamGeometry ViewRows = StreamGeometry.Parse(
         "M19,3H5C3.9,3 3,3.9 3,5V9C3,10.1 3.9,11 5,11H19C20.1,11 21,10.1 21,9V5C21,3.9 20.1,3 19,3M19,13H5C3.9,13 3,13.9 3,15V19C3,20.1 3.9,21 5,21H19C20.1,21 21,20.1 21,19V15C21,13.9 20.1,13 19,13Z");

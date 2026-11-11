@@ -1,7 +1,6 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -13,10 +12,12 @@ sealed partial class WiimController
     {
         private const double BarArtSize = 64;
         private const double BarTextMinWidth = 130;
-        private const double BarPositionMinWidth = 170;
+        private const double BarPositionMinWidth = 100;
         private const double BarButtonWidth = 72;
         private const double BarTransportWidth = 144;
-        private const double BarMinWidth = BarArtSize + BarTextMinWidth + 30 + BarTransportWidth + BarPositionMinWidth + 32 + 3 * (BarButtonWidth + 4) + 28;
+        private const double BarLeftMinWidth = BarArtSize + BarTextMinWidth + 30;
+        private const double BarRightMinWidth = BarPositionMinWidth + 32 + 3 * (BarButtonWidth + 4);
+        private const double BarMinWidth = 2 * (BarRightMinWidth > BarLeftMinWidth ? BarRightMinWidth : BarLeftMinWidth) + BarTransportWidth + 28;
         private const double PageSideMargins = 60;
         private const double SidebarWidth = 250;
         private const double HiddenSidebarWidth = 34;
@@ -157,20 +158,17 @@ sealed partial class WiimController
             var volume = BarButton(_barVolumeIcon, _barVolumeValue, "Volume");
             volume.Flyout = _barVolumeFlyout;
 
-            var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,2*,Auto,3*,Auto,Auto,Auto") };
-            bar.Children.Add(art);
-            Grid.SetColumn(text, 1);
-            bar.Children.Add(text);
-            Grid.SetColumn(transport, 2);
+            var left = new DockPanel { Children = { art, text } };
+            DockPanel.SetDock(art, Dock.Left);
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Children = { input, queue, volume } };
+            var right = new DockPanel { Children = { buttons, positionRow } };
+            DockPanel.SetDock(buttons, Dock.Right);
+            var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,*") };
+            bar.Children.Add(left);
+            Grid.SetColumn(transport, 1);
             bar.Children.Add(transport);
-            Grid.SetColumn(positionRow, 3);
-            bar.Children.Add(positionRow);
-            Grid.SetColumn(input, 4);
-            bar.Children.Add(input);
-            Grid.SetColumn(queue, 5);
-            bar.Children.Add(queue);
-            Grid.SetColumn(volume, 6);
-            bar.Children.Add(volume);
+            Grid.SetColumn(right, 2);
+            bar.Children.Add(right);
             transport.IsEnabled = positionRow.IsEnabled = input.IsEnabled = volume.IsEnabled = !locked;
             return bar;
         }

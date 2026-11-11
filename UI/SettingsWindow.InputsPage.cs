@@ -1,4 +1,5 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
 
 namespace WiimControl;
 
@@ -22,12 +23,82 @@ sealed partial class WiimController
                 _cboInputsAmp.SelectionChanged += async (_, _) => { if (!window._loading) await RefreshInputsAsync(); };
                 var refresh = Pill("Refresh");
                 refresh.Click += async (_, _) => await RefreshInputsAsync();
-                var page = window.Page("Inputs", _lblInputsStatus, [_cboInputsAmp, refresh], _inputsRows);
+                var onlineArtwork = new ToggleSwitch { IsChecked = window._owner.OnlineArtwork };
+                onlineArtwork.IsCheckedChanged += (_, _) => window._owner.OnlineArtwork = onlineArtwork.IsChecked == true;
+                var computerCard = Card("From this computer",
+                    Muted("Enable artwork for music played on computer."),
+                    _computerInputRows,
+                    Muted("Enable looking up higher resolution artwork from external sites"),
+                    ToggleRow("Look up artwork online", onlineArtwork),
+                    Muted("Warning: when this is on, the artist, title and album of what this computer plays, or the channel and title of " +
+                          "a video, are sent to Deezer and Apple to find the cover."));
+                var page = window.Page("Inputs", _lblInputsStatus, [_cboInputsAmp, refresh], new StackPanel { Children = { _inputsRows, computerCard } });
                 page.PropertyChanged += async (_, e) =>
                 {
-                    if (e.Property == IsVisibleProperty && page.IsVisible) await RefreshInputsAsync();
+                    if (e.Property != IsVisibleProperty || !page.IsVisible) return;
+                    _ = RefreshComputerInputsAsync();
+                    await RefreshInputsAsync();
                 };
                 return page;
+            }
+
+            private readonly StackPanel _computerInputRows = new();
+            private int _computerInputsVersion;
+
+            private static readonly string[] ComputerInputOrder = ["line-in", "line-in2", "bluetooth", "optical", "co-axial", "hdmi", "phono", "pcusb"];
+
+            private async Task RefreshComputerInputsAsync()
+            {
+                int version = ++_computerInputsVersion;
+                var owner = window._owner;
+                var devices = owner._knownDevices.ToList();
+                if (devices.Count == 0)
+                {
+                    SetRows(_computerInputRows, [Muted("Add a WiiM device on the Devices page first.")]);
+                    return;
+                }
+                var outputsTask = Task.Run(ComputerOutputs.List);
+                var inputs = await Task.WhenAll(devices.Select(d => owner.GetAllInputsAsync(d.Ip)));
+                var outputs = await outputsTask;
+                if (version != _computerInputsVersion) return;
+                var modes = inputs.Where(list => list != null).SelectMany(list => list!).Select(input => PlainInput(input.Mode))
+                    .Where(mode => mode != "wifi" && mode != "udisk").ToHashSet();
+                if (modes.Count == 0) modes.UnionWith(["line-in", "bluetooth", "optical", "co-axial", "hdmi"]);
+                modes.UnionWith(owner._computerInputs);
+                var rows = new List<Control>();
+                foreach (string mode in modes.OrderBy(m => Array.IndexOf(ComputerInputOrder, m) is int i and >= 0 ? i : int.MaxValue).ThenBy(m => m))
+                {
+                    var toggle = new ToggleSwitch { IsChecked = owner.IsComputerInput(mode) };
+                    var row = ToggleRow(InputLabel(mode), toggle);
+                    ToolTip.SetTip(row, $"{InputLabel(mode)} is connected to this computer, so show what this computer is playing");
+                    rows.Add(row);
+                    if (outputs.Count == 0)
+                    {
+                        toggle.IsCheckedChanged += (_, _) => owner.SetComputerInput(mode, toggle.IsChecked == true);
+                        continue;
+                    }
+                    var output = new ComboBox { Width = WideFieldWidth };
+                    output.Items.Add(ComboItem(string.Empty, "Any sound output"));
+                    foreach (var (id, name) in outputs) output.Items.Add(ComboItem(id, name));
+                    string? saved = owner.ComputerOutputFor(mode);
+                    if (saved != null && !outputs.Any(o => string.Equals(o.Id, saved, StringComparison.OrdinalIgnoreCase)))
+                        output.Items.Add(ComboItem(saved, "An output that isn't connected now"));
+                    output.SelectedItem = output.Items.OfType<ComboBoxItem>()
+                        .FirstOrDefault(i => string.Equals(i.Tag as string, saved ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+                    output.SelectionChanged += (_, _) => owner.SetComputerOutput(mode, (output.SelectedItem as ComboBoxItem)?.Tag as string);
+                    var outputRow = LabeledRow($"{InputLabel(mode)} gets this computer's sound from", output);
+                    outputRow.Margin = new Thickness(16, 0, 0, 6);
+                    ToolTip.SetTip(outputRow, $"Only show and control this computer's music while this sound output is the computer's default. " +
+                                              "With Any sound output it's always shown.");
+                    outputRow.IsVisible = toggle.IsChecked == true;
+                    toggle.IsCheckedChanged += (_, _) =>
+                    {
+                        owner.SetComputerInput(mode, toggle.IsChecked == true);
+                        outputRow.IsVisible = toggle.IsChecked == true;
+                    };
+                    rows.Add(outputRow);
+                }
+                SetRows(_computerInputRows, rows);
             }
 
             public async Task RefreshInputsAsync(bool quiet = false)
@@ -66,11 +137,7 @@ sealed partial class WiimController
                 foreach (var input in inputs)
                 {
                     string mode = input.Mode;
-                    if (mode == "wifi")
-                    {
-                        rows.Add(LabeledRow(window._owner.InputName(ip, mode), Info("Always shown")));
-                        continue;
-                    }
+                    if (mode == "wifi") continue;
                     rows.Add(InputToggle(window._owner.InputName(ip, mode), input.Shown, async shown =>
                     {
                         bool ok = await window._owner.SetInputShownAsync(ip, mode, shown);

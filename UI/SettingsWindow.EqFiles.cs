@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 
@@ -22,12 +21,8 @@ sealed partial class WiimController
             {
                 ToolTip.SetTip(_btnEqExport, "Save this EQ to a file");
                 ToolTip.SetTip(_btnEqImport, "Load an EQ from a file, save it on the device and use it on this input");
-                ToolTip.SetTip(_btnRoomFitExport, "Save the active RoomFit profile to a file");
-                ToolTip.SetTip(_btnRoomFitImport, "Load a RoomFit profile from a file and save it on the device");
                 _btnEqExport.Click += async (_, _) => await ExportEqAsync();
                 _btnEqImport.Click += async (_, _) => await ImportEqAsync();
-                _btnRoomFitExport.Click += async (_, _) => await ExportRoomFitAsync();
-                _btnRoomFitImport.Click += async (_, _) => await ImportRoomFitAsync();
             }
 
             private void UpdateEqFileButtons() =>
@@ -40,7 +35,7 @@ sealed partial class WiimController
                 return clean.Length > 0 ? clean : "EQ";
             }
 
-            private async Task SavePresetFileAsync(BackupFile file, string suggestedName, string what)
+            private async Task SavePresetFileAsync(BackupFile file, string suggestedName, string what, TextBlock? status = null)
             {
                 var target = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
                 {
@@ -53,7 +48,7 @@ sealed partial class WiimController
                     await using var stream = await target.OpenWriteAsync();
                     if (stream.CanSeek) stream.SetLength(0);
                     await JsonSerializer.SerializeAsync(stream, file, BackupJson);
-                    _lblEqSource.Text = $"Saved {target.Name}";
+                    (status ?? _lblEqSource).Text = $"Saved {target.Name}";
                 }
                 catch (Exception ex)
                 {
@@ -166,13 +161,13 @@ sealed partial class WiimController
 
             private async Task ExportRoomFitAsync()
             {
-                var profile = await window._owner.ReadActiveRoomFitAsync(_eqDeviceIp);
+                var profile = await window._owner.ReadActiveRoomFitAsync(_roomFitIp);
                 if (profile == null)
                 {
                     await Dialogs.MessageAsync(window, "Couldn't read the active RoomFit profile from the device.", window._scale);
                     return;
                 }
-                await SavePresetFileAsync(window._owner.SinglePresetFile(_eqDeviceIp, profile, "roomfit"), profile.Name, "RoomFit profile");
+                await SavePresetFileAsync(window._owner.SinglePresetFile(_roomFitIp, profile, "roomfit"), profile.Name, "RoomFit profile", _lblRoomFitStatus);
             }
 
             private async Task ImportRoomFitAsync()
@@ -184,12 +179,12 @@ sealed partial class WiimController
                     return;
                 }
                 if (await PickPresetAsync(file, a => a.RoomFit, "RoomFit profile", "made the active profile") is not { } profile) return;
-                var existing = (await window._owner.GetRoomFitStateAsync(_eqDeviceIp))?.Profiles ?? [];
+                var existing = (await window._owner.GetRoomFitStateAsync(_roomFitIp))?.Profiles ?? [];
                 if (await ConfirmPresetNameAsync(profile.Name, existing, "RoomFit profile") is not { } name) return;
-                _lblEqSource.Text = "Importing…";
-                if (!await window._owner.ImportRoomFitAsync(_eqDeviceIp, profile with { Name = name }))
+                _lblRoomFitStatus.Text = "Importing…";
+                if (!await window._owner.ImportRoomFitAsync(_roomFitIp, profile with { Name = name }))
                     await Dialogs.MessageAsync(window, "The device didn't accept the RoomFit profile.", window._scale);
-                await RefreshEqAsync();
+                await RefreshRoomFitAsync();
             }
         }
     }

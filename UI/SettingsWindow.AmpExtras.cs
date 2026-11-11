@@ -200,6 +200,50 @@ sealed partial class WiimController
 
             private const string DefaultDns = "8.8.8.8";
 
+            private static readonly (string Name, string Address)[] SuggestedDns =
+                [("Router (default)", ""), ("Google (8.8.8.8)", "8.8.8.8"), ("Cloudflare (1.1.1.1)", "1.1.1.1"), ("Quad9 (9.9.9.9)", "9.9.9.9")];
+
+            private const string OtherDns = "other";
+
+            private List<Control> DnsRows(string ip, bool automatic, string preferred)
+            {
+                var server = new ComboBox { Width = FieldWidth };
+                foreach (var (name, address) in SuggestedDns) server.Items.Add(ComboItem(address, name));
+                server.Items.Add(ComboItem(OtherDns, "Other"));
+                int known = Array.FindIndex(SuggestedDns, s => s.Address == preferred);
+                server.SelectedIndex = known >= 0 ? known : SuggestedDns.Length;
+                var otherBox = new TextBox { Width = FieldWidth, Text = known >= 0 ? string.Empty : preferred, Watermark = "1.1.1.1" };
+                var otherRow = LabeledRow("DNS server address", otherBox);
+                otherRow.IsVisible = known < 0;
+                server.SelectionChanged += (_, _) => otherRow.IsVisible = (server.SelectedItem as ComboBoxItem)?.Tag is OtherDns;
+                var save = Pill("Save", accent: true);
+                var manualRows = new StackPanel
+                {
+                    IsVisible = !automatic,
+                    Children = { LabeledRow("DNS server", server), otherRow, LabeledRow(string.Empty, save) }
+                };
+                save.Click += async (_, _) =>
+                {
+                    string value = (server.SelectedItem as ComboBoxItem)?.Tag is string tag && tag != OtherDns ? tag : otherBox.Text?.Trim() ?? string.Empty;
+                    if ((server.SelectedItem as ComboBoxItem)?.Tag is OtherDns &&
+                        (!System.Net.IPAddress.TryParse(value, out var address) || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+                         value.Count(c => c == '.') != 3))
+                    {
+                        await Dialogs.MessageAsync(window, "Enter an IPv4 address such as 1.1.1.1 or 8.8.8.8.", window._scale);
+                        return;
+                    }
+                    await ChangeAmpAsync(() => window._owner.SetManualDnsAsync(ip, value));
+                };
+                var mode = SegmentSwitch([(0, "Automatic"), (1, "Manual")], automatic ? 0 : 1, FieldWidth, async value =>
+                {
+                    manualRows.IsVisible = value == 1;
+                    if (value == 0 && !automatic) await ChangeAmpAsync(() => window._owner.SetAutomaticDnsAsync(ip));
+                });
+                var modeRow = LabeledRow("DNS", mode);
+                ToolTip.SetTip(modeRow, "Automatic lets the device pick the DNS server itself. Manual uses the DNS server you choose.");
+                return [modeRow, manualRows];
+            }
+
             private static string GuessRouter(string address, int prefix)
             {
                 var parts = address.Split('.');
@@ -274,7 +318,8 @@ sealed partial class WiimController
                         rows.Add(AmpToggle("Wi-Fi roaming (switch to a stronger access point)", roaming, on => window._owner.SetWifiRoamingAsync(ip, on)));
                 }
                 if (net.Ipv6 is bool ipv6) rows.Add(AmpToggle("IPv6", ipv6, on => window._owner.SetIpv6Async(ip, on)));
-                if (net.PreferredDns is { } dns)
+                if (net.AutomaticDns is bool automaticDns && net.PreferredDns is { } preferred) rows.AddRange(DnsRows(ip, automaticDns, preferred));
+                else if (net.PreferredDns is { } dns)
                 {
                     var box = new TextBox { Width = 160, Text = dns, Watermark = "Automatic" };
                     var save = Pill("Set");

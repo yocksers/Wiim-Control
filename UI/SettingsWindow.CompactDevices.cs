@@ -26,19 +26,39 @@ sealed partial class WiimController
         private Button LayoutButton()
         {
             var (button, icon) = IconPill(Icons.ViewGrid, null);
+            static DeviceLayout NextOf(DeviceLayout layout) => layout switch
+            {
+                DeviceLayout.Full => DeviceLayout.Compact,
+                DeviceLayout.Compact => DeviceLayout.Dashboard,
+                _ => DeviceLayout.Full
+            };
             void Apply()
             {
-                icon.Data = _owner.CompactDevices ? Icons.ViewRows : Icons.ViewGrid;
-                ToolTip.SetTip(button, _owner.CompactDevices ? "Show the devices as full cards" : "Show the devices as small cards side by side");
+                var next = NextOf(_owner.DeviceLayout);
+                icon.Data = next switch { DeviceLayout.Compact => Icons.ViewGrid, DeviceLayout.Dashboard => Icons.ViewDashboard, _ => Icons.ViewRows };
+                ToolTip.SetTip(button, next switch
+                {
+                    DeviceLayout.Compact => "Show the devices as small cards side by side",
+                    DeviceLayout.Dashboard => "Show a dashboard for the active device",
+                    _ => "Show the devices as full cards"
+                });
             }
             Apply();
             button.Click += (_, _) =>
             {
+                var from = _owner.DeviceLayout;
+                var next = NextOf(from);
                 var before = _deviceCards.ToDictionary(c => c.Key, c => CardBounds(c.Value.Card));
-                _owner.CompactDevices = !_owner.CompactDevices;
+                _owner.DeviceLayout = next;
                 Apply();
                 RebuildDeviceCards();
-                AnimateCardsFrom(before);
+                if (from != DeviceLayout.Dashboard && next != DeviceLayout.Dashboard) AnimateCardsFrom(before);
+                else
+                {
+                    UpdateLayout();
+                    AnimateEntrance(next == DeviceLayout.Dashboard ? _dashboardParts
+                        : _compactGrid != null ? [.. _compactGrid.Children] : [.. _deviceList.Children]);
+                }
                 _ = RefreshDeviceStatusesAsync();
             };
             return button;
@@ -171,6 +191,7 @@ sealed partial class WiimController
                 var chevron = new PathIcon { Data = open ? Icons.ChevronUp : Icons.ChevronDown, Width = 14, Height = 14 };
                 var each = new Button { Content = chevron, Padding = new Thickness(14, 4), MinHeight = 0, Margin = new Thickness(6, 10, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                 each.Classes.Add("pill");
+                each.Classes.Add("flat");
                 ToolTip.SetTip(each, "Show or hide the volume of each device in the group");
                 var perDevice = MemberVolumes(members);
                 perDevice.IsVisible = open;

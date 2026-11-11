@@ -5,7 +5,6 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace WiimControl;
@@ -350,6 +349,9 @@ sealed partial class WiimController
             _queuePage = queuePage;
             Reloaded += _eq.FillEqAmpCombo;
             var eqPage = new LazyPage(_eq.Build, () => _ = _eq.RefreshEqAsync());
+            _eqPageRef = eqPage;
+            Reloaded += _eq.FillRoomFitAmpCombo;
+            var roomFitPage = new LazyPage(_eq.BuildRoomFit, () => _ = _eq.RefreshRoomFitAsync());
             var mediaKeys = new MediaKeysPage(this);
             Reloaded += mediaKeys.Load;
             var mediaKeysPage = new LazyPage(mediaKeys.Build);
@@ -357,6 +359,8 @@ sealed partial class WiimController
             var output = new OutputPage(this);
             Reloaded += output.FillDevices;
             var outputPage = new LazyPage(output.Build);
+            _outputPageRef = outputPage;
+            _outputView = output;
             var inputs = new InputsPage(this);
             Reloaded += inputs.FillDevices;
             var inputsPage = new LazyPage(inputs.Build);
@@ -368,13 +372,15 @@ sealed partial class WiimController
             var audioSettingsPage = new LazyPage(audioSettings.Build);
             Reloaded += _amp.FillDevices;
             var ampPage = new LazyPage(_amp.Build);
+            _ampPageRef = ampPage;
             var sleepPage = new LazyPage(new SleepPage(this).Build);
             var generalSettings = new GeneralPage(this);
             Reloaded += generalSettings.Load;
             var generalPage = new LazyPage(generalSettings.Build);
             _devicePages.AddRange([
                 (presetsPage, _presets.RefreshPresetsAsync), (audioSettingsPage, audioSettings.RefreshAudioSettingsAsync), (outputPage, () => output.RefreshOutputAsync()),
-                (inputsPage, () => inputs.RefreshInputsAsync()), (subwooferPage, () => subwoofer.RefreshSubwooferAsync())
+                (inputsPage, () => inputs.RefreshInputsAsync()), (subwooferPage, () => subwoofer.RefreshSubwooferAsync()),
+                (roomFitPage, _eq.RefreshRoomFitAsync)
             ]);
 
             var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 0), RenderTransform = new TranslateTransform(0, 6) };
@@ -393,7 +399,7 @@ sealed partial class WiimController
                 Nav("Library", Icons.Library, libraryPage), Nav("Radio", Icons.Radio, radioPage), Nav("Queue", Icons.Queue, queuePage),
                 Nav("Recent", Icons.History, recentPage))));
             sidebarItems.Children.Add(NavSection("Audio", NavGroup(
-                Nav("Equalizer", Icons.Equalizer, eqPage), Nav("Output", Icons.Output, outputPage), Nav("Inputs", Icons.Input, inputsPage),
+                Nav("Equalizer", Icons.Equalizer, eqPage), Nav("RoomFit", Icons.Room, roomFitPage), Nav("Output", Icons.Output, outputPage), Nav("Inputs", Icons.Input, inputsPage),
                 Nav(SubwooferPage.SectionHighPass, Icons.HighPass, subwooferPage, SubwooferPage.SectionHighPass), Nav("Audio settings", Icons.AudioSettings, audioSettingsPage),
                 Nav(SubwooferPage.SectionSubOut, Icons.Speaker, subwooferPage, SubwooferPage.SectionSubOut))));
             var deviceInfoNav = Nav(AmpPage.SectionDeviceInfo, Icons.Info, ampPage, AmpPage.SectionDeviceInfo);

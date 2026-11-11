@@ -2,7 +2,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
-using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -631,7 +630,6 @@ sealed partial class WiimController
                 {
                     double from = MascotSpot, to = _mascotFromRight ? MascotDanceSpot : MascotRightSpot, dir = Math.Sign(to - from);
                     double walk = Math.Abs(to - from) / MascotWalkSpeed;
-                    double stride = Math.Sin(s * 9);
                     if (s < walk)
                     {
                         _mascot.ZIndex = -1;

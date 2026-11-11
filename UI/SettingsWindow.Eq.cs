@@ -1,11 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.Media;
-using Avalonia.Platform;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace WiimControl;
@@ -50,9 +46,6 @@ sealed partial class WiimController
             private string _eqBaseKey = string.Empty;
             private readonly Button _btnEqRename = Pill("Rename");
             private readonly Button _btnEqDelete = Pill("Delete");
-            private readonly ToggleSwitch _chkRoomFit = new();
-            private readonly ComboBox _cboRoomFit = new() { Width = 240, PlaceholderText = "No profile selected" };
-            private Control? _roomFitRow;
             private bool _eqBuilt;
 
             public Control Build()
@@ -81,19 +74,7 @@ sealed partial class WiimController
                 _cboEqPreset.SelectionChanged += (_, _) => UpdatePresetChips();
                 _eqTypeRow = BuildEqTypeSwitch();
                 var eqRow = LabeledRow("Enable EQ", _chkEqEnabled);
-                _chkRoomFit.VerticalAlignment = _chkEqEnabled.VerticalAlignment = VerticalAlignment.Center;
-                var roomFitRow = LabeledRow("RoomFit room correction", new StackPanel
-                {
-                    Orientation = Orientation.Horizontal, Spacing = 8,
-                    Children = { _chkRoomFit, _btnRoomFitExport, _btnRoomFitImport, _btnRoomFitCurve, _btnRoomFitDelete, _cboRoomFit }
-                });
-                _roomFitRow = Card(null, roomFitRow);
-                _roomFitRow.IsVisible = false;
-                _btnRoomFitCurve.Click += async (_, _) => await ShowRoomFitCurveAsync();
-                _btnRoomFitDelete.Click += async (_, _) => await DeleteRoomFitProfileAsync();
-                ToolTip.SetTip(_btnRoomFitDelete, "Delete the selected RoomFit profile from the device");
-                ToolTip.SetTip(roomFitRow, "Measured with the WiiM Home app. Applies to every input, on top of the EQ.");
-                ToolTip.SetTip(_cboRoomFit, "The RoomFit profile that's used");
+                _chkEqEnabled.VerticalAlignment = VerticalAlignment.Center;
                 _eqInputPills.HorizontalAlignment = HorizontalAlignment.Right;
                 _eqInputsRow = LabeledRow("Inputs", _eqInputPills);
                 _eqInputsRow.IsVisible = false;
@@ -130,7 +111,7 @@ sealed partial class WiimController
                 _peqEditor.Transitions = [FadeIn()];
 
                 var body = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
-                body.Children.Add(new StackPanel { Children = { _roomFitRow, topCard } });
+                body.Children.Add(topCard);
                 var editorGrid = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
                 editorGrid.Children.Add(_eqTypeRow);
                 var editors = new Panel { Children = { eqCard, _peqEditor } };
@@ -163,17 +144,6 @@ sealed partial class WiimController
                     if (_eqLegacy) await window._owner.LoadEqPresetAsync(_eqDeviceIp, name);
                     else await window._owner.LoadSourcePresetAsync(_eqDeviceIp, _eqSource, _eqPluginUri, name);
                     await RefreshEqAsync();
-                };
-                _chkRoomFit.IsCheckedChanged += async (_, _) =>
-                {
-                    if (_eqLoading) return;
-                    if (!await window._owner.SetRoomFitEnabledAsync(_eqDeviceIp, _chkRoomFit.IsChecked == true)) await RefreshEqAsync();
-                };
-                _cboRoomFit.SelectionChanged += async (_, _) =>
-                {
-                    _btnRoomFitDelete.IsEnabled = _cboRoomFit.SelectedItem is ComboBoxItem;
-                    if (_eqLoading || (_cboRoomFit.SelectedItem as ComboBoxItem)?.Tag is not string name) return;
-                    if (!await window._owner.LoadRoomFitProfileAsync(_eqDeviceIp, name, _chkRoomFit.IsChecked == true)) await RefreshEqAsync();
                 };
 
                 _chkEqEnabled.IsEnabled = false;
@@ -359,8 +329,7 @@ sealed partial class WiimController
                 var currentTask = window._owner.GetEqStateAsync(ip);
                 var modesTask = window._owner.GetEqSourceModesAsync(ip);
                 var inputsTask = window._owner.GetInputsAsync(ip);
-                var roomFitTask = window._owner.GetRoomFitStateAsync(ip);
-                await Task.WhenAll(currentTask, modesTask, inputsTask, roomFitTask);
+                await Task.WhenAll(currentTask, modesTask, inputsTask);
                 var current = currentTask.Result;
                 var modes = current is { Source.Length: > 0 } ? modesTask.Result : null;
                 bool legacy = modes == null;
@@ -440,16 +409,6 @@ sealed partial class WiimController
                 }
                 ApplyPeqState(peq);
                 ShowEqEditor();
-                var roomFit = roomFitTask.Result;
-                if (_roomFitRow != null) _roomFitRow.IsVisible = roomFit != null;
-                _cboRoomFit.Items.Clear();
-                if (roomFit != null)
-                {
-                    foreach (var p in roomFit.Profiles) _cboRoomFit.Items.Add(ComboItem(p, p));
-                    _cboRoomFit.SelectedIndex = roomFit.Profiles.IndexOf(roomFit.Active);
-                    _chkRoomFit.IsChecked = roomFit.Enabled;
-                }
-                _btnRoomFitDelete.IsEnabled = _cboRoomFit.SelectedItem is ComboBoxItem;
                 _eqLoading = false;
 
                 _chkEqEnabled.IsEnabled = _eqAvailable;

@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -91,8 +90,8 @@ sealed partial class WiimController
             ToolTip.SetTip(c.Shuffle, shuffle ? "Shuffle is on" : "Shuffle is off");
             ToolTip.SetTip(c.Repeat, repeat switch { 1 => "Repeat one", 2 => "Repeat all", _ => "Repeat is off" });
 
-            bool seekable = network && status.DurationMs > 0;
-            c.PositionRow.IsVisible = seekable;
+            bool seekable = (network || _owner.PlaysFromComputer(status.Mode)) && status.DurationMs > 0;
+            c.PositionRow.IsVisible = seekable && (!ReferenceEquals(c, _npControls) || _owner.NowPlayingControlsShown);
             if (seekable)
             {
                 _positions[ip] = (status.PositionMs, status.PositionAt, status.IsPlaying);

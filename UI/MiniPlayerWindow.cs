@@ -603,6 +603,7 @@ sealed partial class WiimController
 
         private void ShowStatus(string target, DeviceStatus? status)
         {
+            if (status != null) status = _owner.WithComputerPlayback(status);
             SetDeviceName(_owner.DeviceNameOf(Ip));
             _target = target;
             _status = status;
@@ -613,7 +614,7 @@ sealed partial class WiimController
                 _title.Text = "Not reachable";
                 _artist.Text = _detail.Text = string.Empty;
                 _playing.IsVisible = _positionRow.IsVisible = _shuffle.IsVisible = _repeat.IsVisible = false;
-                _playPauseIcon.Data = Icons.Play;
+                Icons.SetPlayPause(_playPauseIcon, false);
                 _placeholder.Data = _compactPlaceholder.Data = Icons.Music;
                 SetArtwork(string.Empty);
                 return;
@@ -623,13 +624,13 @@ sealed partial class WiimController
             _artist.IsVisible = _artist.Text.Length > 0;
             _placeholder.Data = _compactPlaceholder.Data = Icons.ForInput(InputOfMode(status.Mode));
             _playing.IsVisible = status.IsPlaying;
-            _playPauseIcon.Data = status.IsPlaying ? Icons.Pause : Icons.Play;
+            Icons.SetPlayPause(_playPauseIcon, status.IsPlaying);
             ToolTip.SetTip(_playPause, status.IsPlaying ? "Pause" : "Play");
 
             bool network = IsNetworkMode(status.Mode);
             _shuffle.IsVisible = _repeat.IsVisible = network;
             ShowLoop(status.Loop);
-            bool seekable = network && status.DurationMs > 0;
+            bool seekable = (network || _owner.PlaysFromComputer(status.Mode)) && status.DurationMs > 0;
             _positionRow.IsVisible = seekable;
             if (seekable)
             {

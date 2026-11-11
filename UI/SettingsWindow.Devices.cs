@@ -1,12 +1,9 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
-using Avalonia.Platform;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace WiimControl;
@@ -41,7 +38,12 @@ sealed partial class WiimController
                 _ = _eq.RefreshEqAsync();
                 _ = RefreshMultiroomAsync();
             };
-            return Page("Devices", _lblDeviceCount, [LayoutButton(), GroupsButton(_devicesGroupMenuLabel, () => GroupMenuText(_owner._deviceIp)), btnDiscover, btnAdd], BuildDevicesBody(), scroll: false);
+            var page = Page("Devices", _lblDeviceCount, [LayoutButton(), GroupsButton(_devicesGroupMenuLabel, () => GroupMenuText(_owner._deviceIp)), btnDiscover, btnAdd], BuildDevicesBody(), scroll: false);
+            page.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty && page.IsVisible) _ = RefreshDashboardPresetsAsync();
+            };
+            return page;
         }
 
         private readonly TextBlock _devicesGroupMenuLabel = new() { MaxWidth = 200, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -159,7 +161,7 @@ sealed partial class WiimController
         {
             var members = GroupMembers(d.Ip);
             var memberText = string.Join(",", members.Select(ip => $"{ip}:{MemberName(ip)}:{_owner.IsDeviceLocked(ip)}"));
-            return $"{_owner.CompactDevices}|{d.Name}|{_owner.ModelOf(d.Ip)}|{d.Ip == _owner._deviceIp}|{members.Contains(_owner._deviceIp)}|" +
+            return $"{_owner.DeviceLayout}|{d.Name}|{_owner.ModelOf(d.Ip)}|{d.Ip == _owner._deviceIp}|{members.Contains(_owner._deviceIp)}|" +
                 $"{_owner.FirmwareUpdateFor(d.Ip)?.Summary}|{GroupDescription(d.Ip)?.Text}|{position == 0}|{position == count - 1}|{count > 1}|{memberText}";
         }
 
@@ -170,7 +172,9 @@ sealed partial class WiimController
             _positions.Clear();
             var devices = _owner._knownDevices.ToList();
             var cards = new List<(string Ip, CachedCard Card)>();
-            for (int position = 0; position < devices.Count; position++)
+            bool dashboard = _owner.DeviceLayout == DeviceLayout.Dashboard;
+            if (!dashboard) ForgetDashboard();
+            for (int position = 0; position < devices.Count && !dashboard; position++)
             {
                 var d = devices[position];
                 if (IsFollower(d.Ip)) continue;
@@ -195,7 +199,12 @@ sealed partial class WiimController
             _cachedCards.AddRange(cards);
 
             var rows = new List<Control>();
-            if (_owner.CompactDevices && cards.Count > 0) rows.Add(CompactDeviceGrid([.. cards.Select(c => c.Card.Slot)]));
+            if (dashboard)
+            {
+                _compactGrid = null;
+                ShowDashboard(rows);
+            }
+            else if (_owner.CompactDevices && cards.Count > 0) rows.Add(CompactDeviceGrid([.. cards.Select(c => c.Card.Slot)]));
             else
             {
                 _compactGrid = null;
@@ -306,7 +315,10 @@ sealed partial class WiimController
 
             var (mini, _) = IconPill(Icons.MiniPlayer, "Open or close the mini player for this device");
             mini.Click += (_, _) => _owner.ToggleMiniPlayer(d.Ip);
-            var playerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { mini } };
+            var (bigPlayer, _) = IconPill(Icons.FullScreen, "Open the big player");
+            bigPlayer.Classes.Add("flat");
+            bigPlayer.Click += (_, _) => ShowNowPlayingView(d.Ip);
+            var playerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { bigPlayer, mini } };
             if (PcAudioSupported)
             {
                 var cast = CastButton(d.Ip);
@@ -321,6 +333,7 @@ sealed partial class WiimController
             link.RenderTransform = linkShift;
             remove.SizeChanged += (_, e) => linkShift.Y = e.NewSize.Height + 8;
             actions.Children.Add(new Panel { Children = { remove, link } });
+            foreach (var button in new[] { remove, mini, link }) button.Classes.Add("flat");
 
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto") };
             grid.Children.Add(info);
@@ -361,6 +374,7 @@ sealed partial class WiimController
                 Content = new DockPanel { Children = { chevron, label } }
             };
             button.Classes.Add("pill");
+            button.Classes.Add("flat");
             ToolTip.SetTip(button, "Choose the device's input");
             button.Click += async (_, _) => await ShowInputMenuAsync(ip, button);
             _inputLabels[ip] = label;
@@ -417,6 +431,7 @@ sealed partial class WiimController
         private Button CastButton(string ip)
         {
             var (cast, castIcon) = IconPill(Icons.ComputerSound, null);
+            cast.Classes.Add("flat");
             cast.Click += async (_, _) =>
             {
                 cast.IsEnabled = false;
@@ -432,7 +447,13 @@ sealed partial class WiimController
         {
             if (!_castButtons.TryGetValue(ip, out var c)) return;
             bool on = _owner.IsPlayingPcAudio(ip);
-            c.Button.Classes.Set("accent", on);
+            if (c.Button.Classes.Contains("flat"))
+            {
+                c.Button.Classes.Set("accent", false);
+                if (on) c.Icon.Foreground = Palette.AccentText;
+                else c.Icon.ClearValue(PathIcon.ForegroundProperty);
+            }
+            else c.Button.Classes.Set("accent", on);
             ToolTip.SetTip(c.Button, on
                 ? "Stop playing this computer's sound on the device"
                 : "Stream audio from this computer over network to the device");
@@ -455,31 +476,15 @@ sealed partial class WiimController
         private const double CardArtSize = 92;
         private const double CardPlaceholderSize = 38;
 
-        private static readonly string[] UncontrolledInputs = ["line-in", "line-in2", "optical", "co-axial", "HDMI", "phono", "PCUSB"];
-
-        private bool CanOpenNowPlayingView(string ip, ArtworkView art)
+        private void HookCoverOpen(ArtworkView art, string ip)
         {
-            bool known = _statuses.TryGetValue(TargetOf(ip), out var status);
-            if (known && UncontrolledInputs.Contains(InputOfMode(status!.Mode))) return false;
-            return art.Bitmap != null || known && (status!.Title.Length > 0 || status.IsPlaying);
-        }
-
-        private void HookCoverOpen(ArtworkView art, string ip, bool zoomTip = false)
-        {
+            art.Cursor = new Cursor(StandardCursorType.Hand);
+            ToolTip.SetTip(art, "Open the big player");
             art.Tapped += (_, e) =>
             {
-                if (!CanOpenNowPlayingView(ip, art)) return;
                 e.Handled = true;
                 ShowNowPlayingView(ip);
             };
-            void Apply()
-            {
-                bool open = CanOpenNowPlayingView(ip, art);
-                art.Cursor = open ? new Cursor(StandardCursorType.Hand) : null;
-                ToolTip.SetTip(art, !open ? null : zoomTip && art.Bitmap != null ? "Show the artwork full size" : "Open the big player");
-            }
-            art.BitmapChanged += Apply;
-            art.PointerEntered += (_, _) => Apply();
         }
 
         private Button LockButton(string ip, double iconSize)
@@ -518,7 +523,7 @@ sealed partial class WiimController
         private Grid BuildNowPlayingRow(string ip)
         {
             var art = new ArtworkView { VerticalAlignment = VerticalAlignment.Center };
-            HookCoverOpen(art, ip, zoomTip: true);
+            HookCoverOpen(art, ip);
             var title = new TextBlock { Classes = { "heading" }, TextTrimming = TextTrimming.CharacterEllipsis };
             var artist = new TextBlock { Classes = { "muted" }, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0) };
             var detail = new TextBlock { Classes = { "dim", "small" }, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
@@ -563,6 +568,11 @@ sealed partial class WiimController
             foreach (var ip in _nowPlayingControls.Keys.Where(ip => TargetOf(ip) != ip).ToList()) ApplyNowPlaying(ip);
         }
 
+        internal void OnComputerPlaybackChanged() => Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var ip in _owner._knownDevices.Select(d => d.Ip).Where(_statuses.ContainsKey).ToList()) ApplyNowPlaying(ip);
+        });
+
         private void ApplyNowPlaying(string ip)
         {
             string inputText = !_statuses.TryGetValue(ip, out var known) ? "Input"
@@ -574,6 +584,7 @@ sealed partial class WiimController
             if (_nowPlayingControls.TryGetValue(ip, out var card)) ApplyNowPlayingTo(ip, card);
             if (_npIp == ip && _npControls != null) ApplyNowPlayingTo(ip, _npControls);
             ApplyPlayerBarNowPlaying(ip, inputText);
+            ApplyDashboardSource(ip);
         }
 
         private void ApplyNowPlayingTo(string ip, NowPlayingControls c)
@@ -589,6 +600,7 @@ sealed partial class WiimController
                 c.Art.ImageUrl = string.Empty;
                 c.Art.Bitmap = null;
                 c.Art.PlaceholderIcon = Icons.Music;
+                if (ReferenceEquals(c, _npControls)) SetNowPlayingPlaceholder(Icons.Music);
                 return;
             }
 
@@ -596,11 +608,13 @@ sealed partial class WiimController
             var leaderStatus = leaderIp != ip ? _statuses.GetValueOrDefault(leaderIp) : null;
             bool following = leaderStatus != null;
             if (leaderStatus != null) status = leaderStatus;
+            status = _owner.WithComputerPlayback(status);
             string songBefore = $"{c.Title.Text}\n{c.Artist.Text}";
             (c.Title.Text, c.Artist.Text, c.Detail.Text) = _owner.NowPlayingTexts(status, leaderIp, following);
             bool sameSong = songBefore == $"{c.Title.Text}\n{c.Artist.Text}";
             c.Art.PlaceholderIcon = Icons.ForInput(InputOfMode(status.Mode));
-            c.PlayPauseIcon.Data = status.IsPlaying ? Icons.Pause : Icons.Play;
+            if (ReferenceEquals(c, _npControls)) SetNowPlayingPlaceholder(c.Art.PlaceholderIcon);
+            Icons.SetPlayPause(c.PlayPauseIcon, status.IsPlaying);
             c.Playing.IsVisible = status.IsPlaying;
             c.PlayPause.IsEnabled = c.Previous.IsEnabled = c.Next.IsEnabled = true;
             ApplyPlayback(ip, c, status);

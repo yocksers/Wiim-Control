@@ -210,6 +210,12 @@ sealed partial class WiimController
                 _presetTiles.IsEnabled = true;
                 if (!ok) await Dialogs.MessageAsync(window, "The device didn't save the change.", window._scale);
                 await RefreshPresetsAsync();
+                if (SelectedPresetAmpIp is { } ip && window._dashboardIp == ip) await window.RefreshDashboardPresetsAsync();
+            }
+
+            public void OnPresetsChanged(string ip)
+            {
+                if (ip == SelectedPresetAmpIp && _presetTiles.IsEffectivelyVisible && _presetTiles.IsEnabled) _ = RefreshPresetsAsync();
             }
 
             private async Task LoadPresetArtAsync(Image art, PathIcon placeholder, string url)

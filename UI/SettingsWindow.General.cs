@@ -1,11 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Platform;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace WiimControl;
@@ -186,12 +182,20 @@ sealed partial class WiimController
                 cards.Children.Add(Card("Network", instantRow));
                 cards.Children.Add(BuildBackupCard());
 
-                if (!OperatingSystem.IsWindows()) return window.Page("General", null, [], cards);
+                if (!OperatingSystem.IsWindows())
+                {
+                    var plain = window.Page("General", null, [], cards);
+                    return plain;
+                }
                 var refresh = Pill("Refresh");
                 ToolTip.SetTip(refresh, "Reads the list of output devices again, for example after plugging in headphones or a USB sound card");
                 refresh.Click += (_, _) => RefreshOutputList();
                 var page = window.Page("General", null, [refresh], cards);
-                page.PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && page.IsVisible) RefreshOutputList(); };
+                page.PropertyChanged += (_, e) =>
+                {
+                    if (e.Property != IsVisibleProperty || !page.IsVisible) return;
+                    RefreshOutputList();
+                };
                 return page;
             }
 

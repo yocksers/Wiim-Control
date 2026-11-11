@@ -1,13 +1,10 @@
 ﻿using System.Globalization;
 using Avalonia;
-using Avalonia.Animation;
-using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Transformation;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 

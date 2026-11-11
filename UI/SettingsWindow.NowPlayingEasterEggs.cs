@@ -1,9 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
-using Avalonia.Threading;
 using Path = Avalonia.Controls.Shapes.Path;
 
 namespace WiimControl;

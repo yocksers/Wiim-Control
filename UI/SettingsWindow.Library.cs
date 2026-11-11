@@ -121,7 +121,7 @@ sealed partial class WiimController
             private static int LibraryPageSizeOf(MediaServer server) => server.IsShare ? int.MaxValue : LibraryPageSize;
 
             private Task<BrowsePage?> BrowseLibraryAsync(MediaServer server, string id, int start, int count, bool fresh = false) =>
-                server.IsRoon ? window._owner.RoonBrowseAsync(server, RoonPath, start, count)
+                server.IsRoon ? window._owner.RoonBrowseAsync(RoonPath, start, count)
                 : server.IsShare ? window._owner.BrowseShareAsync(server, id, start, count, fresh)
                 : server.IsEmbyJellyfin ? window._owner.BrowseEmbyAsync(server, id, start, count)
                 : server.IsLyrion ? Lms.BrowseAsync(server, id, start, count)

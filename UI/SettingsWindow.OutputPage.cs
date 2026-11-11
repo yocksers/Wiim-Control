@@ -16,6 +16,8 @@ sealed partial class WiimController
 
             public void FillDevices() => window.FillAmpCombo(_cboOutputAmp);
 
+            public bool ShowsDevice(string ip) => AmpOf(_cboOutputAmp) == ip;
+
             public Control Build()
             {
                 ToolTip.SetTip(_cboOutputAmp, "The device whose output settings are shown");

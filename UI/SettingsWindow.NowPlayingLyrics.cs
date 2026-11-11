@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -15,6 +16,10 @@ sealed partial class WiimController
     private sealed partial class SettingsWindow
     {
         private const int LyricsLeadMs = 200;
+        private const int LastWordMs = 600;
+        private const double WordEdge = 0.06;
+        private static readonly TimeSpan LineLyricsTick = TimeSpan.FromMilliseconds(200);
+        private static readonly TimeSpan WordLyricsTick = TimeSpan.FromMilliseconds(40);
         private const int LyricsAutoRetries = 3;
         private static readonly TimeSpan LyricsRetryDelay = TimeSpan.FromSeconds(15);
         private static readonly IBrush LyricDim = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
@@ -75,6 +80,8 @@ sealed partial class WiimController
         private readonly Flyout _npLyricsDelayFlyout = new() { Placement = PlacementMode.Bottom };
         private readonly DispatcherTimer _npLyricsTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
         private IReadOnlyList<LyricLine> _npLyricLines = [];
+        private readonly List<Run[]?> _npLyricWordRuns = [];
+        private double[] _npWordFill = [];
         private int _npLyricIndex = -1;
         private string _npLyricsKey = string.Empty;
         private DeviceStatus? _npLyricsStatus;
@@ -277,6 +284,7 @@ sealed partial class WiimController
                 foreach (var line in lyrics.Synced) _npLyricsLines.Children.Add(LyricText(line));
                 _npLyricsSynced.IsVisible = true;
                 _npLyricIndex = -1;
+                _npLyricsTimer.Interval = lyrics.WordSynced ? WordLyricsTick : LineLyricsTick;
                 _npLyricsTimer.Start();
                 StepLyrics();
                 Dispatcher.UIThread.Post(ScrollLyrics, DispatcherPriority.Background);
@@ -294,9 +302,19 @@ sealed partial class WiimController
         {
             var text = new TextBlock
             {
-                Text = line.Text.Length > 0 ? line.Text : "…", FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
-                Foreground = LyricDim, Cursor = new Cursor(StandardCursorType.Hand)
+                FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Foreground = LyricDim, Cursor = new Cursor(StandardCursorType.Hand)
             };
+            if (line.Words is { Count: > 0 } words)
+            {
+                var runs = words.Select(word => new Run(word.Text)).ToArray();
+                text.Inlines = [.. runs];
+                _npLyricWordRuns.Add(runs);
+            }
+            else
+            {
+                text.Text = line.Text.Length > 0 ? line.Text : "…";
+                _npLyricWordRuns.Add(null);
+            }
             StyleLyricLine(text);
             ToolTip.SetTip(text, "Play from here");
             text.PointerPressed += async (_, e) =>
@@ -322,11 +340,59 @@ sealed partial class WiimController
             int ms = p.PositionMs + (p.Playing ? (int)(DateTime.UtcNow - p.Fetched).TotalMilliseconds : 0) - _owner.LyricsDelayMs;
             int index = -1;
             for (int i = 0; i < _npLyricLines.Count && _npLyricLines[i].TimeMs <= ms + LyricsLeadMs; i++) index = i;
-            if (index == _npLyricIndex) return;
-            if (_npLyricIndex >= 0 && _npLyricIndex < _npLyricsLines.Children.Count) ((TextBlock)_npLyricsLines.Children[_npLyricIndex]).Foreground = LyricDim;
-            _npLyricIndex = index;
-            if (index >= 0) ((TextBlock)_npLyricsLines.Children[index]).Foreground = Brushes.White;
-            ScrollLyrics();
+            if (index != _npLyricIndex)
+            {
+                if (_npLyricIndex >= 0 && _npLyricIndex < _npLyricsLines.Children.Count)
+                {
+                    ((TextBlock)_npLyricsLines.Children[_npLyricIndex]).Foreground = LyricDim;
+                    if (WordRuns(_npLyricIndex) is { } previous)
+                        foreach (var run in previous) run.ClearValue(TextElement.ForegroundProperty);
+                }
+                _npLyricIndex = index;
+                if (index >= 0)
+                {
+                    var runs = WordRuns(index);
+                    ((TextBlock)_npLyricsLines.Children[index]).Foreground = runs == null ? Brushes.White : LyricDim;
+                    _npWordFill = new double[runs?.Length ?? 0];
+                    Array.Fill(_npWordFill, -1);
+                }
+                ScrollLyrics();
+            }
+            if (index >= 0) FillLyricWords(index, ms);
+        }
+
+        private Run[]? WordRuns(int index) => index >= 0 && index < _npLyricWordRuns.Count ? _npLyricWordRuns[index] : null;
+
+        private void FillLyricWords(int index, int ms)
+        {
+            if (WordRuns(index) is not { } runs || _npLyricLines[index].Words is not { } words || runs.Length != _npWordFill.Length) return;
+            var line = _npLyricLines[index];
+            for (int i = 0; i < runs.Length; i++)
+            {
+                int start = words[i].TimeMs;
+                int end = i + 1 < words.Count ? words[i + 1].TimeMs : line.EndMs > start ? line.EndMs : start + LastWordMs;
+                double fill = ms <= start ? 0 : ms >= end ? 1 : (ms - start) / (double)(end - start);
+                fill = Math.Round(fill, 2);
+                if (fill == _npWordFill[i]) continue;
+                _npWordFill[i] = fill;
+                if (fill <= 0) runs[i].ClearValue(TextElement.ForegroundProperty);
+                else if (fill >= 1) runs[i].Foreground = Brushes.White;
+                else runs[i].Foreground = WordFillBrush(fill);
+            }
+        }
+
+        private static LinearGradientBrush WordFillBrush(double fill)
+        {
+            double edge = fill * (1 + WordEdge * 2) - WordEdge;
+            return new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Colors.White, Math.Clamp(edge - WordEdge, 0, 1)),
+                    new GradientStop(((ISolidColorBrush)LyricDim).Color, Math.Clamp(edge + WordEdge, 0, 1))
+                }
+            };
         }
 
         private void ScrollLyrics()
@@ -345,6 +411,8 @@ sealed partial class WiimController
             _npLyricsTimer.Stop();
             _npLyricsKey = string.Empty;
             _npLyricLines = [];
+            _npLyricWordRuns.Clear();
+            _npWordFill = [];
             _npLyricIndex = -1;
             _npLyricsLines.Children.Clear();
             _npLyricsPlainText.Text = string.Empty;

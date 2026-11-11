@@ -1,4 +1,3 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 
@@ -132,8 +131,6 @@ sealed partial class WiimController
                     ToolTip.SetTip(row, "Hides the device's setup network name (SSID) from other devices");
                     network.Add(row);
                 }
-                if (x.SmartDns is bool smartDns)
-                    network.Add(AmpToggle("Smart DNS", smartDns, on => window._owner.SetSmartDnsAsync(ip, on)));
                 if (x.DnsSpeedCheck is bool speedCheck)
                     network.Add(AmpToggle("DNS speed check", speedCheck, on => window._owner.SetDnsSpeedCheckAsync(ip, on)));
                 if (network.Count > 0) AddSetting(Card("Network", network.ToArray()));

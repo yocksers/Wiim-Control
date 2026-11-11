@@ -1,5 +1,4 @@
 ﻿using Avalonia;
-using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
@@ -34,8 +33,8 @@ sealed partial class WiimController
         private readonly Viewbox _npStageBox = new() { Stretch = Stretch.Uniform, Margin = new Thickness(0, 30, 0, 0) };
         private readonly Grid _npTopBar = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(20, 16), VerticalAlignment = VerticalAlignment.Top,
-            Transitions = FadeTransitions()
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Top,
+            Background = new SolidColorBrush(Color.FromArgb(0x66, 0, 0, 0)), Transitions = FadeTransitions()
         };
         private readonly DispatcherTimer _npIdleTimer = new() { Interval = TimeSpan.FromSeconds(3) };
         private readonly Image _npBackdrop = new() { Stretch = Stretch.UniformToFill };
@@ -150,11 +149,16 @@ sealed partial class WiimController
                 _npRestoreState = null;
                 ApplyFullScreenButton();
             };
-            var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { close } };
+            var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { close } };
             _npTopBar.Children.Add(left);
-            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { BuildNowPlayingDeviceButton(), _npLyricsDelayButton, _npLyricsButton, BuildBrightnessButton(), _npFullScreen.Button, _npStyleButton } };
+            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { BuildNowPlayingDeviceButton(), _npLyricsDelayButton, _npLyricsButton, BuildControlsButton(), _npStyleButton, BuildBrightnessButton(), _npFullScreen.Button } };
             Grid.SetColumn(right, 2);
             _npTopBar.Children.Add(right);
+            foreach (var button in left.Children.Concat(right.Children).OfType<Button>())
+            {
+                button.Classes.Add("barText");
+                button.ClearValue(PaddingProperty);
+            }
 
             _npStageBox.Child = _npStage;
             _npBackdropLayer.Children.Add(_npBackdrop);
@@ -233,8 +237,7 @@ sealed partial class WiimController
             {
                 var groups = await LoadGroupChoicesAsync(button, _npDeviceMenuLabel, NowPlayingMenuText);
                 var choices = new List<DropdownChoice> { DropdownHeading("Devices") };
-                choices.AddRange(_owner._knownDevices.Select(device => new DropdownChoice(device.Name, device.Ip == _npIp,
-                    CanShowInNowPlaying(device.Ip), () =>
+                choices.AddRange(_owner._knownDevices.Select(device => new DropdownChoice(device.Name, device.Ip == _npIp, true, () =>
                     {
                         if (device.Ip != _npIp) ShowNowPlayingView(device.Ip);
                         return Task.CompletedTask;
@@ -259,9 +262,6 @@ sealed partial class WiimController
             if (string.IsNullOrEmpty(_npIp) || _npDeviceMenuLabel.Text == "Switching…") return;
             _npDeviceMenuLabel.Text = NowPlayingMenuText();
         }
-
-        private bool CanShowInNowPlaying(string ip) =>
-            !(_statuses.TryGetValue(TargetOf(ip), out var status) && UncontrolledInputs.Contains(InputOfMode(status.Mode)));
 
         private void ShowNowPlayingView(string ip)
         {
@@ -337,6 +337,7 @@ sealed partial class WiimController
             var (previous, _) = Big(Icons.Previous, 34);
             var (next, _) = Big(Icons.Next, 34);
             var playPauseIcon = new PathIcon { Data = Icons.Play, Width = 30, Height = 30, Foreground = Brushes.Black };
+            Icons.SetPlayPause(playPauseIcon, false);
             var playPause = new Button
             {
                 Content = playPauseIcon, Width = 68, Height = 68, CornerRadius = new CornerRadius(34), Background = Brushes.White,
@@ -540,7 +541,7 @@ sealed partial class WiimController
             _npBackdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap) : null;
             _npCover.IsVisible = bitmap != null;
             _npCoverPlaceholder.IsVisible = bitmap == null;
-            IBrush artFill = bitmap != null ? new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill } : Palette.Input;
+            IBrush artFill = NowPlayingArtFill(bitmap);
             foreach (var (art, _) in _npArtShapes) art.Fill = artFill;
             _npFadeFromEmpty = previous == null;
             var style = _owner.NowPlayingStyle;
@@ -575,8 +576,37 @@ sealed partial class WiimController
             _npBackdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap) : null;
             _npCover.IsVisible = bitmap != null;
             _npCoverPlaceholder.IsVisible = bitmap == null;
-            IBrush artFill = bitmap != null ? new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill } : Palette.Input;
+            IBrush artFill = NowPlayingArtFill(bitmap);
             foreach (var (art, _) in _npArtShapes) art.Fill = artFill;
+        }
+
+        private IBrush NowPlayingArtFill(Bitmap? bitmap)
+        {
+            if (bitmap != null) return new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill };
+            const double size = 100, iconSize = 34;
+            var drawing = new DrawingGroup();
+            drawing.Children.Add(new GeometryDrawing { Brush = Palette.Input, Geometry = new RectangleGeometry(new Rect(0, 0, size, size)) });
+            if (_npCoverPlaceholder.Data is { } icon && icon.Bounds is { Width: > 0, Height: > 0 } bounds)
+            {
+                double scale = iconSize / Math.Max(bounds.Width, bounds.Height);
+                var place = Matrix.CreateTranslation(-bounds.X - bounds.Width / 2, -bounds.Y - bounds.Height / 2) *
+                    Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(size / 2, size / 2);
+                drawing.Children.Add(new DrawingGroup
+                {
+                    Transform = new MatrixTransform(place),
+                    Children = { new GeometryDrawing { Brush = Palette.TextDim, Geometry = icon } }
+                });
+            }
+            return new DrawingBrush(drawing) { Stretch = Stretch.UniformToFill };
+        }
+
+        private void SetNowPlayingPlaceholder(StreamGeometry icon)
+        {
+            if (ReferenceEquals(_npCoverPlaceholder.Data, icon)) return;
+            _npCoverPlaceholder.Data = icon;
+            if (_npCover.Source != null) return;
+            var fill = NowPlayingArtFill(null);
+            foreach (var (art, _) in _npArtShapes) art.Fill = fill;
         }
 
         private void StepArtFade()
@@ -683,14 +713,42 @@ sealed partial class WiimController
             NowPlayingStyle.Cd => "CD",
             NowPlayingStyle.Reel => "Reel-to-reel",
             NowPlayingStyle.Ambient => "Ambient",
-            NowPlayingStyle.AmbientControls => "Ambient with controls",
             NowPlayingStyle.Lyrics => "Lyrics only",
             NowPlayingStyle.Gatefold => "Gatefold with track list",
             NowPlayingStyle.Mascot => "Mascot",
             _ => "Cover only"
         };
 
-        private static bool IsAmbient(NowPlayingStyle style) => style is NowPlayingStyle.Ambient or NowPlayingStyle.AmbientControls;
+        private static bool IsAmbient(NowPlayingStyle style) => style == NowPlayingStyle.Ambient;
+
+        private readonly Button _npControlsButton = new();
+
+        private Button BuildControlsButton()
+        {
+            _npControlsButton.Classes.Add("pill");
+            _npControlsButton.Click += (_, _) =>
+            {
+                _owner.NowPlayingControlsShown = !_owner.NowPlayingControlsShown;
+                ApplyNowPlayingControls();
+            };
+            ApplyNowPlayingControls();
+            return _npControlsButton;
+        }
+
+        private void ApplyNowPlayingControls()
+        {
+            bool shown = _owner.NowPlayingControlsShown;
+            _npControlsButton.Content = shown ? "Hide controls" : "Show controls";
+            ToolTip.SetTip(_npControlsButton, shown
+                ? "Hide the playback buttons, the progress bar and the volume slider"
+                : "Show the playback buttons, the progress bar and the volume slider");
+            _npBigButtons.IsVisible = _npBigPrevious.IsVisible = _npBigNext.IsVisible = shown;
+            if (_npParts is { } parts)
+                parts.Buttons.IsVisible = parts.VolumeRow.IsVisible = parts.Title.IsVisible = parts.Artist.IsVisible = parts.DetailRow.IsVisible = shown;
+            if (_npControlCard is { } card) card.IsVisible = shown;
+            _npAmbientControls.IsVisible = shown;
+            if (_npIp is { } ip && _npControls is { } controls && _statuses.ContainsKey(ip)) ApplyNowPlayingTo(ip, controls);
+        }
 
         private void ApplyNowPlayingStyle()
         {
@@ -735,6 +793,7 @@ sealed partial class WiimController
             if (style == NowPlayingStyle.Gatefold) OpenGatefold();
             else _npGatefoldTimer.Stop();
             ApplyMascotStyle(style == NowPlayingStyle.Mascot);
+            ApplyNowPlayingControls();
             if (_npOverlay.IsVisible) WakeNowPlaying();
         }
 
@@ -766,7 +825,7 @@ sealed partial class WiimController
             if (_npControlPanel is not { } panel || _npControlCard is not { } card) return;
             var host = _owner.NowPlayingStyle switch
             {
-                NowPlayingStyle.Ambient or NowPlayingStyle.AmbientControls => _npAmbientControls,
+                NowPlayingStyle.Ambient => _npAmbientControls,
                 _ => card
             };
             if (panel.Parent == host) return;

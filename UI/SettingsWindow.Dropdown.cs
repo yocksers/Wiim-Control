@@ -1,12 +1,5 @@
-﻿using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.Layout;
+﻿using Avalonia.Controls;
 using Avalonia.Media;
-using Avalonia.Platform;
-using Avalonia.Platform.Storage;
-using Avalonia.Threading;
 
 namespace WiimControl;
 
