@@ -2,7 +2,9 @@ namespace WiimControl;
 
 enum OsdCorner { TopLeft, TopRight, BottomLeft, BottomRight }
 
-enum NowPlayingStyle { Cover, Vinyl, BigVinyl, Cassette, Cd, Reel, Ambient, AmbientControls, Lyrics, Gatefold, Mascot }
+enum DeviceLayout { Full, Compact, Dashboard }
+
+enum NowPlayingStyle { Cover, Vinyl, BigVinyl, Cassette, Cd, Reel, Ambient, Lyrics, Gatefold, Mascot }
 
 readonly record struct EqBand(int Index, string ParamName, int Value);
 
@@ -70,7 +72,7 @@ sealed record DeviceInfo(string Model, string Firmware, int? CpuTemperature, int
 
 sealed record NetworkInfo(bool Wired, string WifiName, string Ip, int? Rssi, string ApMac, int? TxRate, int? Snr, int? Frequency,
     int? Channel, bool? FiveGhzOnly, bool? Roaming, bool? Ipv6, string? PreferredDns, int? StandbySeconds, IpConfig? IpConfig = null,
-    bool? Internet = null, int? Noise = null, string WifiMac = "");
+    bool? Internet = null, int? Noise = null, string WifiMac = "", bool? AutomaticDns = null);
 
 sealed record IpConfig(bool Manual, string Address, int Prefix, string Gateway, string Dns);
 

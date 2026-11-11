@@ -110,6 +110,37 @@
       <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
     </Style>
 
+    <Style Selector="Button.pill.flat">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.pill.flat:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.pill.flat:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.pill.flat:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <Style Selector="Button.pill.barText">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#E6FFFFFF" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="10,4" />
+    </Style>
+    <Style Selector="Button.pill.barText:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.pill.barText:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#B3FFFFFF" />
+    </Style>
+    <Style Selector="Button.pill.barText:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
     <Style Selector="Button.channel">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="{DynamicResource Wc.Text}" />
