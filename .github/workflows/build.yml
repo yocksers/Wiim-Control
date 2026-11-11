@@ -2,9 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -69,6 +67,8 @@ jobs:
           dotnet-version: 9.0.x
 
       - name: Build AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq file
