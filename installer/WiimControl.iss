@@ -1,10 +1,19 @@
 #define MyAppName "Wiim Control"
-#define MyAppVersion "1.31"
+#define MyAppVersion "1.32"
 #define MyAppPublisher "Wiim Control"
 #define MyAppExeName "WiimControl.exe"
 #define MyOldAppName "Wiim Volume Control"
 #define MyOldExeName "WiimVolumeControl.exe"
 #define MyPublishDir "..\bin\Release\net9.0-windows10.0.19041.0\win-x64\publish"
+
+#define RequireFile(str Name) \
+  FileExists(AddBackslash(SourcePath) + MyPublishDir + "\" + Name) ? "" : \
+  Error(Name + " is missing from the publish folder. Delete the publish folder, run dotnet publish again and then compile the installer.")
+#expr RequireFile(MyAppExeName)
+#expr RequireFile("libSkiaSharp.dll")
+#expr RequireFile("libHarfBuzzSharp.dll")
+#expr RequireFile("av_libglesv2.dll")
+#expr RequireFile("SMBLibrary.dll")
 
 [Setup]
 AppId={{B6C1E9C4-6E3A-4B7B-9C4E-3A6E1F2B5A10}
