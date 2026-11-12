@@ -25,9 +25,11 @@ sealed partial class WiimController
                 refresh.Click += async (_, _) => await RefreshInputsAsync();
                 var onlineArtwork = new ToggleSwitch { IsChecked = window._owner.OnlineArtwork };
                 onlineArtwork.IsCheckedChanged += (_, _) => window._owner.OnlineArtwork = onlineArtwork.IsChecked == true;
+                UpdateComputerProblem();
                 var computerCard = Card("From this computer",
                     Muted("Enable artwork for music played on computer."),
                     _computerInputRows,
+                    _computerProblem,
                     Muted("Enable looking up higher resolution artwork from external sites"),
                     ToggleRow("Look up artwork online", onlineArtwork),
                     Muted("Warning: when this is on, the artist, title and album of what this computer plays, or the channel and title of " +
@@ -43,6 +45,17 @@ sealed partial class WiimController
             }
 
             private readonly StackPanel _computerInputRows = new();
+            private readonly TextBlock _computerProblem = new()
+            {
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Palette.AccentText, Margin = new Thickness(0, 4, 0, 8), IsVisible = false
+            };
+
+            public void UpdateComputerProblem()
+            {
+                string? problem = window._owner.ComputerPlaybackProblem;
+                _computerProblem.Text = problem ?? string.Empty;
+                _computerProblem.IsVisible = problem != null;
+            }
             private int _computerInputsVersion;
 
             private static readonly string[] ComputerInputOrder = ["line-in", "line-in2", "bluetooth", "optical", "co-axial", "hdmi", "phono", "pcusb"];

@@ -362,6 +362,7 @@ sealed partial class WiimController
             _outputPageRef = outputPage;
             _outputView = output;
             var inputs = new InputsPage(this);
+            _inputsView = inputs;
             Reloaded += inputs.FillDevices;
             var inputsPage = new LazyPage(inputs.Build);
             var subwoofer = new SubwooferPage(this);
