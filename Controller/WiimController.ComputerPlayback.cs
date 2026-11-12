@@ -20,6 +20,9 @@ sealed partial class WiimController
     private int _checkedArtPixels;
     private readonly Dictionary<string, string> _computerOutputs = new(StringComparer.OrdinalIgnoreCase);
     private string? _computerDefaultOutput;
+    private string? _computerProblem;
+
+    internal string? ComputerPlaybackProblem => _computerProblem;
 
     private void ParseComputerOutputs(string value)
     {
@@ -122,6 +125,11 @@ sealed partial class WiimController
         }
         catch (Exception) { track = null; }
         finally { _computerReading = false; }
+        if (reader.Problem != _computerProblem)
+        {
+            _computerProblem = reader.Problem;
+            _settingsWindow?.OnComputerPlaybackProblem();
+        }
         bool outputChanged = !string.Equals(defaultOutput, _computerDefaultOutput, StringComparison.OrdinalIgnoreCase);
         _computerDefaultOutput = defaultOutput;
         SetComputerTrack(track);
