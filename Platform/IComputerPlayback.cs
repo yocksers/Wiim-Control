@@ -10,4 +10,6 @@ interface IComputerPlayback : IDisposable
     Task<bool> ControlAsync(string action);
 
     Task<bool> SeekAsync(int positionMs);
+
+    string? Problem => null;
 }

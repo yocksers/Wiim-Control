@@ -13,6 +13,11 @@ static class ComputerOutputs
             try { return OutputDeviceMonitor.GetActiveOutputDevices(); }
             catch (Exception) { return []; }
         }
+        if (OperatingSystem.IsMacOS())
+        {
+            try { return MacAudioOutputs.List(); }
+            catch (Exception) { return []; }
+        }
         if (!OperatingSystem.IsLinux() || Pactl("list", "sinks") is not { } text) return [];
         var outputs = new List<(string Id, string Name)>();
         string? name = null;
@@ -36,6 +41,11 @@ static class ComputerOutputs
         if (OperatingSystem.IsWindows())
         {
             try { return OutputDeviceMonitor.GetDefaultOutputId(); }
+            catch (Exception) { return null; }
+        }
+        if (OperatingSystem.IsMacOS())
+        {
+            try { return MacAudioOutputs.DefaultId(); }
             catch (Exception) { return null; }
         }
         if (!OperatingSystem.IsLinux()) return null;
