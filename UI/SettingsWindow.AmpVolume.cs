@@ -113,6 +113,14 @@ sealed partial class WiimController
                     if (s.HeadroomGain is double gain)
                         rows.Add(LabeledRow("Headroom adjustment", Info(gain.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " dB")));
                 }
+                if (s.Loudness is bool loudness)
+                {
+                    var toggle = new ToggleSwitch { IsChecked = loudness };
+                    toggle.IsCheckedChanged += async (_, _) => await ChangeAmpVolumeAsync(() => window._owner.SetLoudnessAsync(ip, toggle.IsChecked == true));
+                    var row = ToggleRow("Loudness", toggle);
+                    ToolTip.SetTip(row, "Adds bass and treble at low volume, so music still sounds full when it plays quietly");
+                    rows.Add(row);
+                }
                 if (s.Channel is int channel)
                 {
                     var channels = SegmentSwitch([(ChannelStereo, "Stereo"), (ChannelLeft, "Left"), (ChannelRight, "Right")],

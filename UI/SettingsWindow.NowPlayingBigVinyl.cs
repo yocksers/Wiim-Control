@@ -14,7 +14,7 @@ sealed partial class WiimController
         private const double BigLabelSize = 300;
 
         private sealed record NowPlayingParts(StackPanel Panel, TextBlock Title, TextBlock Artist, Control DetailRow, Control PositionRow, Grid Buttons,
-            Control Shuffle, Control Previous, Control PlayPause, Control Next, Control Repeat, Control VolumeRow);
+            Border ButtonBar, Control Shuffle, Control Previous, Control PlayPause, Control Next, Control Repeat, Control VolumeRow);
 
         private readonly Panel _npBigDisc = new() { Width = BigDiscSize, Height = BigDiscSize };
         private readonly Spinner _npBigLabelSpin = new(BigLabelSize, DegreesPerSecond);
@@ -24,9 +24,12 @@ sealed partial class WiimController
         private readonly Border _npBigPrevious = new() { Width = 120, Height = 120 };
         private readonly Border _npBigNext = new() { Width = 120, Height = 120 };
         private readonly Grid _npBigButtons = new() { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,*") };
+        private readonly Border _npBigButtonBar = new();
         private readonly StackPanel _npBigBottom = new() { Width = 460 };
         private NowPlayingParts? _npParts;
-        private NowPlayingStyle _npPartsLayout;
+        private NowPlayingStyle? _npPartsLayout;
+        private NowPlayingControlsStyle _npPartsControls;
+        private bool _npPartsUnder;
 
         private void BuildBigVinyl()
         {
@@ -86,7 +89,8 @@ sealed partial class WiimController
                 }
             });
 
-            _npBigBottom.Children.Add(_npBigButtons);
+            _npBigButtonBar.Child = _npBigButtons;
+            _npBigBottom.Children.Add(_npBigButtonBar);
             _npBigControls.Children.Add(Place(_npBigTop, (BigDiscSize - 560) / 2, 140));
             _npBigControls.Children.Add(Place(_npBigPrevious, 135, BigDiscSize / 2 - 60));
             _npBigControls.Children.Add(Place(_npBigNext, BigDiscSize - 255, BigDiscSize / 2 - 60));
@@ -97,9 +101,13 @@ sealed partial class WiimController
         {
             if (_npParts is not { } p) return;
             var layout = _owner.NowPlayingStyle is NowPlayingStyle.BigVinyl or NowPlayingStyle.Reel ? _owner.NowPlayingStyle : NowPlayingStyle.Cover;
-            if (layout == _npPartsLayout) return;
+            var controls = _owner.NowPlayingControlsStyle;
+            bool under = _owner.NowPlayingControlsUnder && CanPlaceControlsUnder(_owner.NowPlayingStyle);
+            if (layout == _npPartsLayout && controls == _npPartsControls && under == _npPartsUnder) return;
             _npPartsLayout = layout;
-            foreach (var part in new Control[] { p.Title, p.Artist, p.DetailRow, p.PositionRow, p.Buttons, p.Shuffle, p.Previous, p.PlayPause, p.Next, p.Repeat, p.VolumeRow })
+            _npPartsControls = controls;
+            _npPartsUnder = under;
+            foreach (var part in new Control[] { p.Title, p.Artist, p.DetailRow, p.PositionRow, p.ButtonBar, p.Shuffle, p.Previous, p.PlayPause, p.Next, p.Repeat, p.VolumeRow })
                 Detach(part);
             bool centred = layout != NowPlayingStyle.Cover;
             p.Title.TextAlignment = p.Artist.TextAlignment = centred ? TextAlignment.Center : TextAlignment.Left;
@@ -111,27 +119,36 @@ sealed partial class WiimController
                 _npBigNext.Child = p.Next;
                 _npBigButtons.Children.AddRange([p.Shuffle, p.PlayPause, p.Repeat]);
                 _npBigBottom.Children.AddRange([p.PositionRow, p.VolumeRow]);
-                return;
             }
-            p.Buttons.Children.AddRange([p.Shuffle, p.Previous, p.PlayPause, p.Next, p.Repeat]);
-            if (layout == NowPlayingStyle.Reel)
+            else
             {
-                _npReelTop.Children.AddRange([p.Title, p.Artist, p.DetailRow]);
-                _npReelBottom.Children.AddRange([p.Buttons, p.PositionRow, p.VolumeRow]);
+                p.Buttons.Children.AddRange([p.Shuffle, p.Previous, p.PlayPause, p.Next, p.Repeat]);
+                if (layout == NowPlayingStyle.Reel)
+                {
+                    _npReelTop.Children.AddRange([p.Title, p.Artist, p.DetailRow]);
+                    _npReelBottom.Children.AddRange([p.ButtonBar, p.PositionRow, p.VolumeRow]);
+                }
+                else
+                {
+                    p.Panel.Children.AddRange([p.Title, p.Artist, p.DetailRow]);
+                    Control[] rows = controls == NowPlayingControlsStyle.Classic ? [p.PositionRow, p.ButtonBar, p.VolumeRow] : [p.ButtonBar, p.PositionRow, p.VolumeRow];
+                    (under ? _npUnderPanel : p.Panel).Children.AddRange(rows);
+                }
             }
-            else p.Panel.Children.AddRange([p.Title, p.Artist, p.DetailRow, p.PositionRow, p.Buttons, p.VolumeRow]);
+            ApplyControlsStyle(p);
         }
 
         private void ClearBigVinylControls()
         {
             _npParts = null;
-            _npPartsLayout = NowPlayingStyle.Cover;
+            _npPartsLayout = null;
             _npBigTop.Children.Clear();
             _npBigPrevious.Child = _npBigNext.Child = null;
             _npBigButtons.Children.Clear();
             while (_npBigBottom.Children.Count > 1) _npBigBottom.Children.RemoveAt(1);
             _npReelTop.Children.Clear();
             _npReelBottom.Children.Clear();
+            _npUnderPanel.Children.Clear();
         }
 
         private static void Detach(Control control)

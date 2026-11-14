@@ -10,8 +10,8 @@ sealed class LevelSlider : Control, IRangeSlider
 {
     private RangeSliderPeer? _peer;
     private static readonly IPen FocusPen = new Pen(Palette.AccentHover, 2);
-    private const double KnobSize = 14;
     private int _min, _max = 100, _value;
+    private double _knobSize = 14, _trackThickness = 4;
     private bool _dragging, _muted;
 
     public event EventHandler? ValueChanged;
@@ -28,6 +28,8 @@ sealed class LevelSlider : Control, IRangeSlider
     public int Minimum { get => _min; set { _min = value; Value = _value; InvalidateVisual(); } }
     public int Maximum { get => _max; set { _max = value; Value = _value; InvalidateVisual(); } }
     public bool FillFromCenter { get; set; }
+    public double KnobSize { get => _knobSize; set { _knobSize = value; InvalidateVisual(); } }
+    public double TrackThickness { get => _trackThickness; set { _trackThickness = value; InvalidateVisual(); } }
     public bool WheelChangesValue { get; set; } = true;
 
     int IRangeSlider.SmallStep => 1;
@@ -71,7 +73,7 @@ sealed class LevelSlider : Control, IRangeSlider
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
-        double cy = Bounds.Height / 2, th = 4;
+        double cy = Bounds.Height / 2, th = _trackThickness;
         context.DrawRectangle(Palette.Track, null, new Rect(TrackLeft, cy - th / 2, Math.Max(0, TrackRight - TrackLeft), th), th / 2, th / 2);
 
         double x = XOf(_value);

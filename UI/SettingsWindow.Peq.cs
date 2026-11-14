@@ -351,10 +351,10 @@ sealed partial class WiimController
             {
                 if (_eqLoading || plugin == _eqPluginUri) return;
                 await SendPendingEqBandsAsync();
+                _eqTypeChoice = plugin;
+                _eqTypeChoiceKey = $"{_eqDeviceIp}|{_eqSource}";
                 _eqPluginUri = plugin;
                 ShowEqEditor();
-                if (_chkEqEnabled.IsChecked == true && !await window._owner.SetEqTypeAsync(_eqDeviceIp, EqTarget, plugin))
-                    await Dialogs.MessageAsync(window, "The device didn't switch the EQ type.", window._scale);
                 await RefreshEqAsync();
             }
 

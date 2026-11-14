@@ -40,6 +40,9 @@ sealed partial class WiimController
             private readonly HashSet<string> _eqBuiltInPresets = new(StringComparer.OrdinalIgnoreCase);
             private string _eqSource = string.Empty;
             private string _eqPluginUri = DefaultEqPlugin;
+            private TextBlock? _lblEqEnable;
+            private string? _eqTypeChoice;
+            private string _eqTypeChoiceKey = string.Empty;
             private readonly Button _btnEqSaveCurrent = Pill("Save");
             private readonly Button _btnEqSave = Pill("Save as");
             private string? _eqBasePreset;
@@ -74,6 +77,7 @@ sealed partial class WiimController
                 _cboEqPreset.SelectionChanged += (_, _) => UpdatePresetChips();
                 _eqTypeRow = BuildEqTypeSwitch();
                 var eqRow = LabeledRow("Enable EQ", _chkEqEnabled);
+                _lblEqEnable = eqRow.Children.OfType<TextBlock>().FirstOrDefault();
                 _chkEqEnabled.VerticalAlignment = VerticalAlignment.Center;
                 _eqInputPills.HorizontalAlignment = HorizontalAlignment.Right;
                 _eqInputsRow = LabeledRow("Inputs", _eqInputPills);
@@ -348,8 +352,12 @@ sealed partial class WiimController
                 var state = stateTask.Result;
                 var peq = peqTask.Result;
                 bool enabled = mode?.Enabled ?? (state?.Enabled == true || peq?.Enabled == true);
+                string active = !enabled ? string.Empty
+                    : mode?.PluginUri is PeqPlugin or DefaultEqPlugin ? mode.PluginUri
+                    : peq?.Enabled == true ? PeqPlugin : DefaultEqPlugin;
                 string plugin =
                     peq == null ? DefaultEqPlugin
+                    : _eqTypeChoice != null && _eqTypeChoiceKey == $"{ip}|{source}" ? _eqTypeChoice
                     : mode != null && (mode.PluginUri == PeqPlugin || mode.PluginUri == DefaultEqPlugin) && (enabled || source != _eqSource || ip != _eqDeviceIp) ? mode.PluginUri
                     : peq.Enabled ? PeqPlugin
                     : state?.Enabled == true ? DefaultEqPlugin
@@ -394,7 +402,7 @@ sealed partial class WiimController
                         names.Add(presetName);
                     }
                     _cboEqPreset.SelectedIndex = presetName.Length > 0 ? names.IndexOf(presetName) : -1;
-                    _chkEqEnabled.IsChecked = enabled;
+                    _chkEqEnabled.IsChecked = enabled && (peq == null || active == plugin);
                     _eqBands = state.Bands;
                     foreach (var b in state.Bands.Where(b => b.Index >= 0 && b.Index < EqBandCount))
                     {
@@ -407,6 +415,12 @@ sealed partial class WiimController
                 {
                     _lblEqSource.Text = "EQ unavailable";
                 }
+                if (_lblEqEnable != null)
+                    _lblEqEnable.Text = peq == null ? "Enable EQ" : plugin == PeqPlugin ? "Enable parametric EQ" : "Enable graphic EQ";
+                if (_eqTypeRow != null)
+                    ToolTip.SetTip(_chkEqEnabled, peq == null ? null
+                        : "Switches the chosen EQ type on or off for this input. Only one type can be on at a time, so switching this one on " +
+                          "switches the other type off.");
                 ApplyPeqState(peq);
                 ShowEqEditor();
                 _eqLoading = false;

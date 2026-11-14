@@ -11,7 +11,6 @@ sealed partial class WiimController
     {
         private sealed partial class EqPage
         {
-            private readonly Button _btnRoomFitCurve = Pill("Show curve");
             private readonly Button _btnRoomFitDelete = Pill("Delete");
             private readonly ToggleSwitch _chkRoomFit = new() { VerticalAlignment = VerticalAlignment.Center };
             private readonly ComboBox _cboRoomFit = new() { Width = 240, PlaceholderText = "No profile selected" };
@@ -19,6 +18,7 @@ sealed partial class WiimController
             private readonly TextBlock _lblRoomFitStatus = Subtitle();
             private readonly Border _roomFitCard = new() { IsVisible = false };
             private readonly Border _roomFitMissing = new() { IsVisible = false };
+            private readonly Border _roomFitCurve = new();
             private string _roomFitIp = string.Empty;
             private bool _roomFitLoading;
             private bool _roomFitBuilt;
@@ -32,9 +32,9 @@ sealed partial class WiimController
                 var profileRow = LabeledRow("Profile", new StackPanel
                 {
                     Orientation = Orientation.Horizontal, Spacing = 8,
-                    Children = { _btnRoomFitExport, _btnRoomFitImport, _btnRoomFitCurve, _btnRoomFitDelete, _cboRoomFit }
+                    Children = { _btnRoomFitExport, _btnRoomFitImport, _btnRoomFitDelete, _cboRoomFit }
                 });
-                var card = Card(null, row, profileRow, Muted("Measured with the WiiM Home app. Applies to every input, on top of the EQ."));
+                var card = Card(null, row, profileRow);
                 _roomFitCard.Child = card;
                 var missing = Card(null, Muted("This device has no RoomFit room correction."));
                 _roomFitMissing.Child = missing;
@@ -45,7 +45,6 @@ sealed partial class WiimController
                 ToolTip.SetTip(_cboRoomFitAmp, "The device whose RoomFit is shown");
                 _btnRoomFitExport.Click += async (_, _) => await ExportRoomFitAsync();
                 _btnRoomFitImport.Click += async (_, _) => await ImportRoomFitAsync();
-                _btnRoomFitCurve.Click += async (_, _) => await ShowRoomFitCurveAsync();
                 _btnRoomFitDelete.Click += async (_, _) => await DeleteRoomFitProfileAsync();
                 _chkRoomFit.IsCheckedChanged += async (_, _) =>
                 {
@@ -56,12 +55,31 @@ sealed partial class WiimController
                 {
                     _btnRoomFitDelete.IsEnabled = _cboRoomFit.SelectedItem is ComboBoxItem;
                     if (_roomFitLoading || (_cboRoomFit.SelectedItem as ComboBoxItem)?.Tag is not string name) return;
-                    if (!await window._owner.LoadRoomFitProfileAsync(_roomFitIp, name, _chkRoomFit.IsChecked == true)) await RefreshRoomFitAsync();
+                    if (_rfUnsaved == RoomFitEditKey(_rfProfile) && name != _rfProfile)
+                    {
+                        if (!await Dialogs.ConfirmAsync(window, $"Your changes to \"{_rfProfile}\" aren't saved. Switch to \"{name}\" and lose them?",
+                                window._scale))
+                        {
+                            _roomFitLoading = true;
+                            _cboRoomFit.SelectedItem = _cboRoomFit.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag as string == _rfProfile);
+                            _roomFitLoading = false;
+                            return;
+                        }
+                    }
+                    _rfSendTimer.Stop();
+                    _rfDirty.Clear();
+                    _rfUnsaved = null;
+                    if (!await window._owner.LoadRoomFitProfileAsync(_roomFitIp, name, _chkRoomFit.IsChecked == true))
+                        await Dialogs.MessageAsync(window, "The device didn't switch to that RoomFit profile.", window._scale);
+                    await RefreshRoomFitAsync();
                 };
                 _cboRoomFitAmp.SelectionChanged += async (_, _) => { if (!window._loading) await RefreshRoomFitAsync(); };
                 _roomFitBuilt = true;
-                return window.Page("RoomFit", _lblRoomFitStatus, [_cboRoomFitAmp, btnRefresh],
-                    new StackPanel { Children = { _roomFitCard, _roomFitMissing } });
+                var body = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
+                Grid.SetRow(_roomFitMissing, 1);
+                Grid.SetRow(_roomFitCurve, 2);
+                body.Children.AddRange([_roomFitCard, _roomFitMissing, _roomFitCurve]);
+                return window.Page("RoomFit", _lblRoomFitStatus, [_cboRoomFitAmp, btnRefresh], body, scroll: false);
             }
 
             public void FillRoomFitAmpCombo()
@@ -95,6 +113,7 @@ sealed partial class WiimController
                 _roomFitMissing.IsVisible = state == null;
                 _btnRoomFitDelete.IsEnabled = _cboRoomFit.SelectedItem is ComboBoxItem;
                 _lblRoomFitStatus.Text = state == null ? string.Empty : state.Enabled ? "On" : "Off";
+                _roomFitCurve.Child = state is { Active.Length: > 0 } ? BuildRoomFitCurveCard(state) : null;
                 _roomFitLoading = false;
             }
 
@@ -106,68 +125,6 @@ sealed partial class WiimController
                 if (!await window._owner.DeleteRoomFitProfileAsync(_roomFitIp, name))
                     await Dialogs.MessageAsync(window, "The device didn't delete the RoomFit profile.", window._scale);
                 await RefreshRoomFitAsync();
-            }
-
-            private async Task ShowRoomFitCurveAsync()
-            {
-                var state = await window._owner.GetRoomFitStateAsync(_roomFitIp);
-                if (state == null)
-                {
-                    await Dialogs.MessageAsync(window, "Couldn't read RoomFit from the device.", window._scale);
-                    return;
-                }
-
-                string name = state.Active.Length > 0 ? state.Active : "No profile selected";
-                var content = new StackPanel { Width = 680, Spacing = 6 };
-                content.Children.Add(new TextBlock { Text = name, Classes = { "heading" } });
-                content.Children.Add(Muted(state.Enabled
-                    ? "The correction the device applies now. To see another profile, pick it in RoomFit profile first."
-                    : "RoomFit is off, so the device doesn't apply this correction now."));
-                var channels = state.Left is { } left && state.Right is { } right
-                    ? new[] { ("Left", left), ("Right", right) }
-                    : [(string.Empty, state.Stereo)];
-                content.Children.Add(Muted("Scroll over a graph to zoom in, hold Shift while scrolling to move along, and double-click it to see the whole range."));
-                var graphs = channels.Select(c => new PeqGraph { Bands = c.Item2, Height = 240, Editable = false }).ToArray();
-                for (int i = 0; i < channels.Length; i++)
-                {
-                    var (label, bands) = channels[i];
-                    if (label.Length > 0)
-                        content.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
-                    content.Children.Add(graphs[i]);
-                    content.Children.Add(RoomFitFilterTable(bands));
-                }
-                await Dialogs.ContentAsync(window, new ScrollViewer { Content = content, MaxHeight = 720 }, window._scale);
-            }
-
-            private static Control RoomFitFilterTable(PeqBand[] bands)
-            {
-                var active = bands.Select((b, i) => (Band: b, Number: i + 1)).Where(b => b.Band.Filter != PeqFilter.Off).ToList();
-                if (active.Count == 0) return Muted("No filters.");
-
-                var table = new Grid { ColumnDefinitions = new ColumnDefinitions("44,*,*,*,*"), Margin = new Thickness(0, 6, 0, 0) };
-                void Cell(string text, int row, int column, bool muted = false)
-                {
-                    var cell = new TextBlock { Text = text, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2) };
-                    if (muted) cell.Classes.Add("muted");
-                    Grid.SetRow(cell, row);
-                    Grid.SetColumn(cell, column);
-                    table.Children.Add(cell);
-                }
-
-                table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-                string[] titles = ["", "Filter", "Frequency", "Gain", "Q"];
-                for (int c = 0; c < titles.Length; c++) Cell(titles[c], 0, c, muted: true);
-                for (int r = 0; r < active.Count; r++)
-                {
-                    var (band, number) = active[r];
-                    table.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-                    Cell(number.ToString(System.Globalization.CultureInfo.InvariantCulture), r + 1, 0, muted: true);
-                    Cell(PeqFilterLabels.FirstOrDefault(f => f.Filter == band.Filter).Label ?? "Peak", r + 1, 1);
-                    Cell(FormatFrequency(band.Frequency), r + 1, 2);
-                    Cell(FormatGain(band.Gain), r + 1, 3);
-                    Cell(FormatQ(band.Q), r + 1, 4);
-                }
-                return table;
             }
         }
     }

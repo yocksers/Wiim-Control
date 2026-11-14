@@ -189,6 +189,7 @@ sealed partial class WiimController
             bool ambient = IsAmbient(_owner.NowPlayingStyle);
             double contentWidth = ambient ? 1280 : _npStage.Width + ShadowRoom.Left + ShadowRoom.Right;
             double contentHeight = ambient ? 900 : _npStage.Height + ShadowRoom.Top + ShadowRoom.Bottom;
+            if (!ambient && _npStageBox.Child is { DesiredSize: { Width: > 0, Height: > 0 } size}) (contentWidth, contentHeight) = (size.Width, size.Height);
             double areaWidth = _npOverlay.Bounds.Width - panelWidth - (ambient ? 120 : 32);
             double areaHeight = _npOverlay.Bounds.Height - (ambient ? 88 : 30);
             if (areaWidth <= 0 || areaHeight <= 0 || double.IsNaN(contentWidth) || double.IsNaN(contentHeight)) return 0;

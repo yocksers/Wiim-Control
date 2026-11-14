@@ -83,7 +83,9 @@ sealed partial class WiimController
         {
             bool network = IsNetworkSource(status);
             var (shuffle, repeat) = ParseLoop(status.Loop);
-            c.Shuffle.IsVisible = c.Repeat.IsVisible = network;
+            bool radio = IsInternetRadio(status);
+            c.Shuffle.IsVisible = c.Repeat.IsVisible = network && !radio;
+            c.Previous.IsVisible = c.Next.IsVisible = !radio;
             SetActive(c.ShuffleIcon, shuffle);
             SetActive(c.RepeatIcon, repeat > 0);
             c.RepeatIcon.Data = repeat == 1 ? Icons.RepeatOnce : Icons.Repeat;

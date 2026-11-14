@@ -98,6 +98,17 @@ sealed partial class WiimController
         private readonly Viewbox _squareView = new() { Stretch = Stretch.Uniform };
         private readonly Viewbox _compactView = new() { Stretch = Stretch.Uniform };
         private readonly Panel _compactText = new() { Margin = new Thickness(14, 0, 6, 0) };
+        private readonly Border _artworkNotice = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(12, 48, 12, 0),
+            Padding = new Thickness(10, 4), CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)),
+            IsVisible = false, IsHitTestVisible = false,
+            Child = new TextBlock
+            {
+                Text = WiimController.ArtworkQuotaNotice, FontSize = 11, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
+                Foreground = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255))
+            }
+        };
         private readonly StackPanel _compactInfo = new() { VerticalAlignment = VerticalAlignment.Center, Transitions = Fade() };
         private readonly StackPanel _compactControls = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0, Transitions = Fade() };
         private readonly StackPanel _compactButtons = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -342,7 +353,7 @@ sealed partial class WiimController
             _squareView.Child = new Border
             {
                 Width = StageSize, Height = StageSize, ClipToBounds = true, Background = Palette.Card,
-                Child = new Grid { Children = { _placeholder, _cover, controls } }
+                Child = new Grid { Children = { _placeholder, _cover, controls, _artworkNotice } }
             };
 
             _compactText.Children.AddRange([_compactInfo, _compactControls]);
@@ -603,7 +614,8 @@ sealed partial class WiimController
 
         private void ShowStatus(string target, DeviceStatus? status)
         {
-            if (status != null) status = _owner.WithComputerPlayback(status);
+            if (status != null) status = _owner.WithRadioArtwork(_owner.WithComputerPlayback(status));
+            _artworkNotice.IsVisible = status != null && _owner.ArtworkLookupLimited(status);
             SetDeviceName(_owner.DeviceNameOf(Ip));
             _target = target;
             _status = status;
@@ -628,7 +640,9 @@ sealed partial class WiimController
             ToolTip.SetTip(_playPause, status.IsPlaying ? "Pause" : "Play");
 
             bool network = IsNetworkMode(status.Mode);
-            _shuffle.IsVisible = _repeat.IsVisible = network;
+            bool radio = IsInternetRadio(status);
+            _shuffle.IsVisible = _repeat.IsVisible = network && !radio;
+            _previous.IsVisible = _next.IsVisible = !radio;
             ShowLoop(status.Loop);
             bool seekable = (network || _owner.PlaysFromComputer(status.Mode)) && status.DurationMs > 0;
             _positionRow.IsVisible = seekable;

@@ -595,6 +595,7 @@ sealed partial class WiimController
                 c.Artist.Text = c.Detail.Text = string.Empty;
                 c.Playing.IsVisible = false;
                 c.PositionRow.IsVisible = c.Shuffle.IsVisible = c.Repeat.IsVisible = false;
+                c.Previous.IsVisible = c.Next.IsVisible = true;
                 _positions.Remove(ip);
                 c.PlayPause.IsEnabled = c.Previous.IsEnabled = c.Next.IsEnabled = false;
                 c.Art.ImageUrl = string.Empty;
@@ -608,7 +609,7 @@ sealed partial class WiimController
             var leaderStatus = leaderIp != ip ? _statuses.GetValueOrDefault(leaderIp) : null;
             bool following = leaderStatus != null;
             if (leaderStatus != null) status = leaderStatus;
-            status = _owner.WithComputerPlayback(status);
+            status = _owner.WithRadioArtwork(_owner.WithComputerPlayback(status));
             string songBefore = $"{c.Title.Text}\n{c.Artist.Text}";
             (c.Title.Text, c.Artist.Text, c.Detail.Text) = _owner.NowPlayingTexts(status, leaderIp, following);
             bool sameSong = songBefore == $"{c.Title.Text}\n{c.Artist.Text}";
@@ -622,6 +623,7 @@ sealed partial class WiimController
             {
                 UpdateLyricsTrack(status);
                 UpdateGatefoldTrack(status);
+                _npArtworkNotice.IsVisible = _owner.ArtworkLookupLimited(status);
             }
             bool deviceCopy = sameSong && c.Art.ImageUrl.Length > 0 && !IsOnDevice(c.Art.ImageUrl, leaderIp) && IsOnDevice(status.ArtUrl, leaderIp);
             if (status.ArtUrl != c.Art.ImageUrl && !deviceCopy)

@@ -81,6 +81,25 @@ sealed partial class WiimController
                     rows.Add(row);
                 }
 
+                if (s.BluetoothLatency is int btLatency && (inputs == null || inputs.Any(i => i.Mode == "bluetooth")))
+                {
+                    var latency = new ComboBox { Width = FieldWidth };
+                    string[] names = ["Low", "Medium", "High"];
+                    for (int i = 0; i < BluetoothLatencies.Length; i++)
+                        latency.Items.Add(ComboItem(BluetoothLatencies[i], $"{names[i]} ({BluetoothLatencies[i]} ms)"));
+                    if (!BluetoothLatencies.Contains(btLatency)) latency.Items.Add(ComboItem(btLatency, $"Custom ({btLatency} ms)"));
+                    latency.SelectedItem = latency.Items.OfType<ComboBoxItem>().First(i => i.Tag is int v && v == btLatency);
+                    latency.SelectionChanged += async (_, _) =>
+                    {
+                        if ((latency.SelectedItem as ComboBoxItem)?.Tag is int chosen && chosen != btLatency)
+                            await ChangeInputsAsync(() => window._owner.SetBluetoothLatencyAsync(ip, chosen));
+                    };
+                    var row = LabeledRow("Bluetooth latency", latency);
+                    ToolTip.SetTip(row, "How much sound the device buffers from a Bluetooth source. Low keeps video in sync; high gives fewer dropouts " +
+                                        "when the connection is weak.");
+                    rows.Add(row);
+                }
+
                 if (s.TvRemoteStep is int tvStep)
                 {
                     var slider = AmpSlider(1, 10, Math.Clamp(tvStep, 1, 10), v => v.ToString(), false, out var sliderRow);

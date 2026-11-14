@@ -71,6 +71,13 @@ sealed partial class WiimController
         private readonly Grid _npCoverContent = new();
         private readonly TextBlock _npDeviceMenuLabel = new() { Text = "Device", MaxWidth = 300, TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Button _npStyleButton = new();
+        private readonly Border _npArtworkNotice = new()
+        {
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(20),
+            Padding = new Thickness(12, 6), CornerRadius = new CornerRadius(12), Background = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)),
+            IsVisible = false, IsHitTestVisible = false,
+            Child = new TextBlock { Text = ArtworkQuotaNotice, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)) }
+        };
         private string? _npIp;
         private NowPlayingControls? _npControls;
         private Border? _npControlCard;
@@ -160,7 +167,8 @@ sealed partial class WiimController
                 button.ClearValue(PaddingProperty);
             }
 
-            _npStageBox.Child = _npStage;
+            _npUnder.Child = _npUnderPanel;
+            _npStageBox.Child = new StackPanel { Children = { _npStage, _npUnder } };
             _npBackdropLayer.Children.Add(_npBackdrop);
             _npBackdropLayer.Children.Add(_npBackdropOld);
             _npOverlay.Children.Add(_npBackdropLayer);
@@ -168,6 +176,7 @@ sealed partial class WiimController
             _npOverlay.Children.Add(_npAmbient);
             _npOverlay.Children.Add(BuildLyricsPanel());
             _npOverlay.Children.Add(_npTopBar);
+            _npOverlay.Children.Add(_npArtworkNotice);
 
             _npFadeTimer.Host = this;
             _npFadeTimer.Tick += (_, _) => StepArtFade();
@@ -336,29 +345,18 @@ sealed partial class WiimController
             var (repeat, repeatIcon) = Big(Icons.Repeat, 26);
             var (previous, _) = Big(Icons.Previous, 34);
             var (next, _) = Big(Icons.Next, 34);
-            var playPauseIcon = new PathIcon { Data = Icons.Play, Width = 30, Height = 30, Foreground = Brushes.Black };
+            var (playPause, playPauseIcon) = Big(Icons.Play, 34);
             Icons.SetPlayPause(playPauseIcon, false);
-            var playPause = new Button
-            {
-                Content = playPauseIcon, Width = 68, Height = 68, CornerRadius = new CornerRadius(34), Background = Brushes.White,
-                HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(0)
-            };
             shuffle.IsVisible = repeat.IsVisible = false;
             shuffle.Click += async (_, _) => await ToggleShuffleAsync(ip);
             repeat.Click += async (_, _) => await CycleRepeatAsync(ip);
             previous.Click += async (_, _) => await TransportAsync(ip, "prev");
             playPause.Click += async (_, _) => await TransportAsync(ip, "onepause");
             next.Click += async (_, _) => await TransportAsync(ip, "next");
-            var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,*"), Margin = new Thickness(0, 10, 0, 0) };
-            foreach (var (control, column, align) in new (Control, int, HorizontalAlignment)[]
-                     {
-                         (shuffle, 0, HorizontalAlignment.Left), (previous, 1, HorizontalAlignment.Center), (playPause, 2, HorizontalAlignment.Center),
-                         (next, 3, HorizontalAlignment.Center), (repeat, 4, HorizontalAlignment.Right)
-                     })
+            var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,*") };
+            foreach (var (control, column) in new (Control, int)[] { (shuffle, 0), (previous, 1), (playPause, 2), (next, 3), (repeat, 4) })
             {
-                control.HorizontalAlignment = align;
                 control.VerticalAlignment = VerticalAlignment.Center;
-                control.Margin = new Thickness(column is 1 or 3 ? 18 : 0, 0, column is 1 or 3 ? 18 : 0, 0);
                 Grid.SetColumn(control, column);
                 buttons.Children.Add(control);
             }
@@ -383,7 +381,7 @@ sealed partial class WiimController
                         new GradientStop(Color.FromArgb(230, 0, 0, 0), 1)
                     }
                 },
-                Child = new StackPanel { Children = { title, artist, detailRow, positionRow, buttons, volumeRow } }
+                Child = new StackPanel()
             };
             buttons.IsEnabled = positionRow.IsEnabled = volumeRow.IsEnabled = !_owner.IsDeviceLocked(ip);
             ClearNowPlayingControls();
@@ -391,7 +389,7 @@ sealed partial class WiimController
             _npControlCard = controls;
             _npControlPanel = controls.Child;
             _npParts = new NowPlayingParts((StackPanel)controls.Child, title, artist, detailRow, positionRow, buttons,
-                shuffle, previous, playPause, next, repeat, volumeRow);
+                new Border { Child = buttons, Margin = new Thickness(0, 10, 0, 0) }, shuffle, previous, playPause, next, repeat, volumeRow);
             _npCoverContent.Children.Add(art);
             _npControls = new NowPlayingControls(art, title, artist, detail, playing, playPause, playPauseIcon, previous, next,
                 shuffle, shuffleIcon, repeat, repeatIcon, positionRow, position, elapsed, total);
@@ -503,6 +501,7 @@ sealed partial class WiimController
         {
             while (_npCoverContent.Children.Count > 3) _npCoverContent.Children.RemoveAt(3);
             _npAmbientControls.Child = null;
+            _npUnder.IsVisible = false;
             ClearBigVinylControls();
             _npControlCard = null;
             _npControlPanel = null;
@@ -721,35 +720,6 @@ sealed partial class WiimController
 
         private static bool IsAmbient(NowPlayingStyle style) => style == NowPlayingStyle.Ambient;
 
-        private readonly Button _npControlsButton = new();
-
-        private Button BuildControlsButton()
-        {
-            _npControlsButton.Classes.Add("pill");
-            _npControlsButton.Click += (_, _) =>
-            {
-                _owner.NowPlayingControlsShown = !_owner.NowPlayingControlsShown;
-                ApplyNowPlayingControls();
-            };
-            ApplyNowPlayingControls();
-            return _npControlsButton;
-        }
-
-        private void ApplyNowPlayingControls()
-        {
-            bool shown = _owner.NowPlayingControlsShown;
-            _npControlsButton.Content = shown ? "Hide controls" : "Show controls";
-            ToolTip.SetTip(_npControlsButton, shown
-                ? "Hide the playback buttons, the progress bar and the volume slider"
-                : "Show the playback buttons, the progress bar and the volume slider");
-            _npBigButtons.IsVisible = _npBigPrevious.IsVisible = _npBigNext.IsVisible = shown;
-            if (_npParts is { } parts)
-                parts.Buttons.IsVisible = parts.VolumeRow.IsVisible = parts.Title.IsVisible = parts.Artist.IsVisible = parts.DetailRow.IsVisible = shown;
-            if (_npControlCard is { } card) card.IsVisible = shown;
-            _npAmbientControls.IsVisible = shown;
-            if (_npIp is { } ip && _npControls is { } controls && _statuses.ContainsKey(ip)) ApplyNowPlayingTo(ip, controls);
-        }
-
         private void ApplyNowPlayingStyle()
         {
             var style = _owner.NowPlayingStyle;
@@ -823,11 +793,12 @@ sealed partial class WiimController
         private void PlaceNowPlayingControls()
         {
             if (_npControlPanel is not { } panel || _npControlCard is not { } card) return;
-            var host = _owner.NowPlayingStyle switch
-            {
-                NowPlayingStyle.Ambient => _npAmbientControls,
-                _ => card
-            };
+            var style = _owner.NowPlayingStyle;
+            bool under = _owner.NowPlayingControlsUnder && CanPlaceControlsUnder(style);
+            Decorator host = style == NowPlayingStyle.Ambient ? _npAmbientControls : card;
+            _npUnder.IsVisible = under;
+            _npUnder.Margin = new Thickness(ShadowRoom.Left + (style == NowPlayingStyle.Mascot ? MascotCoverLeft : 0), UnderControlsGap - ShadowRoom.Bottom,
+                ShadowRoom.Right, ShadowRoom.Bottom);
             if (panel.Parent == host) return;
             if (panel.Parent is Decorator previous) previous.Child = null;
             host.Child = panel;
