@@ -8,7 +8,7 @@ sealed record PreGain(int Mode, string Name, double Gain);
 sealed record InputSettings(bool? PreGainEnabled, List<PreGain> PreGains, double MinGain, double MaxGain,
     bool? OpticalAutoSense, bool? HdmiAutoSense, bool? LineInAutoSense, int? TvRemoteStep, bool? HdmiAudioOnly, bool? TvSpeakers,
     bool? StandbySourceEnabled, string? StandbySource, bool? PerSourceVolume, int? LineInRate = null, int? LineInBits = null,
-    bool? ReduceNoise = null);
+    bool? ReduceNoise = null, int? BluetoothLatency = null);
 
 sealed partial class WiimController
 {
@@ -27,8 +27,9 @@ sealed partial class WiimController
         var reduceNoise = SendToDeviceAsync(ip, "getSpdifInNoiseRemove");
         var inputCards = SendToDeviceAsync(ip, "getInputModeSupportList");
         var perSourceVolume = SendToDeviceAsync(ip, "getPlayModeVolumeEnable");
+        var btLatency = SendToDeviceAsync(ip, "get_bt_latency");
         await Task.WhenAll(gain, optical, hdmi, lineIn, tvStep, tvPower, tvSpeakers, standbyOn, standbySource, lineInCap, reduceNoise, inputCards,
-                perSourceVolume)
+                perSourceVolume, btLatency)
             .ConfigureAwait(false);
 
         bool? gainEnabled = null;
@@ -64,7 +65,9 @@ sealed partial class WiimController
             ParseFlag(perSourceVolume.Result),
             lineInResolution && lineInCap.Result?.Trim().Split(':') is [var rate, ..] && int.TryParse(rate, out int r) ? r : null,
             lineInResolution && lineInCap.Result?.Trim().Split(':') is [_, var depth, ..] && int.TryParse(depth, out int d) ? d : null,
-            HasReduceNoise(inputCards.Result, JsonField(statusEx, "project")) ? ParseFlag(reduceNoise.Result) : null);
+            HasReduceNoise(inputCards.Result, JsonField(statusEx, "project")) ? ParseFlag(reduceNoise.Result) : null,
+            int.TryParse(btLatency.Result?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int latency) && latency is > 0 and <= 10000
+                ? latency : null);
     }
 
     internal static bool HasReduceNoise(string? inputModeList, string? project)
@@ -150,6 +153,14 @@ sealed partial class WiimController
 
     internal async Task<bool> SetLineInResolutionAsync(string ip, int sampleRate, int bits) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"setAuxInMaxCap:{sampleRate}:{bits}:0").ConfigureAwait(false));
+
+    internal static readonly int[] BluetoothLatencies = [80, 200, 1000];
+
+    internal async Task<bool> SetBluetoothLatencyAsync(string ip, int milliseconds)
+    {
+        await SendToDeviceAsync(ip, $"set_bt_latency:{milliseconds}").ConfigureAwait(false);
+        return int.TryParse((await SendToDeviceAsync(ip, "get_bt_latency").ConfigureAwait(false))?.Trim(), out int now) && now == milliseconds;
+    }
 
     internal async Task<bool> SetPerSourceVolumeAsync(string ip, bool on) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"setPlayModeVolumeEnable:{(on ? 1 : 0)}").ConfigureAwait(false));

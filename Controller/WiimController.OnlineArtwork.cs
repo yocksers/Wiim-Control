@@ -14,6 +14,9 @@ sealed partial class WiimController
     private readonly Dictionary<string, string> _onlineArtworkFound = new();
     private readonly List<string> _onlineArtworkOrder = [];
     private readonly Dictionary<string, DateTime> _onlineArtworkRunning = new();
+    private readonly Dictionary<string, (DateTime At, bool Limited)> _onlineArtworkRetryAt = new();
+    internal const string ArtworkQuotaNotice = "Artwork lookup: quota exceeded – will retry in 1 minute";
+    private static readonly TimeSpan OnlineArtworkRetryDelay = TimeSpan.FromMinutes(1);
 
     private static readonly Regex VersionTag = new(
         @"\s*[\(\[][^\)\]]*\b(version|edit|edition|mix|remix|live|remaster|remastered|deluxe|instrumental|acoustic|radio|extended|single|mono|stereo|demo|bonus|explicit|clean|feat\.?|ft\.?|featuring|with)\b[^\)\]]*[\)\]]",
@@ -37,6 +40,7 @@ sealed partial class WiimController
             _onlineArtwork = value;
             SaveConfig();
             SetComputerTrack(_computerTrack);
+            RefreshRadioArtwork();
         }
     }
 
@@ -71,34 +75,61 @@ sealed partial class WiimController
             .ToList();
     }
 
-    private string? OnlineArtworkFor(ComputerTrack track)
+    private string? OnlineArtworkFor(ComputerTrack track, bool bothOrders = false)
     {
         if (!_onlineArtwork || track.Title.Length == 0 || track.Artist.Length == 0) return null;
         string key = OnlineArtworkKey(track);
         if (_onlineArtworkFound.TryGetValue(key, out var found)) return found.Length > 0 ? found : null;
+        if (_onlineArtworkRetryAt.TryGetValue(key, out var retryAt))
+        {
+            if (DateTime.UtcNow < retryAt.At) return null;
+            _onlineArtworkRetryAt.Remove(key);
+        }
         if (!_onlineArtworkRunning.TryGetValue(key, out var started))
         {
             _onlineArtworkRunning[key] = DateTime.UtcNow;
-            _ = LookUpOnlineArtworkAsync(key, track.Title, track.Artist, track.Album);
+            _ = LookUpOnlineArtworkAsync(key, track.Title, track.Artist, track.Album, bothOrders);
             return string.Empty;
         }
         return DateTime.UtcNow - started < OnlineArtworkWait ? string.Empty : null;
     }
 
-    private async Task LookUpOnlineArtworkAsync(string key, string title, string artist, string album)
+    private async Task LookUpOnlineArtworkAsync(string key, string title, string artist, string album, bool bothOrders = false)
     {
         var tries = new List<(string Artist, string Title, string Album)> { (artist, title, album) };
+        if (bothOrders) tries.Add((title, artist, album));
         tries.AddRange(VideoCandidates(artist, title).Select(c => (c.Artist, c.Title, string.Empty)));
         string url = string.Empty;
+        bool unanswered = false, limited = false;
         foreach (var (tryArtist, tryTitle, tryAlbum) in tries)
         {
-            url = await FindDeezerArtworkAsync(tryTitle, tryArtist, tryAlbum).ConfigureAwait(false);
-            if (url.Length == 0) url = await FindAppleArtworkAsync(tryTitle, tryArtist, tryAlbum).ConfigureAwait(false);
+            var deezer = await FindDeezerArtworkAsync(tryTitle, tryArtist, tryAlbum).ConfigureAwait(false);
+            unanswered |= deezer.Url == null;
+            limited |= deezer.Limited;
+            url = deezer.Url ?? string.Empty;
+            if (url.Length == 0)
+            {
+                var apple = await FindAppleArtworkAsync(tryTitle, tryArtist, tryAlbum).ConfigureAwait(false);
+                unanswered |= apple.Url == null;
+                limited |= apple.Limited;
+                url = apple.Url ?? string.Empty;
+            }
             if (url.Length > 0) break;
         }
         Dispatcher.UIThread.Post(() =>
         {
             _onlineArtworkRunning.Remove(key);
+            if (url.Length == 0 && unanswered)
+            {
+                if (_onlineArtworkRetryAt.Count >= OnlineArtworkCacheSize) _onlineArtworkRetryAt.Clear();
+                _onlineArtworkRetryAt[key] = (DateTime.UtcNow + OnlineArtworkRetryDelay, limited);
+                if (limited)
+                {
+                    if (_computerTrack is { } waiting && OnlineArtworkKey(waiting) == key) _settingsWindow?.OnComputerPlaybackChanged();
+                    RefreshRadioArtwork();
+                }
+                return;
+            }
             _onlineArtworkFound[key] = url;
             _onlineArtworkOrder.Remove(key);
             _onlineArtworkOrder.Add(key);
@@ -108,10 +139,29 @@ sealed partial class WiimController
                 _onlineArtworkOrder.RemoveAt(0);
             }
             if (_computerTrack is { } current && OnlineArtworkKey(current) == key) SetComputerTrack(current);
+            if (_radioLookups.Remove(key)) RefreshRadioArtwork();
         });
     }
 
-    private async Task<JsonDocument?> GetOnlineJsonAsync(string url)
+    internal bool ArtworkLookupLimited(DeviceStatus status)
+    {
+        string title = status.Title.Trim(), artist = status.Artist.Trim();
+        if (title.Length == 0 || artist.Length == 0) return false;
+        foreach (string key in new[] { $"{status.Title}\n{status.Artist}\n{status.Album}", $"{title}\n{artist}\n" })
+            if (_onlineArtworkRetryAt.TryGetValue(key, out var retry) && retry.Limited && DateTime.UtcNow < retry.At) return true;
+        return false;
+    }
+
+    internal static bool IsQuotaRefusal(System.Net.HttpStatusCode status, string url) =>
+        status == System.Net.HttpStatusCode.TooManyRequests ||
+        status == System.Net.HttpStatusCode.Forbidden && url.Contains("itunes.apple.com", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsDeezerQuotaError(JsonElement root) =>
+        root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object &&
+        (error.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.Number && code.GetInt32() == 4 ||
+         JsonText(error, "message").Contains("quota", StringComparison.OrdinalIgnoreCase));
+
+    private async Task<(JsonDocument? Doc, bool Limited)> GetOnlineJsonAsync(string url)
     {
         try
         {
@@ -119,34 +169,40 @@ sealed partial class WiimController
             request.Headers.UserAgent.ParseAdd($"WiimControl/{AppVersion}");
             using var timeout = new CancellationTokenSource(OnlineArtworkTimeout);
             using var response = await _webHttp.SendAsync(request, timeout.Token).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return null;
-            return JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
+            if (!response.IsSuccessStatusCode) return (null, IsQuotaRefusal(response.StatusCode, url));
+            return (JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false)), false);
         }
-        catch (Exception) { return null; }
+        catch (Exception) { return (null, false); }
     }
 
-    private async Task<string> FindDeezerArtworkAsync(string title, string artist, string album)
+    private async Task<(string? Url, bool Limited)> FindDeezerArtworkAsync(string title, string artist, string album)
     {
         string query = $"{FirstArtist(artist)} {SearchTitle(title)}";
-        using var doc = await GetOnlineJsonAsync($"https://api.deezer.com/search?limit=25&q={Uri.EscapeDataString(query)}").ConfigureAwait(false);
-        if (doc == null || !doc.RootElement.TryGetProperty("data", out var results) || results.ValueKind != JsonValueKind.Array) return string.Empty;
-        return BestArtwork(title, artist, album, results.EnumerateArray().Select(r => (
+        var (doc, limited) = await GetOnlineJsonAsync($"https://api.deezer.com/search?limit=25&q={Uri.EscapeDataString(query)}").ConfigureAwait(false);
+        using var owned = doc;
+        if (doc == null) return (null, limited);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object || doc.RootElement.TryGetProperty("error", out _))
+            return (null, IsDeezerQuotaError(doc.RootElement));
+        if (!doc.RootElement.TryGetProperty("data", out var results) || results.ValueKind != JsonValueKind.Array) return (string.Empty, false);
+        return (BestArtwork(title, artist, album, results.EnumerateArray().Select(r => (
             JsonText(r, "title"),
             r.TryGetProperty("artist", out var a) ? JsonText(a, "name") : string.Empty,
             r.TryGetProperty("album", out var al) ? JsonText(al, "title") : string.Empty,
-            r.TryGetProperty("album", out var cover) ? JsonText(cover, "cover_xl") : string.Empty)));
+            r.TryGetProperty("album", out var cover) ? JsonText(cover, "cover_xl") : string.Empty))), false);
     }
 
-    private async Task<string> FindAppleArtworkAsync(string title, string artist, string album)
+    private async Task<(string? Url, bool Limited)> FindAppleArtworkAsync(string title, string artist, string album)
     {
         string country = RegionInfo.CurrentRegion.TwoLetterISORegionName.ToLowerInvariant();
         string term = Uri.EscapeDataString($"{FirstArtist(artist)} {SearchTitle(title)}");
-        using var doc = await GetOnlineJsonAsync($"https://itunes.apple.com/search?term={term}&media=music&entity=song&limit=25&country={country}")
+        var (doc, limited) = await GetOnlineJsonAsync($"https://itunes.apple.com/search?term={term}&media=music&entity=song&limit=25&country={country}")
             .ConfigureAwait(false);
-        if (doc == null || !doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array) return string.Empty;
-        return BestArtwork(title, artist, album, results.EnumerateArray().Select(r => (
+        using var owned = doc;
+        if (doc == null || doc.RootElement.ValueKind != JsonValueKind.Object) return (null, limited);
+        if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array) return (string.Empty, false);
+        return (BestArtwork(title, artist, album, results.EnumerateArray().Select(r => (
             JsonText(r, "trackName"), JsonText(r, "artistName"), JsonText(r, "collectionName"),
-            Regex.Replace(JsonText(r, "artworkUrl100"), @"\d+x\d+bb\.", "600x600bb."))));
+            Regex.Replace(JsonText(r, "artworkUrl100"), @"\d+x\d+bb\.", "600x600bb.")))), false);
     }
 
     private static string JsonText(JsonElement element, string name) =>

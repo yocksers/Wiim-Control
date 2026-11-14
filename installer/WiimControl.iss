@@ -1,5 +1,5 @@
 #define MyAppName "Wiim Control"
-#define MyAppVersion "1.33"
+#define MyAppVersion "1.34"
 #define MyAppPublisher "Wiim Control"
 #define MyAppExeName "WiimControl.exe"
 #define MyOldAppName "Wiim Volume Control"

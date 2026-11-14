@@ -104,7 +104,8 @@ sealed partial class WiimController
         var remoteStep = SendToDeviceAsync(ip, "get_remote_volume_step");
         var headroom = SendToDeviceAsync(ip, "EQGetHeadroom");
         var channel = GetChannelAsync(ip);
-        await Task.WhenAll(statusEx, balance, fade, buttonStep, remoteStep, headroom, channel).ConfigureAwait(false);
+        var loudness = GetLoudnessAsync(ip);
+        await Task.WhenAll(statusEx, balance, fade, buttonStep, remoteStep, headroom, channel, loudness).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
 
         return new AmpSettings(
@@ -117,7 +118,37 @@ sealed partial class WiimController
             AutoHeadroom: JsonField(headroom.Result, "Mode") is { } headroomMode ? headroomMode.Equals("Auto", StringComparison.OrdinalIgnoreCase) : null,
             HeadroomGain: double.TryParse(JsonField(headroom.Result, "Gain"), NumberStyles.Float, CultureInfo.InvariantCulture, out double headroomGain)
                 ? headroomGain : null,
-            Channel: channel.Result);
+            Channel: channel.Result,
+            Loudness: loudness.Result);
+    }
+
+    private async Task<bool?> GetLoudnessAsync(string ip)
+    {
+        if (!HasLoudness(await SendToDeviceAsync(ip, "GetAcousticCapability").ConfigureAwait(false))) return null;
+        return ParseLoudness(await SendToDeviceAsync(ip, "EQGetLoudness:{}").ConfigureAwait(false));
+    }
+
+    internal static bool HasLoudness(string? capability)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(capability ?? string.Empty);
+            return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && doc.RootElement.TryGetProperty("Loudness", out _);
+        }
+        catch (System.Text.Json.JsonException) { return false; }
+    }
+
+    internal static bool? ParseLoudness(string? reply) => JsonField(reply, "on") switch
+    {
+        "1" => true,
+        "0" => false,
+        _ => null
+    };
+
+    internal async Task<bool> SetLoudnessAsync(string ip, bool on)
+    {
+        await SendToDeviceAsync(ip, $"EQSetLoudness:{{\"on\":{(on ? 1 : 0)}}}").ConfigureAwait(false);
+        return ParseLoudness(await SendToDeviceAsync(ip, "EQGetLoudness:{}").ConfigureAwait(false)) == on;
     }
 
     private const string UsbDacMode = "AUDIO_OUTPUT_UAC_CARD_MODE";

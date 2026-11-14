@@ -52,6 +52,26 @@ sealed partial class WiimController
         return state?.Profiles.Contains(name) != true;
     }
 
+    internal async Task<bool> SetRoomFitBandsAsync(string ip, bool split, int channel, IEnumerable<(int Index, PeqBand Band)> bands)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["EQLevel"] = RoomFitLevel,
+            ["source_name"] = string.Empty,
+            ["pluginURI"] = PeqPlugin,
+            ["channelMode"] = split ? "L/R" : "Stereo",
+            [PeqChannelKey(channel)] = PeqBandParameters(bands)
+        };
+        return CommandSucceeded(await SendEqJsonAsync(ip, "EQSetLV2SourceBand", payload).ConfigureAwait(false));
+    }
+
+    internal async Task<bool> SaveRoomFitProfileAsync(string ip, string name, bool enabled)
+    {
+        if (!CommandSucceeded(await SendEqJsonAsync(ip, "EQSourceSave", new { pluginURI = PeqPlugin, Name = name, EQLevel = RoomFitLevel })
+                .ConfigureAwait(false))) return false;
+        return await LoadRoomFitProfileAsync(ip, name, enabled).ConfigureAwait(false);
+    }
+
     internal async Task<bool> LoadRoomFitProfileAsync(string ip, string name, bool enabled)
     {
         if (!CommandSucceeded(await SendEqJsonAsync(ip, "EQv2SourceLoad",

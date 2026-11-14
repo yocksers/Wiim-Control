@@ -43,6 +43,22 @@ sealed partial class WiimController
         set { _nowPlayingControls = value; SaveConfig(); }
     }
 
+    private bool _nowPlayingControlsUnder;
+
+    internal bool NowPlayingControlsUnder
+    {
+        get => _nowPlayingControlsUnder;
+        set { _nowPlayingControlsUnder = value; SaveConfig(); }
+    }
+
+    private NowPlayingControlsStyle _nowPlayingControlsStyle;
+
+    internal NowPlayingControlsStyle NowPlayingControlsStyle
+    {
+        get => _nowPlayingControlsStyle;
+        set { _nowPlayingControlsStyle = value; SaveConfig(); }
+    }
+
     internal const int LyricsDelayLimitMs = 1000;
     private int _lyricsDelayMs;
 

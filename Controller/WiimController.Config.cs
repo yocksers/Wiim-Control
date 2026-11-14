@@ -118,6 +118,8 @@ sealed partial class WiimController
         Text("nowPlayingBackdrop", () => SerializeStyleLevels(_nowPlayingBrightness), value => ParseStyleLevels(value, _nowPlayingBrightness)),
         Flag("nowPlayingLyrics", () => _nowPlayingLyrics, value => _nowPlayingLyrics = value),
         Flag("nowPlayingControls", () => _nowPlayingControls, value => _nowPlayingControls = value, onUnlessFalse: true),
+        Flag("nowPlayingControlsUnder", () => _nowPlayingControlsUnder, value => _nowPlayingControlsUnder = value),
+        Choice("nowPlayingControlsStyle", () => _nowPlayingControlsStyle, value => _nowPlayingControlsStyle = value),
         Number("lyricsDelay", () => _lyricsDelayMs, value => _lyricsDelayMs = Math.Clamp(value, -LyricsDelayLimitMs, LyricsDelayLimitMs)),
         Flag("miniPlayerAuto", () => _miniPlayerAuto, value => _miniPlayerAuto = value),
         Flag("miniPlayerOnTop", () => _miniPlayerOnTop, value => _miniPlayerOnTop = value),

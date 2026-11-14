@@ -209,7 +209,7 @@ sealed partial class WiimController
 
     internal static string PeqChannelKey(int channel) => channel switch { 1 => "EQBandL", 2 => "EQBandR", _ => "EQBand" };
 
-    internal async Task<bool> SetPeqBandsAsync(string ip, string source, bool split, int channel, IEnumerable<(int Index, PeqBand Band)> bands)
+    internal static List<object> PeqBandParameters(IEnumerable<(int Index, PeqBand Band)> bands)
     {
         var parameters = new List<object>();
         foreach (var (index, band) in bands)
@@ -220,12 +220,17 @@ sealed partial class WiimController
             parameters.Add(new { param_name = $"{letter}_q", value = band.Q });
             parameters.Add(new { param_name = $"{letter}_gain", value = band.Gain });
         }
+        return parameters;
+    }
+
+    internal async Task<bool> SetPeqBandsAsync(string ip, string source, bool split, int channel, IEnumerable<(int Index, PeqBand Band)> bands)
+    {
         var payload = new Dictionary<string, object>
         {
             ["source_name"] = source,
             ["pluginURI"] = PeqPlugin,
             ["channelMode"] = split ? "L/R" : "Stereo",
-            [PeqChannelKey(channel)] = parameters
+            [PeqChannelKey(channel)] = PeqBandParameters(bands)
         };
         return CommandSucceeded(await SendEqJsonAsync(ip, "EQSetLV2SourceBand", payload).ConfigureAwait(false));
     }

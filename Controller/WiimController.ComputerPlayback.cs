@@ -221,6 +221,7 @@ sealed partial class WiimController
     {
         if (url.StartsWith(ComputerArtPrefix, StringComparison.Ordinal))
             return url == _computerArtUrl && _computerArt is { } art ? art : throw new InvalidOperationException("The computer's artwork has changed.");
-        return await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false);
+        var bytes = await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false);
+        return LooksLikeJson(bytes) ? await StationArtworkBytesAsync(url, bytes).ConfigureAwait(false) : bytes;
     }
 }
