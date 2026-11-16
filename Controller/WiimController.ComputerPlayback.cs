@@ -189,6 +189,11 @@ sealed partial class WiimController
 
     internal bool PlaysFromComputer(int mode) => ShowsComputerPlayback(mode);
 
+    internal bool InputFromComputer(int mode) =>
+        InputOfMode(mode) is { } input && input != "wifi" && IsComputerInput(input) && ComputerFeeds(input);
+
+    internal string? ComputerOutputForMode(int mode) => InputOfMode(mode) is { } input ? ComputerOutputFor(input) ?? _computerDefaultOutput : null;
+
     private async Task<bool> SeekComputerPlaybackAsync(int seconds)
     {
         if (_computerPlayback is not { } reader) return false;

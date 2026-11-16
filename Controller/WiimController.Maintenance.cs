@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace WiimControl;
@@ -26,6 +27,34 @@ sealed partial class WiimController
 
     internal async Task<bool> SetPromptSoundsAsync(string ip, bool on) =>
         CommandSucceeded(await SendToDeviceAsync(ip, $"disableLowPriorityPrompt:{(on ? 0 : 1)}").ConfigureAwait(false));
+
+    internal static readonly (int Bit, string Code, string Name)[] PromptLanguages =
+    [
+        (1, "zh_cn", "Chinese"), (2, "en_us", "English"), (3, "Ger_de", "German"), (5, "spanish", "Spanish"),
+        (6, "french", "French"), (7, "portuguese", "Portuguese"), (8, "italian", "Italian"), (12, "ja_jp", "Japanese")
+    ];
+
+    internal static List<(string Code, string Name)> ParsePromptLanguages(string? mask)
+    {
+        string text = mask?.Trim() ?? string.Empty;
+        bool parsed = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? int.TryParse(text[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int bits)
+            : int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out bits);
+        if (!parsed) return [];
+        return PromptLanguages.Where(l => (bits & (1 << l.Bit)) != 0).Select(l => (l.Code, l.Name)).ToList();
+    }
+
+    internal static (string? Current, List<(string Code, string Name)> Languages) ParsePromptLanguageChoice(string? statusEx)
+    {
+        var languages = ParsePromptLanguages(JsonField(statusEx, "languages"));
+        string? language = JsonField(statusEx, "language");
+        if (language is { Length: > 0 } && languages.Count > 1 && !languages.Any(l => l.Code.Equals(language, StringComparison.OrdinalIgnoreCase)))
+            languages.Add((language, language));
+        return (language, languages);
+    }
+
+    internal async Task<bool> SetPromptLanguageAsync(string ip, string code) =>
+        CommandSucceeded(await SendToDeviceAsync(ip, $"setLanguage:{code}").ConfigureAwait(false));
 
     internal async Task<bool?> RestartDeviceAsync(string ip)
     {

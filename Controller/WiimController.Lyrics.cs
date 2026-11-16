@@ -43,6 +43,33 @@ sealed partial class WiimController
         set { _nowPlayingControls = value; SaveConfig(); }
     }
 
+    internal const int VuSensitivityLimit = 10;
+    private int _vuSensitivity;
+
+    internal int VuSensitivity => _vuSensitivity;
+
+    internal void SetVuSensitivity(int value, bool save)
+    {
+        _vuSensitivity = Math.Clamp(value, -VuSensitivityLimit, VuSensitivityLimit);
+        if (save) SaveConfig();
+    }
+
+    private bool _analyzerBackground = true;
+
+    internal bool AnalyzerBackground
+    {
+        get => _analyzerBackground;
+        set { _analyzerBackground = value; SaveConfig(); }
+    }
+
+    private bool _vuFollowVolume;
+
+    internal bool VuFollowVolume
+    {
+        get => _vuFollowVolume;
+        set { _vuFollowVolume = value; SaveConfig(); }
+    }
+
     private bool _nowPlayingControlsUnder;
 
     internal bool NowPlayingControlsUnder

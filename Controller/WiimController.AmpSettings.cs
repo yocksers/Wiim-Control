@@ -24,6 +24,7 @@ sealed partial class WiimController
         await Task.WhenAll(statusEx, led, volumeLight, buttons, screen, screenUi, wallpapers, alarms,
             network, prompts, autoUpdate, experimentalTask, formatsTask).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
+        var promptLanguage = ParsePromptLanguageChoice(statusEx.Result);
 
         return new AmpSettings(
             int.TryParse(JsonField(statusEx.Result, "max_volume"), out int max) ? max : null,
@@ -56,7 +57,9 @@ sealed partial class WiimController
             PromptSounds: ParseInt(prompts.Result) is int promptsOff and (0 or 1) ? promptsOff == 0 : null,
             AutoUpdate: ParseAutoUpdate(autoUpdate.Result),
             Experimental: experimentalTask.Result,
-            Formats: formats ? formatsTask.Result : null);
+            Formats: formats ? formatsTask.Result : null,
+            PromptLanguage: promptLanguage.Current,
+            PromptLanguages: promptLanguage.Languages);
     }
 
     internal async Task<InputsPage> GetInputsPageAsync(string ip)

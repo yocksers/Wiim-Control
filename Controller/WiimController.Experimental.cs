@@ -9,24 +9,17 @@ sealed record ExperimentalSettings(
     string? DolbyEffect, List<string> DolbyEffects,
     string? VoiceLevel, List<string> VoiceLevels,
     bool? AmazonHd, bool? AlexaMusicHd, bool? TidalMqa,
-    bool? HideSsid, bool? DnsSpeedCheck,
-    string? Language, List<(string Code, string Name)> Languages, HighPassFilter? HiddenHighPass = null)
+    bool? HideSsid, bool? DnsSpeedCheck, HighPassFilter? HiddenHighPass = null)
 {
     public bool IsEmpty => TriggerOn == null && TriggerOnReboot == null && SoundModes.Count == 0 && DolbyEffects.Count == 0 &&
                            VoiceLevels.Count == 0 && AmazonHd == null && AlexaMusicHd == null && TidalMqa == null && HideSsid == null &&
-                           DnsSpeedCheck == null && Languages.Count < 2 && HiddenHighPass == null;
+                           DnsSpeedCheck == null && HiddenHighPass == null;
 }
 
 sealed record SyncAudio(double? ExtraDelayMs, bool MicroDelay, int? LegacyGroupDelay);
 
 sealed partial class WiimController
 {
-    internal static readonly (int Bit, string Code, string Name)[] PromptLanguages =
-    [
-        (1, "zh_cn", "Chinese"), (2, "en_us", "English"), (3, "Ger_de", "German"), (5, "spanish", "Spanish"),
-        (6, "french", "French"), (7, "portuguese", "Portuguese"), (8, "italian", "Italian"), (12, "ja_jp", "Japanese")
-    ];
-
     internal static readonly int[] LegacyGroupDelays = [800, 400, 200, 80];
     private const string ConnectionManagerService = "urn:schemas-upnp-org:service:ConnectionManager:1";
 
@@ -130,16 +123,6 @@ sealed partial class WiimController
         return (current ?? FieldIgnoringCase(capability, "DefaultLevel")?.ToString(), levels);
     }
 
-    internal static List<(string Code, string Name)> ParsePromptLanguages(string? mask)
-    {
-        string text = mask?.Trim() ?? string.Empty;
-        bool parsed = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-            ? int.TryParse(text[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int bits)
-            : int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out bits);
-        if (!parsed) return [];
-        return PromptLanguages.Where(l => (bits & (1 << l.Bit)) != 0).Select(l => (l.Code, l.Name)).ToList();
-    }
-
     internal static HighPassFilter? HiddenHighPass(string? acousticCapability, string? mainProtect) =>
         ParseHighPassFilter(mainProtect) is { } filter && !HasHighPass(acousticCapability, mainProtect) ? filter : null;
 
@@ -174,16 +157,12 @@ sealed partial class WiimController
         var modes = ParseSoundModes(soundMode.Result);
         var effects = ParseSoundEffects(soundEffect.Result);
         var levels = ParseVoiceLevel(voiceLevel.Result, capability.Result);
-        var languages = ParsePromptLanguages(JsonField(statusEx.Result, "languages"));
-        string? language = JsonField(statusEx.Result, "language");
-        if (language is { Length: > 0 } && languages.Count > 1 && !languages.Any(l => l.Code.Equals(language, StringComparison.OrdinalIgnoreCase)))
-            languages.Add((language, language));
         return new ExperimentalSettings(
             ParseFlag(trigger.Result), ParseFlag(triggerReboot.Result),
             modes.Current, modes.Modes, effects.Current, effects.Effects, levels.Current, levels.Levels,
             ParseFlag(amazonHd.Result), ParseFlag(alexaHd.Result), ParseFlag(tidalMqa.Result),
             ParseFlag(JsonField(statusEx.Result, "hideSSID")), ParseFlag(dnsSpeed.Result),
-            language, languages, HiddenHighPass(capability.Result, highPass.Result));
+            HiddenHighPass(capability.Result, highPass.Result));
     }
 
     private async Task<bool> SendSettingAsync(string ip, string command) =>
@@ -203,7 +182,6 @@ sealed partial class WiimController
     internal Task<bool> SetTidalMqaAsync(string ip, bool on) => SendSettingAsync(ip, $"setTidalMQAOnOff:{Bit(on)}");
     internal Task<bool> SetHideSsidAsync(string ip, bool on) => SendSettingAsync(ip, $"setHideSSID:{Bit(on)}");
     internal Task<bool> SetDnsSpeedCheckAsync(string ip, bool on) => SendSettingAsync(ip, $"setSmartDNSSpeedCheckEnable:{Bit(on)}");
-    internal Task<bool> SetPromptLanguageAsync(string ip, string code) => SendSettingAsync(ip, $"setLanguage:{code}");
 
     internal async Task<bool?> GetEndOfTrackAsync(string ip) => ParseFlag(await SendToDeviceAsync(ip, "getEndTrackEnable").ConfigureAwait(false));
     internal Task<bool> SetEndOfTrackAsync(string ip, bool on) => SendSettingAsync(ip, $"setEndTrackEnable:{Bit(on)}");
