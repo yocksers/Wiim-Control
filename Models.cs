@@ -5,7 +5,7 @@ enum OsdCorner { TopLeft, TopRight, BottomLeft, BottomRight }
 enum DeviceLayout { Full, Compact, Dashboard }
 enum NowPlayingControlsStyle { Classic, Minimal, Glass }
 
-enum NowPlayingStyle { Cover, Vinyl, BigVinyl, Cassette, Cd, Reel, Ambient, Lyrics, Gatefold, Mascot }
+enum NowPlayingStyle { Cover, Vinyl, BigVinyl, Cassette, Cd, Reel, Ambient, Lyrics, Gatefold, Mascot, VuMeter, VuMeters, Analyzer, StereoAnalyzer, LedMatrix, Fire }
 
 readonly record struct EqBand(int Index, string ParamName, int Value);
 
@@ -104,7 +104,7 @@ sealed record AmpSettings(int? MaxVolume, double? Balance, bool? Fade, bool? Sta
     string? UsbDacName = null, bool BluetoothOut = false, bool CastOut = false, OutputState? Output = null,
     InputSettings? InputOptions = null, bool? AutoHeadroom = null, double? HeadroomGain = null, int? Channel = null,
     bool? PromptSounds = null, AutoUpdate? AutoUpdate = null, ExperimentalSettings? Experimental = null, List<string>? Formats = null,
-    bool? Loudness = null);
+    bool? Loudness = null, string? PromptLanguage = null, List<(string Code, string Name)>? PromptLanguages = null);
 
 sealed record MediaServer(string Name, string Udn, string ContentDirectoryUrl, string IconUrl, bool OnThisComputer = false,
     bool IsLyrion = false, bool IsRoon = false, bool IsShare = false, bool IsEmbyJellyfin = false);
