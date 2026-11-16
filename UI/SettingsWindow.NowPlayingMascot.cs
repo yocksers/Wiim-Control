@@ -200,7 +200,7 @@ sealed partial class WiimController
             };
             _npCoverCard.Tapped += (_, e) =>
             {
-                if (_owner.NowPlayingStyle != NowPlayingStyle.Mascot || _mascotState is not (MascotState.Gone or MascotState.WalkOff)) return;
+                if (NpStyle != NowPlayingStyle.Mascot || _mascotState is not (MascotState.Gone or MascotState.WalkOff)) return;
                 if (e.Source is Visual source && (source.FindAncestorOfType<Button>(includeSelf: true) != null ||
                                                   source.FindAncestorOfType<RangeBase>(includeSelf: true) != null ||
                                                   source.FindAncestorOfType<LevelSlider>(includeSelf: true) != null)) return;
@@ -248,7 +248,7 @@ sealed partial class WiimController
 
         private void MascotVolumeChanged()
         {
-            if (_owner.NowPlayingStyle != NowPlayingStyle.Mascot || !_npOverlay.IsVisible) return;
+            if (NpStyle != NowPlayingStyle.Mascot || !_npOverlay.IsVisible) return;
             if (_npIp is { } ip && _volumes.TryGetValue(TargetOf(ip), out var level)) MascotVolumeTurned(level.Muted ? 0 : level.Volume);
             var mood = CurrentMood();
             if (mood == _mascotMoodSeen) return;
@@ -388,7 +388,7 @@ sealed partial class WiimController
 
         private void UpdateMascotTimer()
         {
-            bool shown = _npOverlay.IsVisible && _owner.NowPlayingStyle == NowPlayingStyle.Mascot;
+            bool shown = _npOverlay.IsVisible && NpStyle == NowPlayingStyle.Mascot;
             bool run = shown && _mascotState != MascotState.Gone;
             if (run && !_mascotTimer.IsEnabled) _mascotTimer.Start();
             else if (!run) _mascotTimer.Stop();

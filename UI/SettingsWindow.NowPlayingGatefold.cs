@@ -86,7 +86,7 @@ sealed partial class WiimController
 
         private void UpdateGatefoldTrack(DeviceStatus status)
         {
-            if (_owner.NowPlayingStyle != NowPlayingStyle.Gatefold || !_npOverlay.IsVisible) return;
+            if (NpStyle != NowPlayingStyle.Gatefold || !_npOverlay.IsVisible) return;
             string key = $"{status.Title}\n{status.Artist}\n{status.Album}";
             if (key == _npTracksKey) return;
             bool first = _npTracksKey.Length == 0;

@@ -144,7 +144,7 @@ sealed partial class WiimController
         private static string LyricsDelayText(int delayMs) =>
             delayMs == 0 ? "0 s" : (delayMs / 1000.0).ToString("+0.0 s;−0.0 s", System.Globalization.CultureInfo.CurrentCulture);
 
-        private bool LyricsOnly => _owner.NowPlayingStyle == NowPlayingStyle.Lyrics;
+        private bool LyricsOnly => NpStyle == NowPlayingStyle.Lyrics;
 
         private bool LyricsShown => _owner.NowPlayingLyrics || LyricsOnly;
 
@@ -186,7 +186,7 @@ sealed partial class WiimController
 
         private double LyricsGroupSide(double panelWidth)
         {
-            bool ambient = IsAmbient(_owner.NowPlayingStyle);
+            bool ambient = IsAmbient(NpStyle);
             double contentWidth = ambient ? 1280 : _npStage.Width + ShadowRoom.Left + ShadowRoom.Right;
             double contentHeight = ambient ? 900 : _npStage.Height + ShadowRoom.Top + ShadowRoom.Bottom;
             if (!ambient && _npStageBox.Child is { DesiredSize: { Width: > 0, Height: > 0 } size}) (contentWidth, contentHeight) = (size.Width, size.Height);

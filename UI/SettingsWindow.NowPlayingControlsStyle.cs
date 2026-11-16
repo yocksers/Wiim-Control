@@ -22,7 +22,7 @@ sealed partial class WiimController
 
         private static bool CanPlaceControlsUnder(NowPlayingStyle style) =>
             style is NowPlayingStyle.Cover or NowPlayingStyle.Vinyl or NowPlayingStyle.Cassette or NowPlayingStyle.Cd or NowPlayingStyle.Gatefold
-                or NowPlayingStyle.Mascot;
+                or NowPlayingStyle.Mascot or NowPlayingStyle.Analyzer or NowPlayingStyle.VuMeter or NowPlayingStyle.LedMatrix or NowPlayingStyle.Fire;
 
         private static string ControlsStyleName(NowPlayingControlsStyle style) => $"Style {(int)style + 1}";
 
@@ -38,7 +38,7 @@ sealed partial class WiimController
                     DropdownAction("Hide controls", () => SetNowPlayingControls(false, null), !_owner.NowPlayingControlsShown),
                     DropdownHeading("Place")
                 };
-                bool canMove = CanPlaceControlsUnder(_owner.NowPlayingStyle);
+                bool canMove = CanPlaceControlsUnder(NpStyle);
                 foreach (bool under in new[] { false, true })
                     choices.Add(new DropdownChoice(under ? "Under the artwork" : "On the artwork", canMove && under == _owner.NowPlayingControlsUnder, canMove,
                         () => SetControlsUnder(under)));
@@ -102,6 +102,9 @@ sealed partial class WiimController
             p.Previous.HorizontalAlignment = p.PlayPause.HorizontalAlignment = p.Next.HorizontalAlignment = HorizontalAlignment.Center;
             p.Shuffle.Margin = p.Repeat.Margin = p.PlayPause.Margin = classic ? default : new Thickness(gap / 2, 0);
             p.Previous.Margin = p.Next.Margin = classic ? new Thickness(gap, 0) : new Thickness(gap / 2, 0);
+            _npVuButtons.Margin = _npVuSpacer.Margin = classic ? default : new Thickness(gap / 2, 0);
+            _npVuButtons.Spacing = classic ? 0 : gap;
+            SizeExtraButtonSpacer();
 
             bool glass = style == NowPlayingControlsStyle.Glass;
             foreach (var bar in new[] { p.ButtonBar, _npBigButtonBar })

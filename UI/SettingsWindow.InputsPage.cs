@@ -27,10 +27,9 @@ sealed partial class WiimController
                 onlineArtwork.IsCheckedChanged += (_, _) => window._owner.OnlineArtwork = onlineArtwork.IsChecked == true;
                 UpdateComputerProblem();
                 var computerCard = Card("From this computer",
-                    Muted("Enable artwork for music played on computer."),
+                    Muted("Enable artwork for music played on the computer. Also needed for VU/Visualizers to work"),
                     _computerInputRows,
                     _computerProblem,
-                    Muted("Enable looking up higher resolution artwork from external sites"),
                     ToggleRow("Look up artwork online", onlineArtwork),
                     Muted("Warning: when this is on, the artist, title and album of what this computer plays, or the channel and title of " +
                           "a video, are sent to Deezer and Apple to find the cover."));

@@ -344,6 +344,14 @@ sealed partial class WiimController
                     ToolTip.SetTip(prompts, "The device's sounds and voice prompts, for example when Bluetooth connects. Important prompts always play.");
                     rows.Add(prompts);
                 }
+                if (s.PromptLanguages is { Count: > 1 } languages)
+                {
+                    var codes = languages.Select(l => l.Code).ToList();
+                    var language = TextChoice("Voice prompt language", codes, s.PromptLanguage, code => languages.First(l => l.Code == code).Name,
+                        code => window._owner.SetPromptLanguageAsync(ip, code));
+                    ToolTip.SetTip(language, "The language of the spoken messages the device plays");
+                    rows.Add(language);
+                }
                 if (s.VolumeLightMode is int volumeLightMode)
                     rows.Add(AmpChoice("Volume lights", VolumeLightModes.Select(m => (m.Mode, m.Label)), volumeLightMode,
                         mode => window._owner.SetVolumeLightModeAsync(ip, mode)));

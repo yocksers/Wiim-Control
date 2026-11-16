@@ -75,11 +75,8 @@ sealed partial class WiimController
                 };
                 _cboRoomFitAmp.SelectionChanged += async (_, _) => { if (!window._loading) await RefreshRoomFitAsync(); };
                 _roomFitBuilt = true;
-                var body = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
-                Grid.SetRow(_roomFitMissing, 1);
-                Grid.SetRow(_roomFitCurve, 2);
-                body.Children.AddRange([_roomFitCard, _roomFitMissing, _roomFitCurve]);
-                return window.Page("RoomFit", _lblRoomFitStatus, [_cboRoomFitAmp, btnRefresh], body, scroll: false);
+                return window.Page("RoomFit", _lblRoomFitStatus, [_cboRoomFitAmp, btnRefresh],
+                    new StackPanel { Children = { _roomFitCard, _roomFitMissing, _roomFitCurve } });
             }
 
             public void FillRoomFitAmpCombo()

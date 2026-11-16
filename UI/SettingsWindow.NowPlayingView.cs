@@ -105,6 +105,8 @@ sealed partial class WiimController
             BuildCassette();
             BuildCd();
             BuildBigReel();
+            BuildVuMeters();
+            BuildAnalyzer();
             BuildAmbient();
             BuildGatefold();
             BuildEasterEggs();
@@ -123,6 +125,10 @@ sealed partial class WiimController
             _npStage.Children.Add(Place(_npCassette, CassetteLeft, (StageCover - CassetteHeight) / 2));
             _npStage.Children.Add(Place(_npCd, CdLeft, (StageCover - CdSize) / 2));
             _npStage.Children.Add(_npBigReel);
+            _npStage.Children.Add(_npVuPanel);
+            _npStage.Children.Add(_npAnalyzerBox);
+            _npStage.Children.Add(_npStereoPanel);
+            _npStage.Children.Add(_npVuSingleBox);
             _npStage.Children.Add(_npBigDisc);
             _npStage.Children.Add(_npBigControls);
             _npStage.Children.Add(Place(_npGatefold, StageCover, 0));
@@ -141,12 +147,18 @@ sealed partial class WiimController
             close.Click += (_, _) => HideNowPlayingView();
             _npStyleButton.Classes.Add("pill");
             ToolTip.SetTip(_npStyleButton, "Choose how the artwork is shown");
-            _npStyleButton.Click += (_, _) => ShowDropdown(_npStyleButton, Enum.GetValues<NowPlayingStyle>().Select(style => DropdownAction(StyleName(style), () =>
+            _npStyleButton.Click += (_, _) =>
             {
-                _owner.NowPlayingStyle = style;
-                ApplyNowPlayingStyle();
-                return Task.CompletedTask;
-            }, style == _owner.NowPlayingStyle)).ToList());
+                var choices = Enum.GetValues<NowPlayingStyle>()
+                    .Where(style => !UsesComputerSound(style) || VuMetersAvailable).Select(style => DropdownAction(StyleName(style), () =>
+                    {
+                        _owner.NowPlayingStyle = style;
+                        ApplyNowPlayingStyle();
+                        return Task.CompletedTask;
+                    }, style == NpStyle)).ToList();
+                if (ParecMissing) choices.Add(new DropdownChoice("More styles need parec (install pulseaudio-utils)", false, false, () => Task.CompletedTask));
+                ShowDropdown(_npStyleButton, choices);
+            };
             _npFullScreen = IconPill(Icons.FullScreen, null);
             _npFullScreen.Button.Click += (_, _) => SetNowPlayingFullScreen(_npRestoreState == null);
             ApplyFullScreenButton();
@@ -353,8 +365,8 @@ sealed partial class WiimController
             previous.Click += async (_, _) => await TransportAsync(ip, "prev");
             playPause.Click += async (_, _) => await TransportAsync(ip, "onepause");
             next.Click += async (_, _) => await TransportAsync(ip, "next");
-            var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,*") };
-            foreach (var (control, column) in new (Control, int)[] { (shuffle, 0), (previous, 1), (playPause, 2), (next, 3), (repeat, 4) })
+            var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto,Auto,*") };
+            foreach (var (control, column) in new (Control, int)[] { (shuffle, 0), (previous, 2), (playPause, 3), (next, 4), (repeat, 6) })
             {
                 control.VerticalAlignment = VerticalAlignment.Center;
                 Grid.SetColumn(control, column);
@@ -449,7 +461,7 @@ sealed partial class WiimController
                 Content = "Reset", FontSize = 11, Padding = new Thickness(8, 2), MinHeight = 0, HorizontalAlignment = HorizontalAlignment.Center
             };
             ToolTip.SetTip(reset, "Back to the default brightness for this style");
-            reset.Click += (_, _) => _npBrightnessSlider.Value = DefaultNowPlayingBrightness(_owner.NowPlayingStyle);
+            reset.Click += (_, _) => _npBrightnessSlider.Value = DefaultNowPlayingBrightness(NpStyle);
             _npBrightnessFlyout.Content = ScaledPopup(new StackPanel
             {
                 Spacing = 8, Margin = new Thickness(4, 6), Children = { _npBrightnessSlider, _npBrightnessValue, reset }
@@ -459,14 +471,14 @@ sealed partial class WiimController
                 if (e.Property != RangeBase.ValueProperty) return;
                 int brightness = (int)Math.Round(_npBrightnessSlider.Value);
                 _npBrightnessValue.Text = $"{brightness}%";
-                _owner.SetNowPlayingBrightness(_owner.NowPlayingStyle, brightness, save: false);
+                _owner.SetNowPlayingBrightness(NpStyle, brightness, save: false);
                 _npBackdropLevel = brightness / 100.0;
                 BlendBackdrops(0);
             };
-            _npBrightnessFlyout.Opening += (_, _) => _npBrightnessSlider.Value = _owner.NowPlayingBrightness(_owner.NowPlayingStyle);
+            _npBrightnessFlyout.Opening += (_, _) => _npBrightnessSlider.Value = _owner.NowPlayingBrightness(NpStyle);
             _npBrightnessFlyout.Closed += (_, _) =>
             {
-                _owner.SetNowPlayingBrightness(_owner.NowPlayingStyle, (int)Math.Round(_npBrightnessSlider.Value), save: true);
+                _owner.SetNowPlayingBrightness(NpStyle, (int)Math.Round(_npBrightnessSlider.Value), save: true);
                 WakeNowPlaying();
             };
             button.Flyout = _npBrightnessFlyout;
@@ -516,7 +528,7 @@ sealed partial class WiimController
             }
             var previous = _npCover.IsVisible ? _npCover.Source : null;
             if (ReferenceEquals(previous, bitmap) && bitmap != null) return;
-            if (fade && MascotBusy && _owner.NowPlayingStyle == NowPlayingStyle.Mascot)
+            if (fade && MascotBusy && NpStyle == NowPlayingStyle.Mascot)
             {
                 ReplaceIncomingArt(bitmap);
                 return;
@@ -543,8 +555,8 @@ sealed partial class WiimController
             IBrush artFill = NowPlayingArtFill(bitmap);
             foreach (var (art, _) in _npArtShapes) art.Fill = artFill;
             _npFadeFromEmpty = previous == null;
-            var style = _owner.NowPlayingStyle;
-            _npFlip = flip && previous != null && (style is NowPlayingStyle.Cover or NowPlayingStyle.BigVinyl or NowPlayingStyle.Gatefold || IsAmbient(style));
+            var style = NpStyle;
+            _npFlip = flip && previous != null && (style is NowPlayingStyle.Cover or NowPlayingStyle.BigVinyl or NowPlayingStyle.Gatefold || IsVuStyle(style) || IsAnalyzer(style) || IsAmbient(style));
             _npSwap = flip && previous != null && style is NowPlayingStyle.Vinyl or NowPlayingStyle.Cassette or NowPlayingStyle.Cd;
             _npFadeStart = DateTime.UtcNow;
             if (style == NowPlayingStyle.Mascot && flip && fade && previous != null && _npOverlay.IsVisible)
@@ -715,6 +727,12 @@ sealed partial class WiimController
             NowPlayingStyle.Lyrics => "Lyrics only",
             NowPlayingStyle.Gatefold => "Gatefold with track list",
             NowPlayingStyle.Mascot => "Mascot",
+            NowPlayingStyle.VuMeters => "Stereo VU meters",
+            NowPlayingStyle.VuMeter => "VU meter",
+            NowPlayingStyle.Analyzer => "Spectrum",
+            NowPlayingStyle.StereoAnalyzer => "Stereo Spectrum",
+            NowPlayingStyle.LedMatrix => "Dot Matrix",
+            NowPlayingStyle.Fire => "Fire",
             _ => "Cover only"
         };
 
@@ -722,7 +740,8 @@ sealed partial class WiimController
 
         private void ApplyNowPlayingStyle()
         {
-            var style = _owner.NowPlayingStyle;
+            var style = NpStyle;
+            _npAppliedStyle = style;
             bool ambient = IsAmbient(style);
             _npDisc.IsVisible = _npSheen.IsVisible = style == NowPlayingStyle.Vinyl;
             _npBigDisc.IsVisible = _npBigControls.IsVisible = style == NowPlayingStyle.BigVinyl;
@@ -743,6 +762,10 @@ sealed partial class WiimController
                 NowPlayingStyle.Reel => (BigReelWidth, BigReelHeight),
                 NowPlayingStyle.Gatefold => (StageCover * 2, StageCover),
                 NowPlayingStyle.Mascot => (MascotStageWidth, StageCover),
+                NowPlayingStyle.VuMeters => (VuStageWidth, VuStageHeight),
+                NowPlayingStyle.VuMeter => (AnalyzerStageWidth, StageCover),
+                NowPlayingStyle.Analyzer or NowPlayingStyle.LedMatrix or NowPlayingStyle.Fire => (AnalyzerStageWidth, StageCover),
+                NowPlayingStyle.StereoAnalyzer => (StereoStageWidth, StereoStageHeight),
                 _ => (StageCover, StageCover)
             };
             _npStyleButton.Content = new StackPanel
@@ -763,6 +786,9 @@ sealed partial class WiimController
             if (style == NowPlayingStyle.Gatefold) OpenGatefold();
             else _npGatefoldTimer.Stop();
             ApplyMascotStyle(style == NowPlayingStyle.Mascot);
+            ApplyVuStyle(style);
+            ApplyAnalyzerStyle(style);
+            ApplyStereoAnalyzerStyle(style == NowPlayingStyle.StereoAnalyzer);
             ApplyNowPlayingControls();
             if (_npOverlay.IsVisible) WakeNowPlaying();
         }
@@ -782,18 +808,18 @@ sealed partial class WiimController
 
         private void HideNowPlayingControls()
         {
-            bool ambient = _owner.NowPlayingStyle == NowPlayingStyle.Ambient;
-            if (_npTopBar.IsPointerOver || _npBrightnessFlyout.IsOpen || _npLyricsDelayFlyout.IsOpen || ambient && _npAmbientControls.IsPointerOver) return;
+            bool ambient = NpStyle == NowPlayingStyle.Ambient;
+            if (_npTopBar.IsPointerOver || _npBrightnessFlyout.IsOpen || _npLyricsDelayFlyout.IsOpen || _npVuSensitivityFlyout.IsOpen || ambient && _npAmbientControls.IsPointerOver) return;
             _npIdleTimer.Stop();
             _npTopBar.Opacity = 0;
             if (ambient) _npAmbientControls.Opacity = 0;
-            if (ambient || _owner.NowPlayingStyle == NowPlayingStyle.Lyrics) _npOverlay.Cursor = new Cursor(StandardCursorType.None);
+            if (ambient || NpStyle == NowPlayingStyle.Lyrics) _npOverlay.Cursor = new Cursor(StandardCursorType.None);
         }
 
         private void PlaceNowPlayingControls()
         {
             if (_npControlPanel is not { } panel || _npControlCard is not { } card) return;
-            var style = _owner.NowPlayingStyle;
+            var style = NpStyle;
             bool under = _owner.NowPlayingControlsUnder && CanPlaceControlsUnder(style);
             Decorator host = style == NowPlayingStyle.Ambient ? _npAmbientControls : card;
             _npUnder.IsVisible = under;
@@ -807,7 +833,7 @@ sealed partial class WiimController
         private void UpdateStageMotion()
         {
             bool playing = _npOverlay.IsVisible && _npControls?.Playing.IsVisible == true;
-            var style = _owner.NowPlayingStyle;
+            var style = NpStyle;
             _npLabelSpin.Run(playing && style == NowPlayingStyle.Vinyl && !_npSwap);
             _npBigLabelSpin.Run(playing && style == NowPlayingStyle.BigVinyl && !_npFlip);
             _npCassetteReels?.Run(playing && style == NowPlayingStyle.Cassette && !_npSwap);
@@ -815,6 +841,8 @@ sealed partial class WiimController
             UpdateAmbientDrift(_npOverlay.IsVisible && IsAmbient(style));
             _npBigReelReels?.Run(playing && style == NowPlayingStyle.Reel);
             UpdateMascotTimer();
+            UpdateVuMeters();
+            UpdateAnalyzer();
         }
 
         private void UpdateTapePacks()

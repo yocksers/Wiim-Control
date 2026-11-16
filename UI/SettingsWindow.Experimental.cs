@@ -135,15 +135,6 @@ sealed partial class WiimController
                     network.Add(AmpToggle("DNS speed check", speedCheck, on => window._owner.SetDnsSpeedCheckAsync(ip, on)));
                 if (network.Count > 0) AddSetting(Card("Network", network.ToArray()));
 
-                if (x.Languages.Count > 1)
-                {
-                    var codes = x.Languages.Select(l => l.Code).ToList();
-                    var row = TextChoice("Voice prompt language", codes, x.Language,
-                        code => x.Languages.First(l => l.Code == code).Name, code => window._owner.SetPromptLanguageAsync(ip, code));
-                    ToolTip.SetTip(row, "The language of the spoken messages the device plays");
-                    AddSetting(Card("Voice prompts", row));
-                }
-
                 if (x.IsEmpty) cards.Add(Muted("This device doesn't answer any of the experimental settings."));
                 return cards;
             }

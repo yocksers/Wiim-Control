@@ -23,7 +23,7 @@ sealed partial class WiimController
         private readonly StackPanel _npBigTop = new() { Width = 560 };
         private readonly Border _npBigPrevious = new() { Width = 120, Height = 120 };
         private readonly Border _npBigNext = new() { Width = 120, Height = 120 };
-        private readonly Grid _npBigButtons = new() { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,*") };
+        private readonly Grid _npBigButtons = new() { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto,Auto,*") };
         private readonly Border _npBigButtonBar = new();
         private readonly StackPanel _npBigBottom = new() { Width = 460 };
         private NowPlayingParts? _npParts;
@@ -100,16 +100,17 @@ sealed partial class WiimController
         private void ArrangeNowPlayingParts()
         {
             if (_npParts is not { } p) return;
-            var layout = _owner.NowPlayingStyle is NowPlayingStyle.BigVinyl or NowPlayingStyle.Reel ? _owner.NowPlayingStyle : NowPlayingStyle.Cover;
+            var layout = NpStyle is NowPlayingStyle.BigVinyl or NowPlayingStyle.Reel or NowPlayingStyle.VuMeters or NowPlayingStyle.StereoAnalyzer
+                ? NpStyle : NowPlayingStyle.Cover;
             var controls = _owner.NowPlayingControlsStyle;
-            bool under = _owner.NowPlayingControlsUnder && CanPlaceControlsUnder(_owner.NowPlayingStyle);
+            bool under = _owner.NowPlayingControlsUnder && CanPlaceControlsUnder(NpStyle);
             if (layout == _npPartsLayout && controls == _npPartsControls && under == _npPartsUnder) return;
             _npPartsLayout = layout;
             _npPartsControls = controls;
             _npPartsUnder = under;
-            foreach (var part in new Control[] { p.Title, p.Artist, p.DetailRow, p.PositionRow, p.ButtonBar, p.Shuffle, p.Previous, p.PlayPause, p.Next, p.Repeat, p.VolumeRow })
+            foreach (var part in new Control[] { p.Title, p.Artist, p.DetailRow, p.PositionRow, p.ButtonBar, p.Shuffle, p.Previous, p.PlayPause, p.Next, p.Repeat, p.VolumeRow, _npVuButtons, _npVuSpacer })
                 Detach(part);
-            bool centred = layout != NowPlayingStyle.Cover;
+            bool centred = layout is NowPlayingStyle.BigVinyl or NowPlayingStyle.Reel;
             p.Title.TextAlignment = p.Artist.TextAlignment = centred ? TextAlignment.Center : TextAlignment.Left;
             p.DetailRow.HorizontalAlignment = centred ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
             if (layout == NowPlayingStyle.BigVinyl)
@@ -122,8 +123,22 @@ sealed partial class WiimController
             }
             else
             {
-                p.Buttons.Children.AddRange([p.Shuffle, p.Previous, p.PlayPause, p.Next, p.Repeat]);
-                if (layout == NowPlayingStyle.Reel)
+                p.Buttons.Children.AddRange([p.Shuffle, _npVuSpacer, p.Previous, p.PlayPause, p.Next, _npVuButtons, p.Repeat]);
+                if (layout == NowPlayingStyle.StereoAnalyzer)
+                {
+                    _npStereoInfo.Children.AddRange([p.Title, p.Artist, p.DetailRow]);
+                    _npStereoInfo.Children.AddRange(controls == NowPlayingControlsStyle.Classic
+                        ? [p.PositionRow, p.ButtonBar, p.VolumeRow]
+                        : [p.ButtonBar, p.PositionRow, p.VolumeRow]);
+                }
+                else if (layout == NowPlayingStyle.VuMeters)
+                {
+                    _npVuBottom.Children.AddRange([p.Title, p.Artist, p.DetailRow]);
+                    _npVuBottom.Children.AddRange(controls == NowPlayingControlsStyle.Classic
+                        ? [p.PositionRow, p.ButtonBar, p.VolumeRow]
+                        : [p.ButtonBar, p.PositionRow, p.VolumeRow]);
+                }
+                else if (layout == NowPlayingStyle.Reel)
                 {
                     _npReelTop.Children.AddRange([p.Title, p.Artist, p.DetailRow]);
                     _npReelBottom.Children.AddRange([p.ButtonBar, p.PositionRow, p.VolumeRow]);
@@ -149,6 +164,8 @@ sealed partial class WiimController
             _npReelTop.Children.Clear();
             _npReelBottom.Children.Clear();
             _npUnderPanel.Children.Clear();
+            _npVuBottom.Children.Clear();
+            _npStereoInfo.Children.Clear();
         }
 
         private static void Detach(Control control)

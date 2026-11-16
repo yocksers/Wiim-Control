@@ -56,16 +56,7 @@ sealed partial class WiimController
                     : [(Channel: 0, Label: string.Empty, Bands: state.Stereo)];
                 foreach (var (channel, _, bands) in channels) _rfChannels[channel] = [.. bands];
 
-                var content = new Grid
-                {
-                    RowDefinitions =
-                    {
-                        new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto),
-                        new RowDefinition(1, GridUnitType.Star) { MinHeight = 130, MaxHeight = 260 },
-                        new RowDefinition(12, GridUnitType.Pixel),
-                        new RowDefinition(1.2, GridUnitType.Star) { MinHeight = 90 }
-                    }
-                };
+                var content = new StackPanel { Spacing = 6 };
                 var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
                 heading.Children.Add(new TextBlock { Text = $"Correction: {state.Active}", Classes = { "heading" }, VerticalAlignment = VerticalAlignment.Center });
                 foreach (var button in new[] { _btnRfUndo, _btnRfSaveAs, _btnRfSave }) (button.Parent as Panel)?.Children.Remove(button);
@@ -73,33 +64,15 @@ sealed partial class WiimController
                 Grid.SetColumn(buttons, 1);
                 heading.Children.Add(buttons);
                 content.Children.Add(heading);
-                var hint = Muted("Scroll over a graph to zoom in, hold Shift while scrolling to move along, and double-click it to see the whole range.");
-                Grid.SetRow(hint, 1);
-                content.Children.Add(hint);
-                var graphs = new Grid { ColumnSpacing = 16 };
-                var tables = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
-                for (int i = 0; i < channels.Length; i++)
+                content.Children.Add(Muted("Scroll over a graph to zoom in, hold Shift while scrolling to move along, and double-click it to see the whole range."));
+                foreach (var (channel, label, _) in channels)
                 {
-                    var (channel, label, _) = channels[i];
-                    var (graph, table) = BuildRoomFitChannelEditor(channel);
-                    graphs.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
-                    Control graphCell = graph;
                     if (label.Length > 0)
-                    {
-                        var caption = new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 0, 0, 4) };
-                        DockPanel.SetDock(caption, Dock.Top);
-                        graphCell = new DockPanel { Children = { caption, graph } };
-                        tables.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, i == 0 ? 0 : 12, 0, 0) });
-                    }
-                    Grid.SetColumn(graphCell, i);
-                    graphs.Children.Add(graphCell);
-                    tables.Children.Add(table);
+                        content.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+                    var (graph, table) = BuildRoomFitChannelEditor(channel);
+                    content.Children.Add(graph);
+                    content.Children.Add(table);
                 }
-                Grid.SetRow(graphs, 2);
-                content.Children.Add(graphs);
-                var scroll = new ScrollViewer { Content = tables, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-                Grid.SetRow(scroll, 4);
-                content.Children.Add(scroll);
                 ShowRoomFitSaved(_rfUnsaved != RoomFitEditKey(state.Active));
                 var card = new Border { Child = content };
                 card.Classes.Add("card");
@@ -109,7 +82,7 @@ sealed partial class WiimController
             private (PeqGraph Graph, Control Table) BuildRoomFitChannelEditor(int channel)
             {
                 var bands = _rfChannels[channel];
-                var graph = new PeqGraph { Bands = bands, Editable = true };
+                var graph = new PeqGraph { Bands = bands, Height = 240, Editable = true };
                 var filters = new ComboBox[bands.Length];
                 var frequencies = new NumberBox[bands.Length];
                 var gains = new NumberBox[bands.Length];

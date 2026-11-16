@@ -621,6 +621,7 @@ sealed partial class WiimController
             ApplyPlayback(ip, c, status);
             if (ReferenceEquals(c, _npControls))
             {
+                CheckVuStyle();
                 UpdateLyricsTrack(status);
                 UpdateGatefoldTrack(status);
                 _npArtworkNotice.IsVisible = _owner.ArtworkLookupLimited(status);
