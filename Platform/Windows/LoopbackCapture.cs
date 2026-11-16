@@ -45,6 +45,7 @@ sealed class LoopbackCapture : IPcAudioCapture
     private readonly ManualResetEventSlim _ready = new();
     private volatile bool _stopping;
     private Exception? _startError;
+    private readonly string? _deviceId;
 
     public int SampleRate { get; private set; }
     public const int Channels = 2;
@@ -54,8 +55,9 @@ sealed class LoopbackCapture : IPcAudioCapture
     public event Action<byte[]>? Pcm;
     public event Action? Stopped;
 
-    public LoopbackCapture()
+    public LoopbackCapture(string? deviceId = null)
     {
+        _deviceId = deviceId;
         _thread = new Thread(Run) { IsBackground = true, Name = "PC sound capture" };
         _thread.SetApartmentState(ApartmentState.MTA);
         _thread.Start();
@@ -74,7 +76,8 @@ sealed class LoopbackCapture : IPcAudioCapture
         try
         {
             enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(Type.GetTypeFromCLSID(MMDeviceEnumeratorClass)!)!;
-            Check(enumerator.GetDefaultAudioEndpoint(0, 1, out device));
+            if (_deviceId is not { Length: > 0 } id || enumerator.GetDevice(id, out device) != 0 || device == null)
+                Check(enumerator.GetDefaultAudioEndpoint(0, 1, out device));
             var clientId = AudioClientId;
             Check(device!.Activate(ref clientId, 1, IntPtr.Zero, out var clientObject));
             client = (IAudioClient)clientObject;
