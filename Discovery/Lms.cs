@@ -14,6 +14,8 @@ static class Lms
     private const string TrackClass = "object.item.audioItem.musicTrack";
     private const string AlbumClass = "object.container.album.musicAlbum";
     private const string FolderClass = "object.container";
+    private const string ArtistClass = "object.container.person.musicArtist";
+    private const string PlaylistClass = "object.container.playlistContainer";
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private static readonly byte[] Probe = Encoding.ASCII.GetBytes("eIPAD\0NAME\0JSON\0UUID\0");
@@ -154,6 +156,31 @@ static class Lms
         if (command == null || await RequestAsync(server, "", command).ConfigureAwait(false) is not { } result) return null;
 
         int total = result.TryGetProperty("count", out var t) && t.TryGetInt32(out int n) ? n : 0;
+        var entries = Entries(server, kind, result);
+        return new BrowsePage(entries, Math.Max(total, start + entries.Count));
+    }
+
+    public static async Task<List<MediaEntry>?> SearchAsync(MediaServer server, string query, int? year)
+    {
+        string term = "search:" + query;
+        string Limit(int limit) => limit.ToString(CultureInfo.InvariantCulture);
+        var requests = new List<(string Kind, Task<JsonElement?> Reply)>
+        {
+            ("artists", RequestAsync(server, "", "artists", "0", Limit(WiimController.SearchArtistLimit), term))
+        };
+        if (year is int y)
+            requests.Add(("albums", RequestAsync(server, "", "albums", "0", Limit(WiimController.SearchAlbumLimit), "tags:laj", "sort:album",
+                "year:" + y.ToString(CultureInfo.InvariantCulture))));
+        requests.Add(("albums", RequestAsync(server, "", "albums", "0", Limit(WiimController.SearchAlbumLimit), "tags:laj", "sort:album", term)));
+        requests.Add(("playlists", RequestAsync(server, "", "playlists", "0", Limit(WiimController.SearchPlaylistLimit), term)));
+        requests.Add(("album", RequestAsync(server, "", "titles", "0", Limit(WiimController.SearchTrackLimit), "tags:adlJ", term)));
+        await Task.WhenAll(requests.Select(r => r.Reply)).ConfigureAwait(false);
+        if (requests.All(r => r.Reply.Result == null)) return null;
+        return requests.Where(r => r.Reply.Result != null).SelectMany(r => Entries(server, r.Kind, r.Reply.Result!.Value)).DistinctBy(e => e.Id).ToList();
+    }
+
+    private static List<MediaEntry> Entries(MediaServer server, string kind, JsonElement result)
+    {
         var entries = new List<MediaEntry>();
         IEnumerable<JsonElement> Loop(string name) =>
             result.TryGetProperty(name, out var loop) && loop.ValueKind == JsonValueKind.Array ? loop.EnumerateArray() : [];
@@ -161,7 +188,7 @@ static class Lms
         switch (kind)
         {
             case "artists":
-                foreach (var a in Loop("artists_loop")) entries.Add(Container("artist:" + Str(a, "id"), Str(a, "artist")));
+                foreach (var a in Loop("artists_loop")) entries.Add(Container("artist:" + Str(a, "id"), Str(a, "artist"), cls: ArtistClass));
                 break;
             case "albums" or "new" or "artist" or "genre" or "year":
                 foreach (var a in Loop("albums_loop"))
@@ -175,7 +202,7 @@ static class Lms
                     if (Str(y, "year") is { Length: > 0 } year && year != "0") entries.Add(Container("year:" + year, year));
                 break;
             case "playlists":
-                foreach (var p in Loop("playlists_loop")) entries.Add(Container("playlist:" + Str(p, "id"), Str(p, "playlist")));
+                foreach (var p in Loop("playlists_loop")) entries.Add(Container("playlist:" + Str(p, "id"), Str(p, "playlist"), cls: PlaylistClass));
                 break;
             case "folders" or "folder":
                 foreach (var f in Loop("folder_loop"))
@@ -191,7 +218,7 @@ static class Lms
                         double.TryParse(Str(tr, "duration"), NumberStyles.Float, CultureInfo.InvariantCulture, out double d) ? d : 0));
                 break;
         }
-        return new BrowsePage(entries, Math.Max(total, start + entries.Count));
+        return entries;
     }
 
     private static MediaEntry Container(string id, string title, string artist = "", string art = "", string cls = FolderClass) =>

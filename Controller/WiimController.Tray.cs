@@ -189,6 +189,7 @@ sealed partial class WiimController
     {
         if (_settingsWindow != null)
         {
+            if (!_settingsWindow.IsVisible) _settingsWindow.Show();
             if (_settingsWindow.WindowState == WindowState.Minimized) _settingsWindow.WindowState = WindowState.Normal;
             _settingsWindow.Activate();
             return;

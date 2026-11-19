@@ -37,7 +37,7 @@ sealed partial class WiimController
                     ?.Element(ns + "controlURL")?.Value is { Length: > 0 } control)
                 url = new Uri(new Uri(location), control).ToString();
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Device services", ex); }
         _serviceUrls[key] = url;
         return url;
     }

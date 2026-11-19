@@ -46,6 +46,8 @@ sealed partial class WiimController
 
     private static string OnlineArtworkKey(ComputerTrack track) => $"{track.Title}\n{track.Artist}\n{track.Album}";
 
+    internal bool OnlineArtworkSearching => _onlineArtworkRunning.Values.Any(started => DateTime.UtcNow - started < OnlineArtworkTimeout);
+
     private static readonly Regex VideoTag = new(
         @"\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|visuali[sz]er|music\s+video|mv|m/v|hd|hq|4k|8k|1080p|720p|clip|videoclip|full\s+song)\b[^\)\]]*[\)\]]",
         RegexOptions.IgnoreCase);

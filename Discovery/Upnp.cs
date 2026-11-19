@@ -157,9 +157,60 @@ static class Upnp
             ("ObjectID", objectId), ("BrowseFlag", "BrowseDirectChildren"), ("Filter", "*"),
             ("StartingIndex", start.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             ("RequestedCount", count.ToString(System.Globalization.CultureInfo.InvariantCulture)), ("SortCriteria", "")).ConfigureAwait(false);
+        return ReadPage(response, start);
+    }
+
+    private static BrowsePage? ReadPage(XElement? response, int start)
+    {
         if (response?.Elements().FirstOrDefault(e => e.Name.LocalName == "Result")?.Value is not { } didl) return null;
         int total = int.TryParse(response.Elements().FirstOrDefault(e => e.Name.LocalName == "TotalMatches")?.Value, out int t) ? t : -1;
         var entries = Didl.Parse(didl);
         return entries == null ? null : new BrowsePage(entries, total >= 0 ? total : start + entries.Count);
+    }
+
+    public static async Task<string?> SearchCapabilitiesAsync(MediaServer server)
+    {
+        var response = await CallAsync(server.ContentDirectoryUrl, ContentDirectoryService, "GetSearchCapabilities").ConfigureAwait(false);
+        return response?.Elements().FirstOrDefault(e => e.Name.LocalName == "SearchCaps")?.Value.Trim();
+    }
+
+    public static async Task<BrowsePage?> SearchAsync(MediaServer server, string criteria, int start, int count)
+    {
+        var response = await CallAsync(server.ContentDirectoryUrl, ContentDirectoryService, "Search",
+            ("ContainerID", "0"), ("SearchCriteria", criteria), ("Filter", "*"),
+            ("StartingIndex", start.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("RequestedCount", count.ToString(System.Globalization.CultureInfo.InvariantCulture)), ("SortCriteria", "")).ConfigureAwait(false);
+        return ReadPage(response, start);
+    }
+
+    private static string Quoted(string text) => "\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+    internal static List<(string Criteria, int Limit)> MusicSearchCriteria(string caps, string query, int? year)
+    {
+        var known = caps.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool Has(string property) => caps.Trim() == "*" || known.Contains(property);
+        if (!Has("upnp:class")) return [];
+        string text = Quoted(query);
+        string Matching(params string[] properties) => string.Join(" or ", properties.Where(Has).Select(p => $"{p} contains {text}"));
+        var list = new List<(string Criteria, int Limit)>();
+        void Add(string match, string upnpClass, string terms, int limit)
+        {
+            if (terms.Length > 0) list.Add(($"upnp:class {match} \"{upnpClass}\" and ({terms})", limit));
+        }
+        Add("=", "object.container.person.musicArtist", Matching("upnp:artist", "dc:title"), WiimController.SearchArtistLimit);
+        if (year is int y && Has("dc:date")) Add("=", "object.container.album.musicAlbum", $"dc:date contains \"{y}\"", WiimController.SearchAlbumLimit);
+        Add("=", "object.container.album.musicAlbum", Matching("upnp:album", "dc:title"), WiimController.SearchAlbumLimit);
+        Add("=", "object.container.playlistContainer", Matching("dc:title"), WiimController.SearchPlaylistLimit);
+        Add("derivedfrom", "object.item.audioItem", Matching("dc:title", "dc:creator", "upnp:artist"), WiimController.SearchTrackLimit);
+        return list;
+    }
+
+    public static async Task<List<MediaEntry>?> SearchMusicAsync(MediaServer server, string caps, string query, int? year)
+    {
+        var criteria = MusicSearchCriteria(caps, query, year);
+        if (criteria.Count == 0) return null;
+        var pages = await Task.WhenAll(criteria.Select(c => SearchAsync(server, c.Criteria, 0, c.Limit))).ConfigureAwait(false);
+        if (pages.All(p => p == null)) return null;
+        return pages.OfType<BrowsePage>().SelectMany(p => p.Entries).Where(e => e.IsContainer || e.IsAudio).DistinctBy(e => e.Id).ToList();
     }
 }

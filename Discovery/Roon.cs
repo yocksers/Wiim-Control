@@ -235,7 +235,7 @@ sealed class RoonConnection : IDisposable
         {
             if (IsOpen) await _socket.SendAsync(message, WebSocketMessageType.Binary, true, _cts.Token).ConfigureAwait(false);
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Roon", ex); }
         finally
         {
             _sendLock.Release();
@@ -259,7 +259,7 @@ sealed class RoonConnection : IDisposable
                 Handle(data);
             }
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Roon", ex); }
         foreach (var id in _pending.Keys.ToList())
             if (_pending.TryRemove(id, out var handler)) handler(null);
         _registered.TrySetResult(false);

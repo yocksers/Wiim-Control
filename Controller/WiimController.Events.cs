@@ -145,7 +145,7 @@ sealed partial class WiimController
                     ?.Element(ns + "eventSubURL")?.Value is { Length: > 0 } events)
                 url = new Uri(new Uri(location), events).ToString();
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Device events", ex); }
         _serviceUrls[key] = url;
         return url;
     }
@@ -194,7 +194,7 @@ sealed partial class WiimController
             using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             using var _ = await _http.SendAsync(request, cancel.Token).ConfigureAwait(false);
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Device events", ex); }
     }
 
     private async Task AcceptEventsAsync(TcpListener listener, CancellationToken token)
@@ -226,7 +226,7 @@ sealed partial class WiimController
                 var change = ParseLastChange(body);
                 if (change.Count > 0) Dispatcher.UIThread.Post(() => OnDeviceEvent(subscription.Ip, subscription.Key, change));
             }
-            catch (Exception) { }
+            catch (Exception ex) { ErrorLog.Unexpected("Device events", ex); }
         }
     }
 
@@ -267,7 +267,7 @@ sealed partial class WiimController
                 if (element.Attribute("val")?.Value is { } value) values[element.Name.LocalName] = value;
             }
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Device events", ex); }
         return values;
     }
 

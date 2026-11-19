@@ -236,6 +236,21 @@ sealed partial class WiimController
         return page;
     }
 
+    internal async Task<List<MediaEntry>?> SearchEmbyAsync(MediaServer server, string query, int? year)
+    {
+        if (EmbyOf(server) is not { } s) return null;
+        string user = Uri.EscapeDataString(s.UserId), term = Uri.EscapeDataString(query);
+        string Items(string type) => $"/Users/{user}/Items?IncludeItemTypes={type}&Recursive=true&SortBy=SortName";
+        var queries = new List<(string Query, int Limit)> { ($"/Artists?UserId={user}&SearchTerm={term}&SortBy=SortName", SearchArtistLimit) };
+        if (year is int y) queries.Add((Items("MusicAlbum") + string.Create(CultureInfo.InvariantCulture, $"&Years={y}"), SearchAlbumLimit));
+        queries.Add((Items("MusicAlbum") + $"&SearchTerm={term}", SearchAlbumLimit));
+        queries.Add((Items("Playlist") + $"&SearchTerm={term}", SearchPlaylistLimit));
+        queries.Add((Items("Audio") + $"&SearchTerm={term}", SearchTrackLimit));
+        var pages = await Task.WhenAll(queries.Select(q => FetchEmbyPageAsync(s, EmbyAlbumsId, q.Query, 0, q.Limit))).ConfigureAwait(false);
+        if (pages.All(p => p == null)) return null;
+        return pages.OfType<BrowsePage>().SelectMany(p => p.Entries).DistinctBy(e => e.Id).ToList();
+    }
+
     private async Task<BrowsePage?> FetchEmbyPageAsync(EmbyServer s, string id, string query, int start, int count)
     {
         string paging = string.Create(CultureInfo.InvariantCulture, $"StartIndex={start}&Limit={count}&Fields={EmbyFields}&EnableImageTypes=Primary&ImageTypeLimit=1");

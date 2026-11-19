@@ -76,13 +76,18 @@ sealed partial class WiimController
         return true;
     }
 
-    internal bool MoveDevice(KnownDevice d, int offset)
+    internal bool MoveDeviceBetween(string ip, string? afterIp, string? beforeIp)
     {
-        int index = _knownDevices.FindIndex(k => k.Ip == d.Ip);
-        int target = index + offset;
-        if (index < 0 || target < 0 || target >= _knownDevices.Count) return false;
+        int index = _knownDevices.FindIndex(k => k.Ip == ip);
+        if (index < 0) return false;
+        var device = _knownDevices[index];
+        var original = _knownDevices.ToList();
         _knownDevices.RemoveAt(index);
-        _knownDevices.Insert(target, d);
+        int target = beforeIp != null && _knownDevices.FindIndex(k => k.Ip == beforeIp) is >= 0 and var before ? before
+            : afterIp != null && _knownDevices.FindIndex(k => k.Ip == afterIp) is >= 0 and var after ? after + 1
+            : _knownDevices.Count;
+        _knownDevices.Insert(target, device);
+        if (_knownDevices.SequenceEqual(original)) return false;
         SaveConfig();
         return true;
     }

@@ -285,7 +285,7 @@ sealed partial class WiimController
         if (CanRestart)
         {
             try { Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--restart") { UseShellExecute = false }); }
-            catch (Exception) { }
+            catch (Exception ex) { ErrorLog.Unexpected("Restart", ex); }
         }
         Exit();
     }

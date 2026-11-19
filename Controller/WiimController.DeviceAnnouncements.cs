@@ -8,7 +8,6 @@ sealed partial class WiimController
 {
     private static readonly TimeSpan OwnChangeQuiet = TimeSpan.FromSeconds(3);
     private readonly ConcurrentDictionary<string, DateTime> _ownEqChanges = new();
-    private readonly ConcurrentDictionary<string, Dictionary<string, string>> _inputSignals = new();
 
     private void NoteOwnEqChange(string ip, string command)
     {
@@ -17,31 +16,6 @@ sealed partial class WiimController
     }
 
     private bool ChangedEqJustNow(string ip) => _ownEqChanges.TryGetValue(ip, out var when) && DateTime.UtcNow - when < OwnChangeQuiet;
-
-    internal string? InputSignal(string ip, string input) =>
-        _inputSignals.TryGetValue(ip, out var signals) ? signals.FirstOrDefault(s => IsSameInput(s.Key, input)).Value : null;
-
-    internal async Task ReadInputSignalsAsync(string ip)
-    {
-        if (ParseInputSignals(await SendToDeviceAsync(ip, "getAudioInputStreamState").ConfigureAwait(false)) is { } signals)
-            _inputSignals[ip] = signals;
-    }
-
-    internal static Dictionary<string, string>? ParseInputSignals(string? json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json ?? string.Empty);
-            var list = doc.RootElement.ValueKind == JsonValueKind.Array ? doc.RootElement : Prop(doc.RootElement, "total");
-            if (list.ValueKind != JsonValueKind.Array) return null;
-            var signals = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var input in list.EnumerateArray())
-                if (Prop(input, "modeName").ToString() is { Length: > 0 } mode && Prop(input, "contentEnable").ToString() == "1")
-                    signals[mode] = Prop(input, "contentStatus").ToString();
-            return signals;
-        }
-        catch (JsonException) { return null; }
-    }
 
     private void OnCommonEvent(string ip, string json)
     {
@@ -67,13 +41,6 @@ sealed partial class WiimController
                 break;
             case "screen_config":
                 Settle($"{ip}|screen", () => _settingsWindow?.OnScreenChanged(ip));
-                break;
-            case "audio_input_signal_changed":
-                if (ParseInputSignals(body.GetRawText()) is { } signals)
-                {
-                    _inputSignals[ip] = signals;
-                    _settingsWindow?.OnInputSignalChanged(ip);
-                }
                 break;
         }
     }

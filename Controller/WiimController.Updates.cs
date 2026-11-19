@@ -123,7 +123,7 @@ sealed partial class WiimController
     private static void OpenUrl(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Open link", ex); }
     }
 
     private const string InstallerPrefix = "WiimControlSetup-";

@@ -176,6 +176,6 @@ static class RadioDirectory
     {
         if (uuid.Length == 0) return;
         try { await Http.GetStringAsync(Api + "url/" + Uri.EscapeDataString(uuid)).ConfigureAwait(false); }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Radio", ex); }
     }
 }

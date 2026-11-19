@@ -6,8 +6,12 @@ namespace WiimControl;
 
 sealed partial class WiimController
 {
-    internal async Task<AmpSettings?> GetAmpSettingsAsync(string ip, string? screenInput = null, bool experimental = false, bool formats = false)
+    internal async Task<AmpSettings?> GetAmpSettingsAsync(string ip, string? screenInput = null, bool experimental = false, bool formats = false,
+        bool remote = false)
     {
+        var remoteTask = remote ? SendToDeviceAsync(ip, "getblehidstatus") : Task.FromResult<string?>(null);
+        var remoteStepTask = remote ? SendToDeviceAsync(ip, "get_remote_volume_step") : Task.FromResult<string?>(null);
+        var tvStepTask = remote ? SendToDeviceAsync(ip, "get_cec_volume_step") : Task.FromResult<string?>(null);
         var experimentalTask = experimental ? GetExperimentalAsync(ip) : Task.FromResult<ExperimentalSettings?>(null);
         var formatsTask = formats ? GetFormatsAsync(ip) : Task.FromResult(new List<string>());
         var statusEx = SendToDeviceAsync(ip, "getStatusEx");
@@ -22,7 +26,7 @@ sealed partial class WiimController
         var prompts = SendToDeviceAsync(ip, "getLowPriorityPromptDisable");
         var autoUpdate = SendToDeviceAsync(ip, "getMVRemoteAutoOTAEnable");
         await Task.WhenAll(statusEx, led, volumeLight, buttons, screen, screenUi, wallpapers, alarms,
-            network, prompts, autoUpdate, experimentalTask, formatsTask).ConfigureAwait(false);
+            network, prompts, autoUpdate, experimentalTask, formatsTask, remoteTask, remoteStepTask, tvStepTask).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
         var promptLanguage = ParsePromptLanguageChoice(statusEx.Result);
 
@@ -47,7 +51,7 @@ sealed partial class WiimController
             null,
             ParseNetworkInfo(statusEx.Result, network.Result),
             null,
-            null,
+            int.TryParse(JsonField(remoteStepTask.Result, "remote_volume_step"), out int remoteStep) ? remoteStep : null,
             null,
             null,
             false,
@@ -59,7 +63,9 @@ sealed partial class WiimController
             Experimental: experimentalTask.Result,
             Formats: formats ? formatsTask.Result : null,
             PromptLanguage: promptLanguage.Current,
-            PromptLanguages: promptLanguage.Languages);
+            PromptLanguages: promptLanguage.Languages,
+            Remote: ParseRemoteStatus(remoteTask.Result),
+            TvRemoteVolumeStep: int.TryParse(JsonField(tvStepTask.Result, "cec_volume_step"), out int tvStep) ? tvStep : null);
     }
 
     internal async Task<InputsPage> GetInputsPageAsync(string ip)
@@ -104,11 +110,10 @@ sealed partial class WiimController
         var balance = SendToDeviceAsync(ip, "getChannelBalance");
         var fade = SendToDeviceAsync(ip, "GetFadeFeature");
         var buttonStep = SendToDeviceAsync(ip, "get_button_volume_step");
-        var remoteStep = SendToDeviceAsync(ip, "get_remote_volume_step");
         var headroom = SendToDeviceAsync(ip, "EQGetHeadroom");
         var channel = GetChannelAsync(ip);
         var loudness = GetLoudnessAsync(ip);
-        await Task.WhenAll(statusEx, balance, fade, buttonStep, remoteStep, headroom, channel, loudness).ConfigureAwait(false);
+        await Task.WhenAll(statusEx, balance, fade, buttonStep, headroom, channel, loudness).ConfigureAwait(false);
         if (statusEx.Result == null) return null;
 
         return new AmpSettings(
@@ -117,7 +122,6 @@ sealed partial class WiimController
             JsonField(fade.Result, "FadeFeature") is { } f ? f == "1" : null,
             null, null, null, null, [], null, null, null, null, null, null, null, null, null,
             ButtonVolumeStep: int.TryParse(JsonField(buttonStep.Result, "button_volume_step"), out int bs) ? bs : null,
-            RemoteVolumeStep: int.TryParse(JsonField(remoteStep.Result, "remote_volume_step"), out int rs) ? rs : null,
             AutoHeadroom: JsonField(headroom.Result, "Mode") is { } headroomMode ? headroomMode.Equals("Auto", StringComparison.OrdinalIgnoreCase) : null,
             HeadroomGain: double.TryParse(JsonField(headroom.Result, "Gain"), NumberStyles.Float, CultureInfo.InvariantCulture, out double headroomGain)
                 ? headroomGain : null,

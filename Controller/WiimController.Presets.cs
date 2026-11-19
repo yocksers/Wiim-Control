@@ -77,7 +77,7 @@ sealed partial class WiimController
                 var envelope = System.Xml.Linq.XDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
                 return envelope.Descendants().FirstOrDefault(e => e.Name.LocalName == "QueueContext")?.Value ?? string.Empty;
             }
-            catch (Exception) { }
+            catch (Exception ex) { ErrorLog.Unexpected("Presets", ex); }
         }
         return string.Empty;
     }
