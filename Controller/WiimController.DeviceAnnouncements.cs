@@ -25,7 +25,8 @@ sealed partial class WiimController
         {
             using var doc = JsonDocument.Parse(json);
             category = Prop(doc.RootElement, "category").ToString();
-            body = Prop(doc.RootElement, "body").Clone();
+            var found = Prop(doc.RootElement, "body");
+            body = found.ValueKind == JsonValueKind.Undefined ? default : found.Clone();
         }
         catch (JsonException) { return; }
         switch (category)

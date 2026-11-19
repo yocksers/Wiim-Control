@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using SkiaSharp;
 
 namespace WiimControl;
@@ -87,24 +88,63 @@ sealed partial class WiimController
     {
         try
         {
-            using var encoded = new MemoryStream();
-            source.Save(encoded);
-            encoded.Position = 0;
-            using var decoded = SKBitmap.Decode(encoded);
-            if (decoded == null) return null;
-            using var surface = SKSurface.Create(new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul));
+            using var pixels = ReadPixels(source);
+            if (pixels == null) return null;
+            var info = new SKImageInfo(size, size, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var surface = SKSurface.Create(info);
             if (surface == null) return null;
             using var filter = SKImageFilter.CreateBlur(blur, blur, SKShaderTileMode.Clamp);
             using var paint = new SKPaint { ImageFilter = filter, FilterQuality = SKFilterQuality.High, IsAntialias = true };
-            surface.Canvas.DrawBitmap(decoded, new SKRect(0, 0, size, size), paint);
-            using var image = surface.Snapshot();
-            using var png = image.Encode(SKEncodedImageFormat.Png, 100);
-            using var stream = png.AsStream();
-            return new Bitmap(stream);
+            surface.Canvas.DrawBitmap(pixels, new SKRect(0, 0, size, size), paint);
+            var result = new WriteableBitmap(new PixelSize(size, size), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+            using (var buffer = result.Lock())
+            {
+                if (!surface.ReadPixels(info, buffer.Address, buffer.RowBytes, 0, 0))
+                {
+                    result.Dispose();
+                    return null;
+                }
+            }
+            return result;
         }
         catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or ArgumentException or NullReferenceException)
         {
             return null;
         }
+    }
+
+    private static SKBitmap? ReadPixels(Bitmap source)
+    {
+        var size = source.PixelSize;
+        if (size.Width <= 0 || size.Height <= 0) return null;
+        SKColorType? colorType = source.Format == PixelFormat.Bgra8888 ? SKColorType.Bgra8888
+            : source.Format == PixelFormat.Rgba8888 ? SKColorType.Rgba8888
+            : null;
+        if (colorType is not { } type) return DecodePixels(source);
+        var alpha = source.AlphaFormat switch
+        {
+            AlphaFormat.Unpremul => SKAlphaType.Unpremul,
+            AlphaFormat.Opaque => SKAlphaType.Opaque,
+            _ => SKAlphaType.Premul
+        };
+        var bitmap = new SKBitmap(new SKImageInfo(size.Width, size.Height, type, alpha));
+        try
+        {
+            source.CopyPixels(new PixelRect(size), bitmap.GetPixels(), bitmap.ByteCount, bitmap.RowBytes);
+            return bitmap;
+        }
+        catch (Exception)
+        {
+            bitmap.Dispose();
+            throw;
+        }
+    }
+
+    private static SKBitmap? DecodePixels(Bitmap source)
+    {
+        using var encoded = new MemoryStream();
+        source.Save(encoded);
+        encoded.Position = 0;
+        return SKBitmap.Decode(encoded);
     }
 }

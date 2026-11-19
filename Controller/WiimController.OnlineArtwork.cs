@@ -17,6 +17,7 @@ sealed partial class WiimController
     private readonly Dictionary<string, (DateTime At, bool Limited)> _onlineArtworkRetryAt = new();
     internal const string ArtworkQuotaNotice = "Artwork lookup: quota exceeded – will retry in 1 minute";
     private static readonly TimeSpan OnlineArtworkRetryDelay = TimeSpan.FromMinutes(1);
+    private static readonly Lazy<string> ArtworkCountry = new(() => RadioDirectory.HomeCountry().ToLowerInvariant());
 
     private static readonly Regex VersionTag = new(
         @"\s*[\(\[][^\)\]]*\b(version|edit|edition|mix|remix|live|remaster|remastered|deluxe|instrumental|acoustic|radio|extended|single|mono|stereo|demo|bonus|explicit|clean|feat\.?|ft\.?|featuring|with)\b[^\)\]]*[\)\]]",
@@ -46,7 +47,7 @@ sealed partial class WiimController
 
     private static string OnlineArtworkKey(ComputerTrack track) => $"{track.Title}\n{track.Artist}\n{track.Album}";
 
-    internal bool OnlineArtworkSearching => _onlineArtworkRunning.Values.Any(started => DateTime.UtcNow - started < OnlineArtworkTimeout);
+    internal bool OnlineArtworkSearching => _onlineArtwork && _onlineArtworkRunning.Values.Any(started => DateTime.UtcNow - started < OnlineArtworkTimeout);
 
     private static readonly Regex VideoTag = new(
         @"\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|visuali[sz]er|music\s+video|mv|m/v|hd|hq|4k|8k|1080p|720p|clip|videoclip|full\s+song)\b[^\)\]]*[\)\]]",
@@ -105,11 +106,12 @@ sealed partial class WiimController
         bool unanswered = false, limited = false;
         foreach (var (tryArtist, tryTitle, tryAlbum) in tries)
         {
+            if (!_onlineArtwork) break;
             var deezer = await FindDeezerArtworkAsync(tryTitle, tryArtist, tryAlbum).ConfigureAwait(false);
             unanswered |= deezer.Url == null;
             limited |= deezer.Limited;
             url = deezer.Url ?? string.Empty;
-            if (url.Length == 0)
+            if (url.Length == 0 && _onlineArtwork)
             {
                 var apple = await FindAppleArtworkAsync(tryTitle, tryArtist, tryAlbum).ConfigureAwait(false);
                 unanswered |= apple.Url == null;
@@ -121,6 +123,7 @@ sealed partial class WiimController
         Dispatcher.UIThread.Post(() =>
         {
             _onlineArtworkRunning.Remove(key);
+            if (!_onlineArtwork) return;
             if (url.Length == 0 && unanswered)
             {
                 if (_onlineArtworkRetryAt.Count >= OnlineArtworkCacheSize) _onlineArtworkRetryAt.Clear();
@@ -148,7 +151,7 @@ sealed partial class WiimController
     internal bool ArtworkLookupLimited(DeviceStatus status)
     {
         string title = status.Title.Trim(), artist = status.Artist.Trim();
-        if (title.Length == 0 || artist.Length == 0) return false;
+        if (!_onlineArtwork || title.Length == 0 || artist.Length == 0) return false;
         foreach (string key in new[] { $"{status.Title}\n{status.Artist}\n{status.Album}", $"{title}\n{artist}\n" })
             if (_onlineArtworkRetryAt.TryGetValue(key, out var retry) && retry.Limited && DateTime.UtcNow < retry.At) return true;
         return false;
@@ -195,7 +198,7 @@ sealed partial class WiimController
 
     private async Task<(string? Url, bool Limited)> FindAppleArtworkAsync(string title, string artist, string album)
     {
-        string country = RegionInfo.CurrentRegion.TwoLetterISORegionName.ToLowerInvariant();
+        string country = ArtworkCountry.Value;
         string term = Uri.EscapeDataString($"{FirstArtist(artist)} {SearchTitle(title)}");
         var (doc, limited) = await GetOnlineJsonAsync($"https://itunes.apple.com/search?term={term}&media=music&entity=song&limit=25&country={country}")
             .ConfigureAwait(false);
