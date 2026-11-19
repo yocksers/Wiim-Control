@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wiim Control
+Comment=Control your WiiM amps
+Exec=WiimControl
+Icon=wiim-control
+Categories=AudioVideo;Audio;
+Terminal=false
