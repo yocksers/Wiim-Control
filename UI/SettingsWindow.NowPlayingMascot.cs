@@ -10,11 +10,11 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private enum MascotState { Gone, Push, Dance, WalkOff, RushIn, PushOut, Enter, RunOff, React, Poke, Dizzy, Zip, ZipFall, FlipArt, Whoosh, Act, Stroll, Peek, Skate, Exit, Fly, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult, Held, Dropped, HighFive }
+        private enum MascotState { Gone, Push, Dance, WalkOff, RushIn, PushOut, Enter, RunOff, React, Poke, Dizzy, Zip, ZipFall, FlipArt, Whoosh, Act, Stroll, Peek, Skate, Exit, Fly, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult, Held, Dropped, HighFive, Oops }
 
         private enum MascotVisit { Dance, Loud, Wave, Peekaboo, Polish, AirGuitar, Conductor, Paused, Selfie, Skateboard, Balloon, Superhero, Fishing, Climb, SkipRope, PaperPlane, Sweep, Karaoke, Juggling, Kite }
 
-        private enum MascotSwap { Push, Zip, Flip, Whoosh, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult }
+        private enum MascotSwap { Push, Zip, Flip, Whoosh, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult, Oops }
 
         private enum MascotMood { Normal, Loud, Quiet }
 
@@ -109,9 +109,9 @@ sealed partial class WiimController
 
         private bool MascotBusy => _mascotState is MascotState.Push or MascotState.RushIn or MascotState.PushOut or MascotState.Zip or MascotState.FlipArt or MascotState.Whoosh
                                        or MascotState.Magic or MascotState.Paint or MascotState.Crate or MascotState.Ufo or MascotState.Claw or MascotState.Sleeve
-                                       or MascotState.Jigsaw or MascotState.Catapult ||
+                                       or MascotState.Jigsaw or MascotState.Catapult or MascotState.Oops ||
                                    _mascotState == MascotState.Enter && _mascotAfterEnter is MascotState.FlipArt or MascotState.Magic or MascotState.Paint or MascotState.Crate
-                                       or MascotState.Ufo or MascotState.Claw or MascotState.Sleeve or MascotState.Jigsaw or MascotState.Catapult;
+                                       or MascotState.Ufo or MascotState.Claw or MascotState.Sleeve or MascotState.Jigsaw or MascotState.Catapult or MascotState.Oops;
 
         private double MascotSpot => _mascotFromRight ? MascotRightSpot : MascotDanceSpot;
 
@@ -136,7 +136,10 @@ sealed partial class WiimController
             if (_mascotPokes.Count >= MascotPokesToFall)
             {
                 _mascotPokes.Clear();
-                SetMascotState(MascotState.Dizzy);
+                _mascotDone = true;
+                ClearMascotNotes();
+                _mascotCone.ScaleX = _mascotCone.ScaleY = 1;
+                SetMascotState(Random.Shared.Next(2) == 0 ? MascotState.Dizzy : MascotState.HighFive);
                 return;
             }
             if (_mascotState != MascotState.Poke) _mascotResume = _mascotState;
@@ -192,11 +195,13 @@ sealed partial class WiimController
             _mascotAngry = false;
             _mascotFromRight = false;
             _mascotLastArtChange = DateTime.UtcNow;
+            if (_npHeldText != null) _npTextWaitsForMascot = true;
             _mascot.ZIndex = 0;
             ClearMascotNotes();
             var regular = Enum.GetValues<MascotSwap>().Where(kind => kind != MascotSwap.Ufo).ToArray();
             _mascotSwap = Random.Shared.NextDouble() < MascotUfoChance ? MascotSwap.Ufo : PickOther(regular, _mascotSwap, _mascotSwapped);
             if (_mascotSwap == MascotSwap.Jigsaw && !PrepareJigsaw()) _mascotSwap = MascotSwap.Crate;
+            if (_mascotSwap == MascotSwap.Oops && _npCover.Source == null) _mascotSwap = MascotSwap.Flip;
             _mascotSwapped = true;
             _zipLayer.IsVisible = false;
             _npCoverCard.ClearValue(Canvas.TopProperty);
@@ -207,6 +212,12 @@ sealed partial class WiimController
                 _mascotSpinAt = Math.Max(0, (MascotCoverLeft + StageCover / 2 - MascotWidth / 2 - _mascotRunFrom) / MascotWhooshSpeed);
                 SetMascotState(MascotState.Whoosh);
                 UpdateMascotTimer();
+                return;
+            }
+            if (_mascotSwap == MascotSwap.Oops)
+            {
+                Canvas.SetLeft(_npCoverCard, MascotCoverLeft);
+                StartMascotEnter(MascotState.Oops, MascotRushSpeed, Random.Shared.Next(2) == 0);
                 return;
             }
             if (_mascotSwap == MascotSwap.Flip)
@@ -246,6 +257,7 @@ sealed partial class WiimController
             _mascotStart = DateTime.UtcNow;
             if (state == MascotState.Gone)
             {
+                _mascotDone = false;
                 HideMascotExtras();
                 _mascot.ZIndex = 0;
                 Canvas.SetLeft(_mascot, MascotWalkTarget - MascotWidth);
@@ -497,6 +509,9 @@ sealed partial class WiimController
                 case MascotState.Catapult:
                     top = MascotOffsetTop() + StepMascotCatapult(s);
                     break;
+                case MascotState.Oops:
+                    top = MascotOffsetTop() + StepMascotOops(s);
+                    break;
                 case MascotState.Held:
                     top = StepMascotHeld(s);
                     break;
@@ -690,6 +705,7 @@ sealed partial class WiimController
             VolumeWind(s);
             ApplyMascotHeadroom(_mascotHeadroom);
             Canvas.SetTop(_mascot, top);
+            CheckMascotTextReveal();
         }
 
         private void PlaceWire(double mascotTop)

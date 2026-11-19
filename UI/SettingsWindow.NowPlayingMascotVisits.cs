@@ -67,12 +67,16 @@ sealed partial class WiimController
             }
             _mascotGlyphs.Children.Add(_glyphQuestion);
             _mascot.Children.Add(_mascotGlyphs);
+            _visitProps = [_propCloth, _propBaton, _propPhone, _propFlash, _propBoard, _propBalloon, _propString, _propGuitar, _propCape, _glyphQuestion, .. _glyphSparkles];
         }
+
+        private Control[] _visitProps = [];
+        private readonly Points[] _capePoints = [[], []];
+        private int _capeTurn;
 
         private void HideMascotProps()
         {
-            foreach (var prop in new Control[] { _propCloth, _propBaton, _propPhone, _propFlash, _propBoard, _propBalloon, _propString, _propGuitar, _propCape, _glyphQuestion }) prop.IsVisible = false;
-            foreach (var sparkle in _glyphSparkles) sparkle.IsVisible = false;
+            HideAll(_visitProps);
         }
 
         private static Point Hand(bool right, double angle, double reach = 44)
@@ -436,7 +440,10 @@ sealed partial class WiimController
             double lean = Math.Atan2(vx, -vy) * 180 / Math.PI;
             Pose(lean: lean, bounce: 0, arms: (180, -12), legs: (0, 0));
             double wave = Math.Sin(s * 26) * 14, ripple = Math.Sin(s * 26 + 1.4) * 10;
-            _propCape.Points = [new Point(40, 44), new Point(160, 44), new Point(176 + ripple, 250), new Point(100 + wave, 300), new Point(24 - ripple, 250)];
+            var cape = _capePoints[_capeTurn ^= 1];
+            cape.Clear();
+            cape.AddRange([new Point(40, 44), new Point(160, 44), new Point(176 + ripple, 250), new Point(100 + wave, 300), new Point(24 - ripple, 250)]);
+            _propCape.Points = cape;
             _propCape.IsVisible = true;
             _mascotShadow.Opacity = Math.Max(0, 1 + (offset + FlyLow) / 200) * 0.7;
             if (p >= 1) LeaveMascotStage();

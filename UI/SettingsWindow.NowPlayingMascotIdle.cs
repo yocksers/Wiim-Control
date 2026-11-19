@@ -64,7 +64,10 @@ sealed partial class WiimController
                 figure.Children.Add(prop);
             _mascotFx.Children.Add(_propFlag);
             _mascotFx.Children.Add(_propPlane);
+            _idleProps = [_propRod, _propFishLine, _propBobber, _propCatch, _propMic, _propPlaneHeld, _propRope, _propPlugLeft, _propPlugRight, _propBroom, _propBristles, .. _dust];
         }
+
+        private Control[] _idleProps = [];
 
         private static PathGeometry Curve(Point start, Point bend, Point end) => new()
         {
@@ -73,9 +76,7 @@ sealed partial class WiimController
 
         private void HideMascotIdle()
         {
-            foreach (var prop in new Control[] { _propRod, _propFishLine, _propBobber, _propCatch, _propMic, _propPlaneHeld, _propRope, _propPlugLeft, _propPlugRight, _propBroom, _propBristles })
-                prop.IsVisible = false;
-            foreach (var puff in _dust) puff.IsVisible = false;
+            HideAll(_idleProps);
         }
 
         private void ApplyMascotHeadroom(double headroom)
@@ -86,8 +87,8 @@ sealed partial class WiimController
 
         private void HideMascotStageProps()
         {
-            _propFlag.IsVisible = false;
-            _propPlane.IsVisible = false;
+            if (_propFlag.IsVisible) _propFlag.IsVisible = false;
+            if (_propPlane.IsVisible) _propPlane.IsVisible = false;
         }
 
         private bool LyricsSinging()

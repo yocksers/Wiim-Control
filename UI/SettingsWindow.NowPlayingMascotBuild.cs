@@ -90,6 +90,7 @@ sealed partial class WiimController
             _zipLayer.Children.Add(_zipWire);
             BuildMascotTricks(figure);
             BuildMascotExtras(figure);
+            BuildMascotOops();
             _mascotTimer.Host = _npOverlay;
             _mascotTimer.Tick += (_, _) => StepMascot();
             _npCoverCard.Tapped += (_, e) =>

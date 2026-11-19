@@ -28,6 +28,11 @@ sealed partial class WiimController
         private const double CatapultArm = 120;
         private const double CatapultPivotHeight = 80;
         private const double CatapultCoverScale = 0.18;
+        private const double CatapultDropAt = 2.6;
+        private const double CatapultDropSeconds = 0.9;
+        private const double CatapultLanding = CatapultDropAt + CatapultDropSeconds / 2.75;
+        private const double LandingDustSeconds = 1.3;
+        private const int LandingDustPuffs = 24;
         private const double JuggleSeconds = 6.0;
         private const double KiteSeconds = 7.6;
         private const double BananaWalkSeconds = 0.4;
@@ -73,6 +78,7 @@ sealed partial class WiimController
         private readonly Ellipse _catapultCup = new() { Width = 48, Height = 22, Fill = new SolidColorBrush(Color.Parse("#6B4A2E")), IsVisible = false };
         private readonly Line _catapultRope = new() { Stroke = new SolidColorBrush(Color.Parse("#D9C9A3")), StrokeThickness = 2.5, IsVisible = false };
         private readonly List<Ellipse> _juggleBalls = [];
+        private readonly List<(Ellipse Puff, double Along, double Rise, double Grow, double Delay, bool Front)> _landingDust = [];
         private readonly Canvas _kite = new() { Width = 70, Height = 90, IsVisible = false, RenderTransformOrigin = RelativePoint.Center, RenderTransform = new RotateTransform() };
         private readonly Line _kiteString = new() { Stroke = new SolidColorBrush(Color.FromArgb(200, 230, 232, 236)), StrokeThickness = 1.5, IsVisible = false };
         private readonly Polyline _kiteTail = new() { Stroke = Palette.AccentText, StrokeThickness = 3, IsVisible = false };
@@ -101,6 +107,16 @@ sealed partial class WiimController
         private double _mascotSwing;
         private double _mascotDropTop;
         private Point _catapultLaunch;
+        private bool _mascotDone;
+        private Control[] _extrasProps = [];
+        private readonly Points[] _kiteTails = [[], []];
+        private int _kiteTailTurn;
+
+        private static void HideAll(Control[] props)
+        {
+            foreach (var prop in props)
+                if (prop.IsVisible) prop.IsVisible = false;
+        }
 
         private bool MascotHoldable => _mascotState is MascotState.Dance or MascotState.WalkOff or MascotState.React or MascotState.Poke or MascotState.Act
             or MascotState.Stroll or MascotState.Dizzy or MascotState.RunOff or MascotState.Exit or MascotState.HighFive;
@@ -184,19 +200,30 @@ sealed partial class WiimController
                 _mascotFx.Children.Add(prop);
             _mascotFxBack.Children.Add(_teleportBeam);
             foreach (var (piece, _, _, _, _) in _jigsaw) _mascotFx.Children.Add(piece);
+            for (int i = 0; i < LandingDustPuffs; i++)
+            {
+                var puff = new Ellipse
+                {
+                    IsVisible = false,
+                    Fill = new RadialGradientBrush
+                    {
+                        GradientStops = { new GradientStop(Color.FromArgb(200, 214, 202, 178), 0), new GradientStop(Color.FromArgb(0, 214, 202, 178), 1) }
+                    }
+                };
+                bool front = i % 3 == 0;
+                double along = front ? (i % 2 == 0 ? 0.02 : 0.98) + (Random.Shared.NextDouble() - 0.5) * 0.08 : Random.Shared.NextDouble();
+                _landingDust.Add((puff, along, 0.3 + Random.Shared.NextDouble() * 0.7, 0.7 + Random.Shared.NextDouble() * 0.6, Random.Shared.NextDouble() * 0.15, front));
+                (front ? _mascotFx : _mascotFxBack).Children.Add(puff);
+            }
             _mascotGlyphs.Children.Add(_glyphShout);
             _mascotGlyphs.Children.Add(_glyphHighFive);
 
             _mascot.PointerPressed += (_, e) =>
             {
                 e.Handled = true;
-                if (!e.GetCurrentPoint(_mascot).Properties.IsLeftButtonPressed) return;
-                if (e.ClickCount >= 2)
-                {
-                    HighFiveMascot();
-                    return;
-                }
+                if (_mascotDone || !e.GetCurrentPoint(_mascot).Properties.IsLeftButtonPressed) return;
                 PokeMascot();
+                if (_mascotDone) return;
                 if (!MascotHoldable) return;
                 _mascotPress = e.GetPosition(_npStage);
                 _mascotGrab = e.GetPosition(_mascot);
@@ -220,19 +247,15 @@ sealed partial class WiimController
                 e.Pointer.Capture(null);
             };
             _mascot.PointerCaptureLost += (_, _) => EndMascotPress();
+            _extrasProps =
+            [
+                _clawCable, _claw, _clawConsole, _clawStick, _clawKnob, _sleeve, _sleeveDisc, _catapult, _catapultArm, _catapultCup, _catapultRope, _kite, _kiteString,
+                _kiteTail, _bananaPeel, _teleportBeam, _glyphShout, _glyphHighFive, _glyphAlarm,
+                .. _jigsaw.Select(j => (Control)j.Piece), .. _juggleBalls, .. _landingDust.Select(d => (Control)d.Puff)
+            ];
         }
 
-        private void HideMascotExtras()
-        {
-            foreach (var prop in new Control[]
-                     {
-                         _clawCable, _claw, _clawConsole, _clawStick, _clawKnob, _sleeve, _sleeveDisc, _catapult, _catapultArm, _catapultCup, _catapultRope, _kite, _kiteString, _kiteTail, _bananaPeel,
-                         _teleportBeam, _glyphShout, _glyphHighFive
-                     })
-                prop.IsVisible = false;
-            foreach (var (piece, _, _, _, _) in _jigsaw) piece.IsVisible = false;
-            foreach (var ball in _juggleBalls) ball.IsVisible = false;
-        }
+        private void HideMascotExtras() => HideAll(_extrasProps);
 
         private Point StageHand(bool right, double angle, double reach = 44)
         {
@@ -241,9 +264,41 @@ sealed partial class WiimController
             return new Point(Canvas.GetLeft(_mascot) + x, Canvas.GetTop(_mascot) + hand.Y);
         }
 
+        private RenderTargetBitmap? _jigsawSnapshot;
+        private const double JigsawSharpness = 2;
+
+        private Bitmap? SnapshotNewCover()
+        {
+            var size = _npCoverContent.Bounds.Size;
+            if (size.Width < 1 || size.Height < 1) return null;
+            double old = _npCoverOld.Opacity;
+            _npCoverOld.Opacity = 0;
+            try
+            {
+                var snapshot = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(size.Width * JigsawSharpness), (int)Math.Ceiling(size.Height * JigsawSharpness)),
+                    new Vector(96 * JigsawSharpness, 96 * JigsawSharpness));
+                WithHeldTextShown(() =>
+                {
+                    snapshot.Render(_npCoverContent);
+                    return true;
+                });
+                _jigsawSnapshot?.Dispose();
+                _jigsawSnapshot = snapshot;
+                return snapshot;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                _npCoverOld.Opacity = old;
+            }
+        }
+
         private bool PrepareJigsaw()
         {
-            if (_npCover.Source is not Bitmap art) return false;
+            if ((SnapshotNewCover() ?? _npCover.Source as Bitmap) is not { } art) return false;
             var order = Enumerable.Range(0, _jigsaw.Count).OrderBy(_ => Random.Shared.Next()).ToList();
             for (int i = 0; i < _jigsaw.Count; i++)
             {
@@ -436,8 +491,9 @@ sealed partial class WiimController
             else
             {
                 ShowNewArt(Phase(s, 2.5, 0.9));
-                double drop = BounceIn(Phase(s, 2.6, 0.9));
-                PlaceCover(new Point(CoverMiddle.X, -700 + (CoverMiddle.Y + 700) * drop), s < 2.6 ? 0.01 : 1);
+                double drop = BounceIn(Phase(s, CatapultDropAt, CatapultDropSeconds));
+                PlaceCover(new Point(CoverMiddle.X, -700 + (CoverMiddle.Y + 700) * drop), s < CatapultDropAt ? 0.01 : 1);
+                StepLandingDust(s - CatapultLanding);
             }
 
             var hand = StageHand(true, -80, 46);
@@ -460,6 +516,27 @@ sealed partial class WiimController
             else CheerDance(s);
             if (s >= CatapultSeconds) EndMascotTrick(MascotState.Dance);
             return 0;
+        }
+
+        private void StepLandingDust(double since)
+        {
+            foreach (var (puff, along, rise, grow, delay, front) in _landingDust)
+            {
+                double age = (since - delay) / LandingDustSeconds;
+                if (age is < 0 or >= 1) continue;
+                double spread = 1 - Math.Pow(1 - age, 3);
+                double side = along - 0.5;
+                double outward = Math.Sign(side) * (front ? 50 + 90 * rise : 70 + Math.Abs(side) * 2 * 260) * spread;
+                double swirl = Math.Sin(age * Math.PI * 2.5 + along * 9) * 18 * spread;
+                double size = (front ? 40 + 90 * spread : 50 + 130 * spread) * grow;
+                double x = MascotCoverLeft + along * StageCover + outward + swirl;
+                double y = StageCover - 12 - (front ? 15 + 60 * rise : 25 + 170 * rise) * spread + Math.Cos(age * Math.PI * 2 + along * 7) * 8 * spread;
+                puff.Width = puff.Height = size;
+                Canvas.SetLeft(puff, x - size / 2);
+                Canvas.SetTop(puff, y - size / 2);
+                puff.Opacity = Math.Min(1, age * 8) * (1 - age) * 0.9;
+                puff.IsVisible = true;
+            }
         }
 
         private double StepJuggle(double s)
@@ -515,7 +592,8 @@ sealed partial class WiimController
             Canvas.SetTop(_kite, kite.Y - 45);
             ((RotateTransform)_kite.RenderTransform!).Angle = Math.Sin(s * 2.1) * 14;
             _kite.IsVisible = away < 1;
-            var tail = new Points();
+            var tail = _kiteTails[_kiteTailTurn ^= 1];
+            tail.Clear();
             for (int i = 0; i <= 8; i++) tail.Add(new Point(kite.X + Math.Sin(s * 6 + i * 0.8) * 10, kite.Y + 45 + i * 13));
             _kiteTail.Points = tail;
             _kiteTail.IsVisible = away < 1;
@@ -678,14 +756,6 @@ sealed partial class WiimController
             return floor;
         }
 
-        private void HighFiveMascot()
-        {
-            if (!MascotHoldable || _mascotState == MascotState.HighFive) return;
-            _mascotPokes.Clear();
-            ClearMascotNotes();
-            if (_mascotState != MascotState.Poke) _mascotResume = _mascotState;
-            SetMascotState(MascotState.HighFive);
-        }
 
         private void StepMascotHighFive(double s)
         {
@@ -715,7 +785,8 @@ sealed partial class WiimController
             {
                 _mascotCone.ScaleX = _mascotCone.ScaleY = 1;
                 _mascotRunFrom = Canvas.GetLeft(_mascot);
-                SetMascotState(_mascotResume == MascotState.HighFive ? MascotState.WalkOff : _mascotResume);
+                _mascotExit = MascotExit.Back;
+                SetMascotState(MascotState.Exit);
             }
         }
     }

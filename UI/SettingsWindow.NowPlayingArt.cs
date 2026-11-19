@@ -40,6 +40,12 @@ sealed partial class WiimController
 
         private void ShowNowPlayingArt(Bitmap? bitmap, bool fade = true, bool flip = false)
         {
+            PlaceNowPlayingArt(bitmap, fade, flip);
+            TextWaitsForArt();
+        }
+
+        private void PlaceNowPlayingArt(Bitmap? bitmap, bool fade, bool flip)
+        {
             if (!fade)
             {
                 _npPendingArt = null;
@@ -68,7 +74,7 @@ sealed partial class WiimController
             _npBackdropOld.Source = _npBackdrop.Source;
             foreach (var (art, old) in _npArtShapes) old.Fill = art.Fill;
             _npCover.Source = bitmap;
-            _npBackdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap) : null;
+            _ = SetNowPlayingBackdropAsync(bitmap);
             _npCover.IsVisible = bitmap != null;
             _npCoverPlaceholder.IsVisible = bitmap == null;
             IBrush artFill = NowPlayingArtFill(bitmap);
@@ -103,11 +109,24 @@ sealed partial class WiimController
         {
             if (_npBackdrop.Source is Bitmap blurred) _owner.DisposeWhenUnused([blurred]);
             _npCover.Source = bitmap;
-            _npBackdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap) : null;
+            _ = SetNowPlayingBackdropAsync(bitmap);
             _npCover.IsVisible = bitmap != null;
             _npCoverPlaceholder.IsVisible = bitmap == null;
             IBrush artFill = NowPlayingArtFill(bitmap);
             foreach (var (art, _) in _npArtShapes) art.Fill = artFill;
+        }
+
+        private int _npBackdropVersion;
+
+        private async Task SetNowPlayingBackdropAsync(Bitmap? bitmap)
+        {
+            int version = ++_npBackdropVersion;
+            _npBackdrop.Source = null;
+            if (bitmap == null) return;
+            var blurred = await Task.Run(() => WiimController.BlurForNowPlaying(bitmap));
+            if (blurred == null) return;
+            if (version == _npBackdropVersion && _npBackdrop.Source == null) _npBackdrop.Source = blurred;
+            else _owner.DisposeWhenUnused([blurred]);
         }
 
         private IBrush NowPlayingArtFill(Bitmap? bitmap)
@@ -143,8 +162,16 @@ sealed partial class WiimController
         {
             double seconds = _npSwap ? ArtSwapSeconds : _npFlip ? ArtFlipSeconds : ArtFadeSeconds;
             double progress = (DateTime.UtcNow - _npFadeStart).TotalSeconds / seconds;
-            if (progress >= 1) EndArtFade();
-            else ApplyArtFade(progress);
+            if (progress >= 1)
+            {
+                CheckFadeTextReveal(1);
+                EndArtFade();
+            }
+            else
+            {
+                ApplyArtFade(progress);
+                CheckFadeTextReveal(progress);
+            }
         }
 
         private static double Ease(double progress) => progress * progress * (3 - 2 * progress);

@@ -117,7 +117,7 @@ sealed partial class WiimController
             _npCoverContent.Children.Add(_npCover);
             _npCoverContent.Children.Add(_npCoverOld);
             _npCoverCard.Child = _npCoverContent;
-            _npCoverCard.RenderTransform = new TransformGroup { Children = { _npCoverFlip, _mascotCoverScale, _mascotCoverShift } };
+            _npCoverCard.RenderTransform = new TransformGroup { Children = { _npCoverFlip, _npCoverTurn, _npCoverFit, _mascotCoverScale, _mascotCoverShift } };
             _npDisc.RenderTransform = _npDiscSlide;
             _npSheen.RenderTransform = _npSheenSlide;
             _npCassette.RenderTransform = _npCassetteSlide;
@@ -289,6 +289,7 @@ sealed partial class WiimController
         private void ShowNowPlayingView(string ip)
         {
             _npIp = ip;
+            ForgetHeldText();
             UpdateNowPlayingMenuLabels();
             var art = new ArtworkView { IsVisible = false };
             string? waiting = null;

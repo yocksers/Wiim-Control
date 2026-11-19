@@ -549,6 +549,7 @@ sealed partial class WiimController
         {
             if (!_statuses.TryGetValue(ip, out var status))
             {
+                if (ReferenceEquals(c, _npControls)) ForgetHeldText();
                 c.Title.Text = _volumes.Count == 0 && _statuses.Count == 0 ? "Loading…" : "Not reachable";
                 c.Artist.Text = c.Detail.Text = string.Empty;
                 c.Playing.IsVisible = false;
@@ -568,9 +569,10 @@ sealed partial class WiimController
             bool following = leaderStatus != null;
             if (leaderStatus != null) status = leaderStatus;
             status = _owner.WithRadioArtwork(_owner.WithComputerPlayback(status));
-            string songBefore = $"{c.Title.Text}\n{c.Artist.Text}";
-            (c.Title.Text, c.Artist.Text, c.Detail.Text) = _owner.NowPlayingTexts(status, leaderIp, following);
-            bool sameSong = songBefore == $"{c.Title.Text}\n{c.Artist.Text}";
+            string songBefore = ShownSong(c);
+            var texts = _owner.NowPlayingTexts(status, leaderIp, following);
+            if (!HoldNowPlayingText(c, texts, status.ArtUrl)) (c.Title.Text, c.Artist.Text, c.Detail.Text) = texts;
+            bool sameSong = songBefore == $"{texts.Title}\n{texts.Artist}";
             c.Art.PlaceholderIcon = Icons.ForInput(InputOfMode(status.Mode));
             if (ReferenceEquals(c, _npControls)) SetNowPlayingPlaceholder(c.Art.PlaceholderIcon);
             Icons.SetPlayPause(c.PlayPauseIcon, status.IsPlaying);

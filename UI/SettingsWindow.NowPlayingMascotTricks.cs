@@ -131,13 +131,16 @@ sealed partial class WiimController
                 _ufo.Children.Add(Place(light, 38 + i * 30, 69));
             }
             _mascotFx.Children.Add(_ufo);
+            _tricksProps = [_propHat, _propWand, _propWandTip, _roller, _rollerHandle, _crateBack, _crateFront, _ufo, _ufoBeam, .. _smoke, .. _sleeves.Select(s => (Control)s.Item1)];
         }
+
+        private Control[] _tricksProps = [];
+        private readonly RectangleGeometry[] _paintClips = [new(), new()];
+        private int _paintClipTurn;
 
         private void HideMascotTricks()
         {
-            foreach (var prop in new Control[] { _propHat, _propWand, _propWandTip, _roller, _rollerHandle, _crateBack, _crateFront, _ufo, _ufoBeam }) prop.IsVisible = false;
-            foreach (var puff in _smoke) puff.IsVisible = false;
-            foreach (var (sleeve, _) in _sleeves) sleeve.IsVisible = false;
+            HideAll(_tricksProps);
         }
 
         private void PlaceCover(Point middle, double scale)
@@ -151,6 +154,8 @@ sealed partial class WiimController
         {
             PlaceCover(CoverMiddle, 1);
             _npCoverOld.Clip = null;
+            _npCoverTurn.Angle = 0;
+            _npCoverFit.ScaleX = _npCoverFit.ScaleY = 1;
             _npCoverCard.Opacity = 1;
             _mascotScale.ScaleX = _mascotScale.ScaleY = 1;
         }
@@ -227,7 +232,9 @@ sealed partial class WiimController
         {
             double p = Ease(Phase(s, PaintLead, PaintTravel));
             double x = p * StageCover;
-            _npCoverOld.Clip = new RectangleGeometry(new Rect(x, 0, StageCover - x, StageCover));
+            var clip = _paintClips[_paintClipTurn ^= 1];
+            clip.Rect = new Rect(x, 0, StageCover - x, StageCover);
+            _npCoverOld.Clip = clip;
             if (_npBackdropOld.Source != null) BlendBackdrops(1 - p);
             double rollerLeft = MascotCoverLeft + x - 22;
             Canvas.SetLeft(_roller, rollerLeft);
