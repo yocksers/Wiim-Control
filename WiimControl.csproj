@@ -19,6 +19,8 @@
     <SupportedOSPlatformVersion Condition="'$(RuntimeIdentifier)' == 'win-x64'">10.0.17763.0</SupportedOSPlatformVersion>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRunComposite>false</PublishReadyToRunComposite>
     <Version>1.36</Version>
     <AssemblyVersion>1.0.34.0</AssemblyVersion>
     <FileVersion>1.0.34.0</FileVersion>
@@ -46,6 +48,10 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PublishReadyToRunExclude Include="Microsoft.Windows.SDK.NET.dll" />
   </ItemGroup>
 
   <ItemGroup>
