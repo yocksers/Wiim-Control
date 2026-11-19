@@ -197,7 +197,7 @@ sealed class MacAudioSamples : IAudioSamples
             }
             if (frames > 0) _ring.Push(_leftSamples, _rightSamples, frames);
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Sound capture", ex); }
         return 0;
     }
 

@@ -34,7 +34,7 @@ sealed class LinuxComputerPlayback : IComputerPlayback
                         (Message m, object? _) => m.GetBodyReader().ReadDictionaryOfStringToVariantValue(), null);
                     players.Add((name, Text(properties, "PlaybackStatus"), properties));
                 }
-                catch (Exception) { }
+                catch (Exception ex) { ErrorLog.Unexpected("Computer playback", ex); }
             }
             var chosen = players.FirstOrDefault(p => p.Status == "Playing" && TrackOf(p.Name, p.Properties, true) != null);
             if (chosen.Name == null && _shown != null) chosen = players.FirstOrDefault(p => p.Name == _shown && p.Status == "Paused");

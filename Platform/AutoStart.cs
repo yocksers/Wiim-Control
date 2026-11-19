@@ -49,7 +49,7 @@ static class AutoStart
             else if (enabled) WriteLinuxDesktopFile();
             else if (File.Exists(LinuxDesktopFile)) File.Delete(LinuxDesktopFile);
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Start with computer", ex); }
     }
 
     public static void MigrateLegacy()
@@ -68,7 +68,7 @@ static class AutoStart
             if (OperatingSystem.IsWindows()) RepairWindows();
             else if (IsEnabled()) SetEnabled(true);
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Start with computer", ex); }
     }
 
     private static string WindowsCommand => $"\"{ExecutablePath}\" {MinimizedArgument}";

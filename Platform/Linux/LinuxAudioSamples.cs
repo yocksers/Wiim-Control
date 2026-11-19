@@ -67,7 +67,7 @@ sealed class LinuxAudioSamples : IAudioSamples
                 filled -= used;
             }
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Sound capture", ex); }
     }
 
     public void CopyRecent(float[] destination, AudioChannel channel = AudioChannel.Mix) => _ring.CopyRecent(destination, channel);

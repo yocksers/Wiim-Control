@@ -83,7 +83,7 @@ sealed class OutputDeviceMonitor : IMMNotificationClient, IOutputDeviceMonitor
             }
             finally { Marshal.ReleaseComObject(collection); }
         }
-        catch { }
+        catch (Exception ex) { ErrorLog.Unexpected("Sound outputs", ex); }
         finally { Marshal.ReleaseComObject(enumerator); }
         return result;
     }

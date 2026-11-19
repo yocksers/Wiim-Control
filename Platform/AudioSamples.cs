@@ -74,7 +74,7 @@ static class AudioSamples
             if (OperatingSystem.IsLinux()) return LinuxAudioSamples.Open(outputId);
             if (OperatingSystem.IsMacOS()) return MacAudioSamples.Open(outputId);
         }
-        catch (Exception) { }
+        catch (Exception ex) { ErrorLog.Unexpected("Sound capture", ex); }
         return null;
     }
 }

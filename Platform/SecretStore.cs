@@ -66,7 +66,7 @@ static class SecretStore
                 return secret ?? string.Empty;
             }
         }
-        catch (FormatException) { }
+        catch (FormatException ex) { ErrorLog.Unexpected("Saved passwords", ex); }
         return string.Empty;
     }
 

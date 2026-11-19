@@ -54,6 +54,13 @@ static class ErrorLog
         catch (Exception) { }
     }
 
+    public static void Unexpected(string source, Exception exception)
+    {
+        if (exception is HttpRequestException or System.Net.Sockets.SocketException or TimeoutException or OperationCanceledException
+            or System.Net.WebSockets.WebSocketException or ObjectDisposedException or IOException { InnerException: System.Net.Sockets.SocketException }) return;
+        Write(source, exception);
+    }
+
     public static void Cleanup()
     {
         try
