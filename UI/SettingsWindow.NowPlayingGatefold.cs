@@ -55,7 +55,7 @@ sealed partial class WiimController
             body.Children.Add(header);
             body.Children.Add(_npTrackScroll);
             _npGatefold.Child = body;
-            _npGatefoldTimer.Host = this;
+            _npGatefoldTimer.Host = _npOverlay;
             _npGatefoldTimer.Tick += (_, _) => StepGatefold();
         }
 

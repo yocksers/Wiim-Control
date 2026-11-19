@@ -40,7 +40,7 @@ sealed partial class WiimController
                 {
                     _ampSection = section;
                     FillDeviceSettingsCombo(followActive: false);
-                    bool cached = SelectedAmpIp is { } ip && _ampCache is { } cache && cache.Ip == ip;
+                    bool cached = section != SectionRemote && SelectedAmpIp is { } ip && _ampCache is { } cache && cache.Ip == ip;
                     SetRows(window._ampList, cached ? BuildAmpCards(_ampCache!.Value.Ip, _ampCache.Value.Settings) : []);
                     if (page.IsVisible) _ = RefreshAmpAsync(quiet: cached);
                 };
@@ -79,7 +79,7 @@ sealed partial class WiimController
                 int version = ++_ampVersion;
                 var status = _ampSection == SectionDisplay ? window._owner.GetDeviceStatusAsync(window.TargetOf(ip)) : Task.FromResult<DeviceStatus?>(null);
                 var settings = await window._owner.GetAmpSettingsAsync(ip, _screenInputIp == ip ? _screenInput : null, _ampSection == SectionExperimental,
-                    _ampSection == SectionDeviceInfo);
+                    _ampSection == SectionDeviceInfo, _ampSection == SectionRemote);
                 _screenSpotify = (await status)?.Mode == SpotifyMode;
                 if (ip != SelectedAmpIp || version != _ampVersion) return;
                 if (settings != null) _ampCache = (ip, settings);
@@ -223,7 +223,7 @@ sealed partial class WiimController
                         var data = memory.ToArray();
                         jpeg = await Task.Run(() => PrepareWallpaper(data, info.Width, info.Height));
                     }
-                    catch (Exception) { }
+                    catch (Exception ex) { ErrorLog.Unexpected("Wallpaper", ex); }
                     string? name = jpeg != null ? await window._owner.UploadWallpaperAsync(ip, jpeg) : null;
                     if (name != null) uploaded.Add(name);
                     else failed.Add(file.Name);
@@ -304,6 +304,8 @@ sealed partial class WiimController
                         if (s.Network?.StandbySeconds is int standby && standby > 0) cards.Add(BuildStandbyCard(ip, standby));
                         empty = "This device doesn't have a standby timer.";
                         break;
+                    case SectionRemote:
+                        return BuildRemoteCards(ip, s);
                     case SectionAlarms:
                         if (s.Alarms is { Count: > 0 } alarms) cards.Add(BuildAlarmsCard(ip, alarms));
                         empty = "This device doesn't have alarms.";

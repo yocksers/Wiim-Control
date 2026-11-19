@@ -107,8 +107,13 @@ sealed partial class WiimController
 
             KeyDown += (_, e) =>
             {
-                if (e.Key == Key.F11 && _npIp != null) SetNowPlayingFullScreen(_npRestoreState == null);
+                if (e.Key == Key.F11 && _npIp != null && _npWindow == null) SetNowPlayingFullScreen(_npRestoreState == null);
                 if (e.Key != Key.Escape) return;
+                if (_npWindow != null)
+                {
+                    Hide();
+                    return;
+                }
                 if (_npRestoreState != null) SetNowPlayingFullScreen(false);
                 else if (_npIp != null) HideNowPlayingView();
                 else Close();
@@ -117,7 +122,7 @@ sealed partial class WiimController
             _positionTimer.Tick += (_, _) => AdvancePositions();
             _volumePollTimer.Tick += async (_, _) =>
             {
-                if (_devicesPage is not { IsVisible: true } || WindowState == WindowState.Minimized) return;
+                if (!PlayerWindowShowing && (_devicesPage is not { IsVisible: true } || WindowState == WindowState.Minimized)) return;
                 bool instant = _owner._knownDevices.Count > 0 && _owner._knownDevices.All(d => _owner.HasInstantUpdates(d.Ip));
                 if (instant)
                 {
@@ -141,6 +146,12 @@ sealed partial class WiimController
             Closing += async (_, e) =>
             {
                 if (_closeFlushed) return;
+                if (_npWindow != null && e.CloseReason == WindowCloseReason.WindowClosing && !e.IsProgrammatic)
+                {
+                    e.Cancel = true;
+                    Hide();
+                    return;
+                }
                 if (_npIp != null && e.CloseReason == WindowCloseReason.WindowClosing && !e.IsProgrammatic)
                 {
                     e.Cancel = true;
@@ -150,7 +161,7 @@ sealed partial class WiimController
                 e.Cancel = true;
                 if (_closeFlushing) return;
                 _closeFlushing = true;
-                _owner.SaveWindowState(_normalSize, (_npRestoreState ?? WindowState) == WindowState.Maximized);
+                _owner.SaveWindowState(_normalSize, (_npWindow == null ? _npRestoreState ?? WindowState : WindowState) == WindowState.Maximized);
                 var flush = FlushBeforeCloseAsync();
                 await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(3)));
                 _closeFlushed = true;
@@ -158,6 +169,7 @@ sealed partial class WiimController
             };
             Closed += (_, _) =>
             {
+                CloseNowPlayingWindow();
                 _volumeSendTimer.Stop();
                 _volumePollTimer.Stop();
                 _positionTimer.Stop();
@@ -169,6 +181,7 @@ sealed partial class WiimController
             double scale = percent / 100.0, ratio = scale / _scale;
             _scale = scale;
             _scaler.Scale = scale;
+            if (_npWindowScaler != null) _npWindowScaler.Scale = scale;
             foreach (var popup in new Flyout?[] { _npBrightnessFlyout, _npLyricsDelayFlyout, _barVolumeFlyout })
                 if (popup?.Content is ScaledContent scaled) scaled.Scale = scale;
             UpdateMinimumWidth();
@@ -343,6 +356,9 @@ sealed partial class WiimController
             var recent = new RecentPage(this);
             Reloaded += recent.FillDevices;
             var recentPage = new LazyPage(recent.Build);
+            var streaming = new StreamingServicesPage(this);
+            Reloaded += streaming.FillDevices;
+            var streamingPage = new LazyPage(streaming.Build);
             var queue = new QueuePage(this);
             Reloaded += queue.FillDevices;
             var queuePage = new LazyPage(queue.Build);
@@ -398,7 +414,7 @@ sealed partial class WiimController
                 Nav("Presets", Icons.Star, presetsPage))));
             sidebarItems.Children.Add(NavSection("Music", NavGroup(
                 Nav("Library", Icons.Library, libraryPage), Nav("Radio", Icons.Radio, radioPage), Nav("Queue", Icons.Queue, queuePage),
-                Nav("Recent", Icons.History, recentPage))));
+                Nav("Recent", Icons.History, recentPage), Nav("Services", Icons.Cast, streamingPage))));
             sidebarItems.Children.Add(NavSection("Audio", NavGroup(
                 Nav("Equalizer", Icons.Equalizer, eqPage), Nav("RoomFit", Icons.Room, roomFitPage), Nav("Output", Icons.Output, outputPage), Nav("Inputs", Icons.Input, inputsPage),
                 Nav(SubwooferPage.SectionHighPass, Icons.HighPass, subwooferPage, SubwooferPage.SectionHighPass), Nav("Audio settings", Icons.AudioSettings, audioSettingsPage),
@@ -407,7 +423,7 @@ sealed partial class WiimController
             deviceInfoNav.Click += (_, _) => _amp.CountDeviceInfoClick(ampPage);
             var general = NavGroup(
                 deviceInfoNav, Nav(AmpPage.SectionNetwork, Icons.Wifi, ampPage, AmpPage.SectionNetwork),
-                Nav(AmpPage.SectionStandby, Icons.Power, ampPage, AmpPage.SectionStandby));
+                Nav(AmpPage.SectionStandby, Icons.Power, ampPage, AmpPage.SectionStandby), Nav(AmpPage.SectionRemote, Icons.Remote, ampPage, AmpPage.SectionRemote));
             var automation = NavGroup(
                 Nav(AmpPage.SectionAlarms, Icons.Alarm, ampPage, AmpPage.SectionAlarms), Nav("Sleep timer", Icons.Sleep, sleepPage));
             _displayNav = Nav(AmpPage.SectionDisplay, Icons.Display, ampPage, AmpPage.SectionDisplay);

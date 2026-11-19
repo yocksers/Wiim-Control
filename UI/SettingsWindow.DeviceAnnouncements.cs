@@ -33,6 +33,5 @@ sealed partial class WiimController
             if (_ampPageRef is { IsVisible: true }) _amp.OnScreenChanged(ip);
         }
 
-        internal void OnInputSignalChanged(string ip) => ApplyDashboardSource(ip);
     }
 }

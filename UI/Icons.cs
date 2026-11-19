@@ -50,6 +50,13 @@ static class Icons
     public static readonly StreamGeometry Close =StreamGeometry.Parse("M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z");
     public static readonly StreamGeometry More = StreamGeometry.Parse("M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z");
     public static readonly StreamGeometry ChevronRight = StreamGeometry.Parse("M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z");
+    public static readonly StreamGeometry Remote = StreamGeometry.Parse("M12,0C8.96,0 6.21,1.23 4.22,3.22L5.63,4.63C7.26,3 9.5,2 12,2C14.5,2 16.74,3 18.36,4.64L19.77,3.23C17.79,1.23 15.04,0 12,0M7.05,6.05L8.46,7.46C9.37,6.56 10.62,6 12,6C13.38,6 14.63,6.56 15.54,7.46L16.95,6.05C15.68,4.78 13.93,4 12,4C10.07,4 8.32,4.78 7.05,6.05M12,15A2,2 0 0,1 10,13A2,2 0 0,1 12,11A2,2 0 0,1 14,13A2,2 0 0,1 12,15M15,9H9A1,1 0 0,0 8,10V22A1,1 0 0,0 9,23H15A1,1 0 0,0 16,22V10A1,1 0 0,0 15,9Z");
+    public static readonly StreamGeometry Cast = StreamGeometry.Parse("M1,18V21H4A3,3 0 0,0 1,18M1,14V16A5,5 0 0,1 6,21H8A7,7 0 0,0 1,14M1,10V12A9,9 0 0,1 10,21H12C12,14.92 7.07,10 1,10M21,3H3C1.89,3 1,3.89 1,5V8H3V5H21V19H14V21H21A2,2 0 0,0 23,19V5C23,3.89 22.1,3 21,3Z");
+    public static readonly StreamGeometry DragHandle = StreamGeometry.Parse("M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z");
+    public static readonly StreamGeometry Borderless = StreamGeometry.Parse("M3,4H7V6H3ZM10,4H14V6H10ZM17,4H21V6H17ZM3,18H7V20H3ZM10,18H14V20H10ZM17,18H21V20H17ZM3,8H5V11H3ZM3,13H5V16H3ZM19,8H21V11H19ZM19,13H21V16H19ZM7,8H17V16H7Z");
+    public static readonly StreamGeometry WindowFrame = StreamGeometry.Parse("M4,4H20A1,1 0 0,1 21,5V19A1,1 0 0,1 20,20H4A1,1 0 0,1 3,19V5A1,1 0 0,1 4,4M5,9V18H19V9H5Z");
+    public static readonly StreamGeometry OpenInWindow = StreamGeometry.Parse("M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z");
+    public static readonly StreamGeometry PutBackWindow = StreamGeometry.Parse("M12,10L8,14H11V20H13V14H16M19,4H5C3.89,4 3,4.9 3,6V18A2,2 0 0,0 5,20H9V18H5V8H19V18H15V20H19A2,2 0 0,0 21,18V6A2,2 0 0,0 19,4Z");
     public static readonly StreamGeometry MiniPlayer = StreamGeometry.Parse(
         "M3,3H21A2,2 0 0,1 23,5V19A2,2 0 0,1 21,21H3A2,2 0 0,1 1,19V5A2,2 0 0,1 3,3M3,5V19H21V5H3M12,11H19V17H12V11Z");
     public static readonly StreamGeometry Info = StreamGeometry.Parse(
@@ -70,8 +77,6 @@ static class Icons
     public static readonly StreamGeometry Minus = StreamGeometry.Parse("M19,13H5V11H19V13Z");
     public static readonly StreamGeometry Display = StreamGeometry.Parse(
         "M21,16H3V4H21M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z");
-    public static readonly StreamGeometry ComputerSound = StreamGeometry.Parse(
-        "M21,16H3V4H21M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2ZM12,5.5V10.775C11.705,10.605 11.365,10.5 11,10.5C9.895,10.5 9,11.395 9,12.5S9.895,14.5 11,14.5S13,13.605 13,12.5V7.5H15V5.5H12Z");
     public static readonly StreamGeometry Sleep = StreamGeometry.Parse("M12,3A9,9 0 1,0 21,12A7,7 0 0,1 12,3Z");
     public static readonly StreamGeometry Delete = StreamGeometry.Parse("M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z");
     public static readonly StreamGeometry FullScreen = StreamGeometry.Parse("M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z");

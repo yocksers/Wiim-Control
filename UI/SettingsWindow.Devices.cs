@@ -145,13 +145,6 @@ sealed partial class WiimController
             _ = RefreshMultiroomAsync();
         }
 
-        private void MoveDeviceCard(KnownDevice device, int offset)
-        {
-            if (!_owner.MoveDevice(device, offset)) return;
-            LoadFromOwner();
-            _ = RefreshDeviceStatusesAsync();
-        }
-
         private sealed record CachedCard(string Key, Panel Slot, Control? Members);
 
         private readonly List<(string Ip, CachedCard Card)> _cachedCards = [];
@@ -167,6 +160,11 @@ sealed partial class WiimController
 
         private void RebuildDeviceCards()
         {
+            if (_deviceDrag != null)
+            {
+                _rebuildAfterDrag = true;
+                return;
+            }
             UpdateDevicesGroupMenuLabel();
             UpdatePlayerBar();
             _positions.Clear();
@@ -230,7 +228,6 @@ sealed partial class WiimController
             Forget(_volumeControls, v => Inside(v.Slider));
             Forget(_groupVolumes, g => Inside(g.Controls.Slider));
             Forget(_nowPlayingControls, c => Inside(c.Art));
-            Forget(_castButtons, c => Inside(c.Button));
             Forget(_inputLabels, Inside);
             Forget(_channelButtons, Inside);
             Forget(_deviceCards, c => Inside(c.Slot));
@@ -279,7 +276,7 @@ sealed partial class WiimController
 
             var actions = new WrapPanel
             {
-                ItemSpacing = 8, LineSpacing = 8, ItemsAlignment = WrapPanelItemsAlignment.End, VerticalAlignment = VerticalAlignment.Top,
+                ItemSpacing = 4, LineSpacing = 8, ItemsAlignment = WrapPanelItemsAlignment.End, VerticalAlignment = VerticalAlignment.Top,
                 HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(16, 0, 0, 0)
             };
             var input = InputButton(d.Ip);
@@ -296,44 +293,29 @@ sealed partial class WiimController
                 ReloadSoon(refreshEq: active);
             };
             var lockButton = LockButton(d.Ip, 18);
-            var orderButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-            if (count > 1)
-            {
-                var (up, _) = IconButton(Icons.ArrowUp);
-                var (down, _) = IconButton(Icons.ArrowDown);
-                ToolTip.SetTip(up, "Move up");
-                ToolTip.SetTip(down, "Move down");
-                up.IsEnabled = position > 0;
-                down.IsEnabled = position < count - 1;
-                up.Click += (_, _) => MoveDeviceCard(d, -1);
-                down.Click += (_, _) => MoveDeviceCard(d, 1);
-                orderButtons.Children.Add(up);
-                orderButtons.Children.Add(down);
-            }
-            orderButtons.Children.Add(lockButton);
-            actions.Children.Insert(0, orderButtons);
+            var orderButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Children = { lockButton } };
+            if (count > 1) orderButtons.Children.Add(DeviceDragHandle(d.Ip));
 
             var (mini, _) = IconPill(Icons.MiniPlayer, "Open or close the mini player for this device");
             mini.Click += (_, _) => _owner.ToggleMiniPlayer(d.Ip);
             var (bigPlayer, _) = IconPill(Icons.FullScreen, "Open the big player");
             bigPlayer.Classes.Add("flat");
             bigPlayer.Click += (_, _) => ShowNowPlayingView(d.Ip);
-            var playerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { bigPlayer, mini } };
-            if (PcAudioSupported)
-            {
-                var cast = CastButton(d.Ip);
-                cast.IsEnabled = !locked;
-                playerButtons.Children.Add(cast);
-            }
+            var (ownWindow, _) = IconPill(Icons.OpenInWindow, "Open the big player in its own window");
+            ownWindow.Classes.Add("flat");
+            ownWindow.Click += (_, _) => ShowNowPlayingWindow(d.Ip);
+            var playerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, Children = { bigPlayer, ownWindow, mini } };
             actions.Children.Add(playerButtons);
+            actions.Children.Add(orderButtons);
             var (link, linkIcon) = IconPill(Icons.Link, null);
             HookLinkButton(link, linkIcon, d.Ip);
             link.IsEnabled = !locked;
-            var linkShift = new TranslateTransform();
-            link.RenderTransform = linkShift;
-            remove.SizeChanged += (_, e) => linkShift.Y = e.NewSize.Height + 8;
-            actions.Children.Add(new Panel { Children = { remove, link } });
             foreach (var button in new[] { remove, mini, link }) button.Classes.Add("flat");
+            var linkRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 0, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, -4, -7, 0), Children = { link, remove }
+            };
 
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto") };
             grid.Children.Add(info);
@@ -348,6 +330,9 @@ sealed partial class WiimController
             Grid.SetRow(nowPlayingRow, 1);
             Grid.SetColumnSpan(nowPlayingRow, 2);
             grid.Children.Add(nowPlayingRow);
+            Grid.SetRow(linkRow, 1);
+            Grid.SetColumn(linkRow, 1);
+            grid.Children.Add(linkRow);
             var volumeRow = members.Count > 1 ? BuildGroupVolumeRow(d.Ip, members) : BuildVolumeRow(d.Ip);
             if (members.Count == 1) volumeRow.IsEnabled = !locked;
             Grid.SetRow(volumeRow, 2);
@@ -391,9 +376,16 @@ sealed partial class WiimController
                 await Dialogs.MessageAsync(this, "Couldn't get the inputs from the device. Check that it's switched on and reachable.", _scale);
                 return;
             }
-            string? current = _statuses.TryGetValue(ip, out var status) ? InputOfMode(status.Mode) : null;
-            ShowDropdown(button, inputs.Select(input => new DropdownChoice(_owner.InputName(ip, input), IsSameInput(input, current), true,
-                () => SwitchInputAsync(ip, input))).ToList());
+            bool streaming = PcAudioSupported && _owner.IsPlayingPcAudio(ip);
+            string? current = !streaming && _statuses.TryGetValue(ip, out var status) ? InputOfMode(status.Mode) : null;
+            var choices = inputs.Select(input => new DropdownChoice(_owner.InputName(ip, input), IsSameInput(input, current), true, async () =>
+            {
+                if (streaming) await _owner.SetPcAudioAsync(ip, false);
+                await SwitchInputAsync(ip, input);
+            })).ToList();
+            if (PcAudioSupported)
+                choices.Add(DropdownAction(streaming ? "Stop streaming from computer" : "Stream from computer", () => SetPcAudioAsync(ip, !streaming)));
+            ShowDropdown(button, choices);
         }
 
         private async Task SetPcAudioAsync(string ip, bool on)
@@ -409,11 +401,8 @@ sealed partial class WiimController
 
         internal void OnPcAudioChanged()
         {
-            foreach (var ip in _castButtons.Keys.ToList()) ApplyCastButton(ip);
             foreach (var ip in _inputLabels.Keys.ToList()) ApplyNowPlaying(ip);
         }
-
-        private readonly Dictionary<string, (Button Button, PathIcon Icon)> _castButtons = new();
 
         private static (Button Button, PathIcon Icon) IconPill(StreamGeometry geometry, string? tip)
         {
@@ -426,37 +415,6 @@ sealed partial class WiimController
             button.Classes.Add("pill");
             if (tip != null) ToolTip.SetTip(button, tip);
             return (button, icon);
-        }
-
-        private Button CastButton(string ip)
-        {
-            var (cast, castIcon) = IconPill(Icons.ComputerSound, null);
-            cast.Classes.Add("flat");
-            cast.Click += async (_, _) =>
-            {
-                cast.IsEnabled = false;
-                try { await SetPcAudioAsync(ip, !_owner.IsPlayingPcAudio(ip)); }
-                finally { cast.IsEnabled = true; }
-            };
-            _castButtons[ip] = (cast, castIcon);
-            ApplyCastButton(ip);
-            return cast;
-        }
-
-        private void ApplyCastButton(string ip)
-        {
-            if (!_castButtons.TryGetValue(ip, out var c)) return;
-            bool on = _owner.IsPlayingPcAudio(ip);
-            if (c.Button.Classes.Contains("flat"))
-            {
-                c.Button.Classes.Set("accent", false);
-                if (on) c.Icon.Foreground = Palette.AccentText;
-                else c.Icon.ClearValue(PathIcon.ForegroundProperty);
-            }
-            else c.Button.Classes.Set("accent", on);
-            ToolTip.SetTip(c.Button, on
-                ? "Stop playing this computer's sound on the device"
-                : "Stream audio from this computer over network to the device");
         }
 
         private async Task SwitchInputAsync(string ip, string input)

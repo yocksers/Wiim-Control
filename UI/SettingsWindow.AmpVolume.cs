@@ -95,14 +95,6 @@ sealed partial class WiimController
                     ToolTip.SetTip(label, "How much the volume changes per click of the device's own volume knob or buttons");
                     rows.Add(label);
                 }
-                if (s.RemoteVolumeStep is int remoteStep)
-                {
-                    var slider = AmpSlider(1, 10, Math.Clamp(remoteStep, 1, 10), v => v.ToString(), false, out var row);
-                    slider.ValueCommitted += async (_, _) => await ChangeAmpVolumeAsync(() => window._owner.SetRemoteVolumeStepAsync(ip, slider.Value));
-                    var label = LabeledRow("Volume step for the remote", row);
-                    ToolTip.SetTip(label, "How much the volume changes per press of the volume buttons on the WiiM remote");
-                    rows.Add(label);
-                }
                 if (s.AutoHeadroom is bool autoHeadroom)
                 {
                     var toggle = new ToggleSwitch { IsChecked = autoHeadroom };

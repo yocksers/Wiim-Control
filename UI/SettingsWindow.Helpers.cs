@@ -44,8 +44,6 @@ sealed partial class WiimController
 
         private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 
-        private static string ServerHost(string address) => address.EndsWith(":3483", StringComparison.Ordinal) ? address[..^5] : address;
-
         private async Task<string?> PickColorAsync(string currentHex, string title = "Clock colour")
         {
             var start = Color.TryParse("#" + currentHex, out var parsed) ? parsed : Colors.White;

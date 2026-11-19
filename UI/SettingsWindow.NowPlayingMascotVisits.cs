@@ -141,7 +141,8 @@ sealed partial class WiimController
             MascotVisit.Paused => 4.0,
             MascotVisit.Selfie => 3.4,
             MascotVisit.Balloon => 6.8,
-            MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke => MascotIdleLength(),
+            MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke
+                or MascotVisit.Juggling or MascotVisit.Kite => MascotIdleLength(),
             _ => MascotActSeconds
         };
 
@@ -287,7 +288,8 @@ sealed partial class WiimController
                     _mascotShadow.Opacity = offset < -10 ? 0 : 1;
                     break;
                 }
-                case MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke:
+                case MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke
+                    or MascotVisit.Juggling or MascotVisit.Kite:
                     offset = StepMascotIdle(s);
                     break;
                 default:
@@ -297,7 +299,7 @@ sealed partial class WiimController
             return offset;
         }
 
-        private enum MascotExit { Stroll, Back, Dash, Hop, Moonwalk, Sneak, Rocket }
+        private enum MascotExit { Stroll, Back, Dash, Hop, Moonwalk, Sneak, Rocket, BananaPeel, Teleport }
 
         private MascotExit _mascotExit;
         private bool _mascotExited;
@@ -366,6 +368,10 @@ sealed partial class WiimController
                     (_mascotGaze.X, _mascotGaze.Y) = (dir * 4, 0);
                     break;
                 }
+                case MascotExit.BananaPeel:
+                    return StepBananaExit(s, dir);
+                case MascotExit.Teleport:
+                    return StepTeleportExit(s);
                 case MascotExit.Rocket:
                 {
                     if (s < 0.45)

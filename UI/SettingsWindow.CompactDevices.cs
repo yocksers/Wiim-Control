@@ -139,7 +139,15 @@ sealed partial class WiimController
                 Children = { input, new Panel { Children = { lockButton, link } } }
             };
             DockPanel.SetDock(tools, Dock.Right);
-            var header = new DockPanel { Children = { tools, name } };
+            var header = new DockPanel { Children = { tools } };
+            if (_owner._knownDevices.Count > 1)
+            {
+                var handle = DeviceDragHandle(d.Ip, 24, 16);
+                handle.Margin = new Thickness(-8, -4, 4, -4);
+                DockPanel.SetDock(handle, Dock.Left);
+                header.Children.Add(handle);
+            }
+            header.Children.Add(name);
 
             var art = new ArtworkView { Width = CompactArtSize, Height = CompactArtSize, PlaceholderSize = 22, VerticalAlignment = VerticalAlignment.Center };
             HookCoverOpen(art, d.Ip);

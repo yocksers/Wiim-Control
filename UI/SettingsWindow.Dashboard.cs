@@ -26,7 +26,7 @@ sealed partial class WiimController
         private CachedCard? _dashboard;
         private string? _dashboardIp;
         private int _dashboardVersion;
-        private readonly List<(string Input, Border Tile, TextBlock Signal)> _dashboardSources = [];
+        private readonly List<(string Input, Border Tile)> _dashboardSources = [];
         private Grid? _dashboardOutputGrid;
         private Border? _dashboardOutputCard;
 
@@ -216,8 +216,7 @@ sealed partial class WiimController
             var presetsTask = _owner.GetPresetsAsync(ip);
             var inputsTask = _owner.GetInputsAsync(ip);
             var outputTask = _owner.GetOutputStateAsync(ip);
-            var signalsTask = _owner.ReadInputSignalsAsync(ip);
-            await Task.WhenAll(presetsTask, inputsTask, outputTask, signalsTask);
+            await Task.WhenAll(presetsTask, inputsTask, outputTask);
             if (version != _dashboardVersion) return;
 
             ShowDashboardPresets(ip, presetsTask.Result, presetGrid, presetCard, animate: true);
@@ -229,13 +228,7 @@ sealed partial class WiimController
                 {
                     var tile = DashboardTile(input == "wifi" ? Icons.Wifi : Icons.ForInput(input), _owner.InputName(ip, input), false,
                         () => SwitchInputAsync(ip, input));
-                    var signal = new TextBlock
-                    {
-                        FontSize = 11, Foreground = Palette.TextMuted, HorizontalAlignment = HorizontalAlignment.Center, IsVisible = false,
-                        Margin = new Thickness(0, -3, 0, 0)
-                    };
-                    if (tile.Child is StackPanel stack) stack.Children.Add(signal);
-                    _dashboardSources.Add((input, tile, signal));
+                    _dashboardSources.Add((input, tile));
                     return (Control)tile;
                 }).ToList();
                 FillTileGrid(sourceGrid, tiles, DashboardTileColumns);
@@ -363,20 +356,7 @@ sealed partial class WiimController
         {
             if (ip != _dashboardIp || _dashboardSources.Count == 0) return;
             string? current = _statuses.TryGetValue(ip, out var status) ? InputOfMode(status.Mode) : null;
-            foreach (var (input, tile, signal) in _dashboardSources)
-            {
-                SetTileActive(tile, IsSameInput(input, current));
-                string? text = _owner.InputSignal(ip, input) switch
-                {
-                    "playing" => "Signal",
-                    "nosound" => "No sound",
-                    "detecting" => "Checking…",
-                    _ => null
-                };
-                signal.Text = text ?? string.Empty;
-                signal.IsVisible = text != null;
-                ToolTip.SetTip(signal, text == null ? null : "Auto-sensing on this input reports this. It's switched on under Input settings.");
-            }
+            foreach (var (input, tile) in _dashboardSources) SetTileActive(tile, IsSameInput(input, current));
         }
 
         private Control DashboardPresetTile(string ip, int number, PresetInfo? preset)
@@ -487,13 +467,16 @@ sealed partial class WiimController
             link.IsEnabled = !locked;
             var big = Action(Icons.FullScreen, "Big player", "Open the big player");
             big.Click += (_, _) => ShowNowPlayingView(device.Ip);
+            var ownWindow = Action(Icons.OpenInWindow, "Own window", "Open the big player in its own window");
+            ownWindow.Click += (_, _) => ShowNowPlayingWindow(device.Ip);
             var mini = Action(Icons.MiniPlayer, "Mini player", "Open or close the mini player for this device");
             mini.Click += (_, _) => _owner.ToggleMiniPlayer(device.Ip);
 
-            var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), Margin = new Thickness(0, 12, 0, 0) };
-            Place(buttons, link, 0, 0, new Thickness(0, 0, 4, 0));
-            Place(buttons, big, 0, 1, new Thickness(4, 0, 4, 0));
-            Place(buttons, mini, 0, 2, new Thickness(4, 0, 0, 0));
+            var buttons = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), RowDefinitions = new RowDefinitions("Auto,Auto"), Margin = new Thickness(0, 12, 0, 0) };
+            Place(buttons, big, 0, 0, new Thickness(0, 0, 4, 4));
+            Place(buttons, ownWindow, 0, 1, new Thickness(4, 0, 0, 4));
+            Place(buttons, link, 1, 0, new Thickness(0, 4, 4, 0));
+            Place(buttons, mini, 1, 1, new Thickness(4, 4, 0, 0));
 
             return new StackPanel { Children = { picker, buttons } };
         }

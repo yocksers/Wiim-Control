@@ -154,7 +154,7 @@ sealed partial class WiimController
 
         internal void OnDeviceEvent()
         {
-            if (IsVisible && WindowState != WindowState.Minimized) _ = RefreshDeviceStatusesAsync();
+            if ((IsVisible && WindowState != WindowState.Minimized) || PlayerWindowShowing) _ = RefreshDeviceStatusesAsync();
         }
 
         internal void ShowVolume(string ip, int volume, bool muted)

@@ -2,7 +2,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -45,6 +44,8 @@ sealed partial class WiimController
         private DateTime _npFadeStart;
         private bool _npFadeFromEmpty;
         private bool _npFlip;
+        private int _npArtHold;
+        private static readonly TimeSpan ArtLookupPoll = TimeSpan.FromMilliseconds(200);
         private bool _npSwap;
         private Bitmap? _npPendingArt;
         private bool _npHasPendingArt;
@@ -143,6 +144,7 @@ sealed partial class WiimController
             }
 
             var close = Pill("✕  Close");
+            _npCloseButton = close;
             ToolTip.SetTip(close, "Back to Wiim Control (Esc)");
             close.Click += (_, _) => HideNowPlayingView();
             _npStyleButton.Classes.Add("pill");
@@ -164,13 +166,13 @@ sealed partial class WiimController
             ApplyFullScreenButton();
             PropertyChanged += (_, e) =>
             {
-                if (e.Property != WindowStateProperty || WindowState == WindowState.FullScreen || _npRestoreState == null) return;
+                if (e.Property != WindowStateProperty || _npWindow != null || WindowState == WindowState.FullScreen || _npRestoreState == null) return;
                 _npRestoreState = null;
                 ApplyFullScreenButton();
             };
             var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { close } };
             _npTopBar.Children.Add(left);
-            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { BuildNowPlayingDeviceButton(), _npLyricsDelayButton, _npLyricsButton, BuildControlsButton(), _npStyleButton, BuildBrightnessButton(), _npFullScreen.Button } };
+            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { BuildNowPlayingDeviceButton(), _npLyricsDelayButton, _npLyricsButton, BuildControlsButton(), _npStyleButton, BuildBrightnessButton(), BuildBorderlessButton(), BuildPopOutButton(), _npFullScreen.Button } };
             Grid.SetColumn(right, 2);
             _npTopBar.Children.Add(right);
             foreach (var button in left.Children.Concat(right.Children).OfType<Button>())
@@ -190,7 +192,7 @@ sealed partial class WiimController
             _npOverlay.Children.Add(_npTopBar);
             _npOverlay.Children.Add(_npArtworkNotice);
 
-            _npFadeTimer.Host = this;
+            _npFadeTimer.Host = _npOverlay;
             _npFadeTimer.Tick += (_, _) => StepArtFade();
             _npIdleTimer.Tick += (_, _) => HideNowPlayingControls();
             _npOverlay.PointerMoved += (_, _) => WakeNowPlaying();
@@ -289,16 +291,18 @@ sealed partial class WiimController
             _npIp = ip;
             UpdateNowPlayingMenuLabels();
             var art = new ArtworkView { IsVisible = false };
-            bool loading = false;
+            string? waiting = null;
             art.BitmapChanged += () =>
             {
-                if (art.Bitmap == null && art.ImageUrl.Length > 0 && !loading)
+                _npArtHold++;
+                if (art.Bitmap == null && art.ImageUrl.Length > 0 && art.ImageUrl != waiting)
                 {
-                    loading = true;
+                    waiting = art.ImageUrl;
                     return;
                 }
-                loading = false;
+                waiting = null;
                 if (art.Bitmap != null && art.ImageUrl.Length > 0) _ = ShowSharpArtworkAsync(art, art.ImageUrl, art.Bitmap, fade: true);
+                else if (art.Bitmap == null && _owner.OnlineArtworkSearching) _ = HoldArtDuringLookupAsync(art);
                 else ShowNowPlayingArt(art.Bitmap, flip: true);
             };
             if (_nowPlayingControls.TryGetValue(ip, out var card))
@@ -306,7 +310,8 @@ sealed partial class WiimController
                 art.ImageUrl = card.Art.ImageUrl;
                 art.Bitmap = card.Art.Bitmap;
             }
-            loading = false;
+            waiting = null;
+            _npArtHold++;
             if (art.Bitmap == null) ShowNowPlayingArt(null, flip: false);
 
             var title = new TextBlock { FontSize = 30, FontWeight = FontWeight.Bold, Foreground = Brushes.White, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -417,38 +422,21 @@ sealed partial class WiimController
             UpdateStageMotion();
             ApplyLyricsVisibility();
             WakeNowPlaying();
-        }
-
-        private async Task ShowSharpArtworkAsync(ArtworkView art, string url, Bitmap thumbnail, bool fade)
-        {
-            var largeTask = _owner.GetLargeArtworkAsync(url);
-            if (largeTask.IsCompletedSuccessfully && largeTask.Result is { } cached)
-            {
-                ShowNowPlayingArt(cached, fade, flip: true);
-                return;
-            }
-            if (!fade) ShowNowPlayingArt(null, fade: false);
-            bool arrived = await Task.WhenAny(largeTask, Task.Delay(LargeArtworkWait)) == largeTask;
-            bool Current() => _npControls?.Art == art && art.ImageUrl == url;
-            if (!Current()) return;
-            if (!arrived) ShowNowPlayingArt(thumbnail, flip: true);
-            var large = await largeTask;
-            if (!Current()) return;
-            if (large != null) ShowNowPlayingArt(large, flip: arrived);
-            else if (arrived) ShowNowPlayingArt(thumbnail, flip: true);
+            _npWindow?.Activate();
         }
 
         private void SetNowPlayingFullScreen(bool on)
         {
+            var host = NowPlayingHost;
             if (on && _npRestoreState == null)
             {
-                _npRestoreState = WindowState;
-                WindowState = WindowState.FullScreen;
+                _npRestoreState = host.WindowState;
+                host.WindowState = WindowState.FullScreen;
             }
             else if (!on && _npRestoreState is { } restore)
             {
                 _npRestoreState = null;
-                WindowState = restore;
+                host.WindowState = restore;
             }
             ApplyFullScreenButton();
         }
@@ -497,6 +485,7 @@ sealed partial class WiimController
             SetNowPlayingFullScreen(false);
             _npOverlay.IsVisible = false;
             _npIp = null;
+            CloseNowPlayingWindow();
             _npControls = null;
             _npVolume = null;
             UpdateStageMotion();
@@ -517,339 +506,6 @@ sealed partial class WiimController
             ClearBigVinylControls();
             _npControlCard = null;
             _npControlPanel = null;
-        }
-
-        private void ShowNowPlayingArt(Bitmap? bitmap, bool fade = true, bool flip = false)
-        {
-            if (!fade)
-            {
-                _npPendingArt = null;
-                _npHasPendingArt = false;
-            }
-            var previous = _npCover.IsVisible ? _npCover.Source : null;
-            if (ReferenceEquals(previous, bitmap) && bitmap != null) return;
-            if (fade && MascotBusy && NpStyle == NowPlayingStyle.Mascot)
-            {
-                ReplaceIncomingArt(bitmap);
-                return;
-            }
-            if (fade && (_npFlip || _npSwap) && _npFadeTimer.IsEnabled)
-            {
-                if (_npHasPendingArt) _npPendingArt = bitmap;
-                else if (!flip || !PastArtSwitch()) ReplaceIncomingArt(bitmap);
-                else
-                {
-                    _npPendingArt = bitmap;
-                    _npHasPendingArt = true;
-                }
-                return;
-            }
-            _npCoverOld.Source = previous;
-            ReleaseNowPlayingBackdrop();
-            _npBackdropOld.Source = _npBackdrop.Source;
-            foreach (var (art, old) in _npArtShapes) old.Fill = art.Fill;
-            _npCover.Source = bitmap;
-            _npBackdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap) : null;
-            _npCover.IsVisible = bitmap != null;
-            _npCoverPlaceholder.IsVisible = bitmap == null;
-            IBrush artFill = NowPlayingArtFill(bitmap);
-            foreach (var (art, _) in _npArtShapes) art.Fill = artFill;
-            _npFadeFromEmpty = previous == null;
-            var style = NpStyle;
-            _npFlip = flip && previous != null && (style is NowPlayingStyle.Cover or NowPlayingStyle.BigVinyl or NowPlayingStyle.Gatefold || IsVuStyle(style) || IsAnalyzer(style) || IsAmbient(style));
-            _npSwap = flip && previous != null && style is NowPlayingStyle.Vinyl or NowPlayingStyle.Cassette or NowPlayingStyle.Cd;
-            _npFadeStart = DateTime.UtcNow;
-            if (style == NowPlayingStyle.Mascot && flip && fade && previous != null && _npOverlay.IsVisible)
-            {
-                StartMascotSwap();
-                return;
-            }
-            if (fade && _npOverlay.IsVisible && (previous != null || bitmap != null))
-            {
-                ApplyArtFade(0);
-                _npFadeTimer.Start();
-                if (_npSwap || _npFlip) UpdateStageMotion();
-            }
-            else EndArtFade();
-        }
-
-        private bool PastArtSwitch()
-        {
-            double seconds = _npSwap ? ArtSwapSeconds : ArtFlipSeconds;
-            double progress = (DateTime.UtcNow - _npFadeStart).TotalSeconds / seconds;
-            return progress >= (_npSwap ? SwapInEnd + (SwapFlipEnd - SwapInEnd) / 2 : 0.5);
-        }
-
-        private void ReplaceIncomingArt(Bitmap? bitmap)
-        {
-            if (_npBackdrop.Source is Bitmap blurred) _owner.DisposeWhenUnused([blurred]);
-            _npCover.Source = bitmap;
-            _npBackdrop.Source = bitmap != null ? WiimController.BlurForNowPlaying(bitmap) : null;
-            _npCover.IsVisible = bitmap != null;
-            _npCoverPlaceholder.IsVisible = bitmap == null;
-            IBrush artFill = NowPlayingArtFill(bitmap);
-            foreach (var (art, _) in _npArtShapes) art.Fill = artFill;
-        }
-
-        private IBrush NowPlayingArtFill(Bitmap? bitmap)
-        {
-            if (bitmap != null) return new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill };
-            const double size = 100, iconSize = 34;
-            var drawing = new DrawingGroup();
-            drawing.Children.Add(new GeometryDrawing { Brush = Palette.Input, Geometry = new RectangleGeometry(new Rect(0, 0, size, size)) });
-            if (_npCoverPlaceholder.Data is { } icon && icon.Bounds is { Width: > 0, Height: > 0 } bounds)
-            {
-                double scale = iconSize / Math.Max(bounds.Width, bounds.Height);
-                var place = Matrix.CreateTranslation(-bounds.X - bounds.Width / 2, -bounds.Y - bounds.Height / 2) *
-                    Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(size / 2, size / 2);
-                drawing.Children.Add(new DrawingGroup
-                {
-                    Transform = new MatrixTransform(place),
-                    Children = { new GeometryDrawing { Brush = Palette.TextDim, Geometry = icon } }
-                });
-            }
-            return new DrawingBrush(drawing) { Stretch = Stretch.UniformToFill };
-        }
-
-        private void SetNowPlayingPlaceholder(StreamGeometry icon)
-        {
-            if (ReferenceEquals(_npCoverPlaceholder.Data, icon)) return;
-            _npCoverPlaceholder.Data = icon;
-            if (_npCover.Source != null) return;
-            var fill = NowPlayingArtFill(null);
-            foreach (var (art, _) in _npArtShapes) art.Fill = fill;
-        }
-
-        private void StepArtFade()
-        {
-            double seconds = _npSwap ? ArtSwapSeconds : _npFlip ? ArtFlipSeconds : ArtFadeSeconds;
-            double progress = (DateTime.UtcNow - _npFadeStart).TotalSeconds / seconds;
-            if (progress >= 1) EndArtFade();
-            else ApplyArtFade(progress);
-        }
-
-        private static double Ease(double progress) => progress * progress * (3 - 2 * progress);
-
-        private static double Stage(double progress, double start, double end) => Math.Clamp((progress - start) / (end - start), 0, 1);
-
-        private void ApplySwap(double progress)
-        {
-            double slide = progress < SwapInEnd ? Ease(Stage(progress, 0, SwapInEnd)) : 1 - Ease(Stage(progress, SwapFlipEnd, 1));
-            double inside = progress < SwapInEnd ? Stage(progress, 0, SwapInEnd) : 1 - Stage(progress, SwapFlipEnd, 1);
-            double hidden = 1 - Stage(inside, 0.8, 1);
-            _npDiscSlide.X = _npSheenSlide.X = slide * ((StageCover - DiscSize) / 2 - DiscLeft);
-            _npCassetteSlide.X = slide * ((StageCover - CassetteWidth) / 2 - CassetteLeft);
-            _npCdSlide.X = slide * ((StageCover - CdSize) / 2 - CdLeft);
-            _npDisc.Opacity = _npSheen.Opacity = _npCassette.Opacity = _npCd.Opacity = hidden;
-            double turn = Ease(Stage(progress, SwapInEnd, SwapFlipEnd));
-            bool front = turn < 0.5;
-            _npCoverFlip.AngleY = _npCaseFlip.AngleY = front ? turn * 180 : turn * 180 - 180;
-            _npCoverOld.Opacity = front ? 1 : 0;
-            foreach (var (_, faded) in _npArtShapes) faded.Opacity = front ? 1 : 0;
-            BlendBackdrops(1 - turn);
-            _npCover.Opacity = 1;
-        }
-
-        private void ApplyArtFade(double progress)
-        {
-            double eased = Ease(progress);
-            double old = _npFadeFromEmpty ? 0 : 1 - eased;
-            if (_npSwap)
-            {
-                ApplySwap(progress);
-                return;
-            }
-            if (_npFlip)
-            {
-                double angle = eased * 180;
-                bool front = angle < 90;
-                _npCoverFlip.AngleY = _npAmbientFlip.AngleY = _npBigDiscFlip.AngleY = front ? angle : angle - 180;
-                _npCoverOld.Opacity = front ? 1 : 0;
-                foreach (var (_, faded) in _npArtShapes) faded.Opacity = _npCoverOld.Opacity;
-                BlendBackdrops(old);
-                _npCover.Opacity = 1;
-                return;
-            }
-            _npCoverOld.Opacity = old;
-            foreach (var (_, faded) in _npArtShapes) faded.Opacity = old;
-            BlendBackdrops(old);
-            _npCover.Opacity = _npFadeFromEmpty ? eased : 1;
-        }
-
-        private void EndArtFade()
-        {
-            _npFadeTimer.Stop();
-            bool swapped = _npSwap || _npFlip;
-            _npFlip = _npSwap = false;
-            _npCoverFlip.AngleY = _npAmbientFlip.AngleY = _npBigDiscFlip.AngleY = _npCaseFlip.AngleY = 0;
-            _npDiscSlide.X = _npSheenSlide.X = _npCassetteSlide.X = _npCdSlide.X = 0;
-            _npDisc.Opacity = _npSheen.Opacity = _npCassette.Opacity = _npCd.Opacity = 1;
-            if (swapped) UpdateStageMotion();
-            _npCoverOld.Opacity = 0;
-            BlendBackdrops(0);
-            _npCover.Opacity = 1;
-            _npCoverOld.Source = null;
-            ReleaseNowPlayingBackdrop();
-            foreach (var (_, faded) in _npArtShapes)
-            {
-                faded.Opacity = 0;
-                faded.Fill = null;
-            }
-            if (!_npHasPendingArt) return;
-            var next = _npPendingArt;
-            _npPendingArt = null;
-            _npHasPendingArt = false;
-            if (_npOverlay.IsVisible) ShowNowPlayingArt(next, flip: true);
-        }
-
-        private void BlendBackdrops(double old)
-        {
-            double level = _npBackdropLevel;
-            _npBackdropOld.Opacity = level * old;
-            _npBackdrop.Opacity = old >= 1 ? 0 : level * (1 - old) / (1 - level * old);
-        }
-
-        private void ReleaseNowPlayingBackdrop()
-        {
-            if (_npBackdropOld.Source is not Bitmap old) return;
-            _npBackdropOld.Source = null;
-            _owner.DisposeWhenUnused([old]);
-        }
-
-        private static string StyleName(NowPlayingStyle style) => style switch
-        {
-            NowPlayingStyle.Vinyl => "Vinyl record",
-            NowPlayingStyle.BigVinyl => "Big vinyl",
-            NowPlayingStyle.Cassette => "Cassette tape",
-            NowPlayingStyle.Cd => "CD",
-            NowPlayingStyle.Reel => "Reel-to-reel",
-            NowPlayingStyle.Ambient => "Ambient",
-            NowPlayingStyle.Lyrics => "Lyrics only",
-            NowPlayingStyle.Gatefold => "Gatefold with track list",
-            NowPlayingStyle.Mascot => "Mascot",
-            NowPlayingStyle.VuMeters => "Stereo VU meters",
-            NowPlayingStyle.VuMeter => "VU meter",
-            NowPlayingStyle.Analyzer => "Spectrum",
-            NowPlayingStyle.StereoAnalyzer => "Stereo Spectrum",
-            NowPlayingStyle.LedMatrix => "Dot Matrix",
-            NowPlayingStyle.Fire => "Fire",
-            _ => "Cover only"
-        };
-
-        private static bool IsAmbient(NowPlayingStyle style) => style == NowPlayingStyle.Ambient;
-
-        private void ApplyNowPlayingStyle()
-        {
-            var style = NpStyle;
-            _npAppliedStyle = style;
-            bool ambient = IsAmbient(style);
-            _npDisc.IsVisible = _npSheen.IsVisible = style == NowPlayingStyle.Vinyl;
-            _npBigDisc.IsVisible = _npBigControls.IsVisible = style == NowPlayingStyle.BigVinyl;
-            _npCassette.IsVisible = style == NowPlayingStyle.Cassette;
-            _npCd.IsVisible = _npCase.IsVisible = style == NowPlayingStyle.Cd;
-            _npBigReel.IsVisible = style == NowPlayingStyle.Reel;
-            _npGatefold.IsVisible = style == NowPlayingStyle.Gatefold;
-            bool lyricsOnly = style == NowPlayingStyle.Lyrics;
-            _npAmbient.IsVisible = ambient;
-            _npStageBox.IsVisible = !ambient && !lyricsOnly;
-            _npCoverCard.IsVisible = !ambient && style is not (NowPlayingStyle.BigVinyl or NowPlayingStyle.Reel);
-            (_npStage.Width, _npStage.Height) = style switch
-            {
-                NowPlayingStyle.Vinyl => (DiscLeft + DiscSize, StageCover),
-                NowPlayingStyle.BigVinyl => (BigDiscSize, BigDiscSize),
-                NowPlayingStyle.Cassette => (CassetteLeft + CassetteWidth, StageCover),
-                NowPlayingStyle.Cd => (CdLeft + CdSize, StageCover),
-                NowPlayingStyle.Reel => (BigReelWidth, BigReelHeight),
-                NowPlayingStyle.Gatefold => (StageCover * 2, StageCover),
-                NowPlayingStyle.Mascot => (MascotStageWidth, StageCover),
-                NowPlayingStyle.VuMeters => (VuStageWidth, VuStageHeight),
-                NowPlayingStyle.VuMeter => (AnalyzerStageWidth, StageCover),
-                NowPlayingStyle.Analyzer or NowPlayingStyle.LedMatrix or NowPlayingStyle.Fire => (AnalyzerStageWidth, StageCover),
-                NowPlayingStyle.StereoAnalyzer => (StereoStageWidth, StereoStageHeight),
-                _ => (StageCover, StageCover)
-            };
-            _npStyleButton.Content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal, Spacing = 6,
-                Children =
-                {
-                    new TextBlock { Text = StyleName(style), VerticalAlignment = VerticalAlignment.Center },
-                    new PathIcon { Data = Icons.ChevronDown, Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center }
-                }
-            };
-            ArrangeNowPlayingParts();
-            _npBackdropLevel = _owner.NowPlayingBrightness(style) / 100.0;
-            BlendBackdrops(0);
-            PlaceNowPlayingControls();
-            ApplyLyricsVisibility();
-            UpdateStageMotion();
-            if (style == NowPlayingStyle.Gatefold) OpenGatefold();
-            else _npGatefoldTimer.Stop();
-            ApplyMascotStyle(style == NowPlayingStyle.Mascot);
-            ApplyVuStyle(style);
-            ApplyAnalyzerStyle(style);
-            ApplyStereoAnalyzerStyle(style == NowPlayingStyle.StereoAnalyzer);
-            ApplyNowPlayingControls();
-            if (_npOverlay.IsVisible) WakeNowPlaying();
-        }
-
-        private static Avalonia.Animation.Transitions FadeTransitions() =>
-        [
-            new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(400) }
-        ];
-
-        private void WakeNowPlaying()
-        {
-            _npTopBar.Opacity = _npAmbientControls.Opacity = 1;
-            _npOverlay.Cursor = null;
-            _npIdleTimer.Stop();
-            _npIdleTimer.Start();
-        }
-
-        private void HideNowPlayingControls()
-        {
-            bool ambient = NpStyle == NowPlayingStyle.Ambient;
-            if (_npTopBar.IsPointerOver || _npBrightnessFlyout.IsOpen || _npLyricsDelayFlyout.IsOpen || _npVuSensitivityFlyout.IsOpen || ambient && _npAmbientControls.IsPointerOver) return;
-            _npIdleTimer.Stop();
-            _npTopBar.Opacity = 0;
-            if (ambient) _npAmbientControls.Opacity = 0;
-            if (ambient || NpStyle == NowPlayingStyle.Lyrics) _npOverlay.Cursor = new Cursor(StandardCursorType.None);
-        }
-
-        private void PlaceNowPlayingControls()
-        {
-            if (_npControlPanel is not { } panel || _npControlCard is not { } card) return;
-            var style = NpStyle;
-            bool under = _owner.NowPlayingControlsUnder && CanPlaceControlsUnder(style);
-            Decorator host = style == NowPlayingStyle.Ambient ? _npAmbientControls : card;
-            _npUnder.IsVisible = under;
-            _npUnder.Margin = new Thickness(ShadowRoom.Left + (style == NowPlayingStyle.Mascot ? MascotCoverLeft : 0), UnderControlsGap - ShadowRoom.Bottom,
-                ShadowRoom.Right, ShadowRoom.Bottom);
-            if (panel.Parent == host) return;
-            if (panel.Parent is Decorator previous) previous.Child = null;
-            host.Child = panel;
-        }
-
-        private void UpdateStageMotion()
-        {
-            bool playing = _npOverlay.IsVisible && _npControls?.Playing.IsVisible == true;
-            var style = NpStyle;
-            _npLabelSpin.Run(playing && style == NowPlayingStyle.Vinyl && !_npSwap);
-            _npBigLabelSpin.Run(playing && style == NowPlayingStyle.BigVinyl && !_npFlip);
-            _npCassetteReels?.Run(playing && style == NowPlayingStyle.Cassette && !_npSwap);
-            _npCdSpin.Run(playing && style == NowPlayingStyle.Cd && !_npSwap);
-            UpdateAmbientDrift(_npOverlay.IsVisible && IsAmbient(style));
-            _npBigReelReels?.Run(playing && style == NowPlayingStyle.Reel);
-            UpdateMascotTimer();
-            UpdateVuMeters();
-            UpdateAnalyzer();
-        }
-
-        private void UpdateTapePacks()
-        {
-            double progress = _npControls is { PositionRow.IsVisible: true } c ? (double)c.Position.Value / Math.Max(1, c.Position.Maximum) : 0.5;
-            _npCassetteReels?.Wind(progress);
-            _npBigReelReels?.Wind(progress);
         }
     }
 }

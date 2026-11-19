@@ -68,7 +68,7 @@ sealed partial class WiimController
             ShowAnalyzerBackground();
             Canvas.SetLeft(_npAnalyzerBox, StageCover + AnalyzerGap);
             Canvas.SetTop(_npAnalyzerBox, 0);
-            _npAnalyzerTimer.Host = this;
+            _npAnalyzerTimer.Host = _npOverlay;
             _npAnalyzerTimer.Tick += (_, _) => StepAnalyzer();
             Closed += (_, _) => StopAnalyzer();
         }

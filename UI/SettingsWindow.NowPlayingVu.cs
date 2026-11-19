@@ -87,7 +87,7 @@ sealed partial class WiimController
                 ShowVuFollow();
             };
             ShowVuFollow();
-            _npVuTimer.Host = this;
+            _npVuTimer.Host = _npOverlay;
             _npVuTimer.Tick += (_, _) => StepVuMeters();
             Closed += (_, _) => StopVuMeters();
         }

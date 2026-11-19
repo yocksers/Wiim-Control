@@ -113,6 +113,8 @@ sealed partial class WiimController
             MascotVisit.PaperPlane => 6.2,
             MascotVisit.Sweep => 6.0,
             MascotVisit.Karaoke => 7.0,
+            MascotVisit.Juggling => JuggleSeconds,
+            MascotVisit.Kite => KiteSeconds,
             _ => 0
         };
 
@@ -125,6 +127,8 @@ sealed partial class WiimController
                 MascotVisit.SkipRope => StepSkipRope(s),
                 MascotVisit.PaperPlane => StepPaperPlane(s),
                 MascotVisit.Sweep => StepSweep(s),
+                MascotVisit.Juggling => StepJuggle(s),
+                MascotVisit.Kite => StepKite(s),
                 _ => StepKaraoke(s)
             };
         }
