@@ -32,6 +32,7 @@ sealed partial class WiimController
             bool newSong = $"{c.Title.Text}\n{c.Artist.Text}" != $"{texts.Title}\n{texts.Artist}";
             if (!shown || !newSong || artUrl == c.Art.ImageUrl || !_npCover.IsVisible || _npCover.Source == null) return false;
             _npHeldText = texts;
+            PrefetchArtistPhoto(texts.Artist);
             _npHeldSince = DateTime.UtcNow;
             _npTextWaitsForMascot = _npTextWaitsForFade = false;
             return true;

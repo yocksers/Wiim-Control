@@ -112,10 +112,12 @@ sealed partial class WiimController
             BuildGatefold();
             BuildEasterEggs();
             BuildMascot();
+            BuildArtistPhoto();
             _mascot.IsVisible = false;
             _npCoverContent.Children.Add(_npCoverPlaceholder);
             _npCoverContent.Children.Add(_npCover);
             _npCoverContent.Children.Add(_npCoverOld);
+            _npCoverContent.Children.Add(_npArtistPhotoLayer);
             _npCoverCard.Child = _npCoverContent;
             _npCoverCard.RenderTransform = new TransformGroup { Children = { _npCoverFlip, _npCoverTurn, _npCoverFit, _mascotCoverScale, _mascotCoverShift } };
             _npDisc.RenderTransform = _npDiscSlide;
@@ -152,7 +154,7 @@ sealed partial class WiimController
             _npStyleButton.Click += (_, _) =>
             {
                 var choices = Enum.GetValues<NowPlayingStyle>()
-                    .Where(style => !UsesComputerSound(style) || VuMetersAvailable).Select(style => DropdownAction(StyleName(style), () =>
+                    .Where(StyleAvailable).Select(style => DropdownAction(StyleName(style), () =>
                     {
                         _owner.NowPlayingStyle = style;
                         ApplyNowPlayingStyle();
@@ -182,7 +184,7 @@ sealed partial class WiimController
             }
 
             _npUnder.Child = _npUnderPanel;
-            _npStageBox.Child = new StackPanel { Children = { _npStage, _npUnder } };
+            _npStageBox.Child = new StackPanel { Children = { _npStage, _npUnder, _npArtistUnder } };
             _npBackdropLayer.Children.Add(_npBackdrop);
             _npBackdropLayer.Children.Add(_npBackdropOld);
             _npOverlay.Children.Add(_npBackdropLayer);
@@ -411,6 +413,7 @@ sealed partial class WiimController
             _npCoverContent.Children.Add(art);
             _npControls = new NowPlayingControls(art, title, artist, detail, playing, playPause, playPauseIcon, previous, next,
                 shuffle, shuffleIcon, repeat, repeatIcon, positionRow, position, elapsed, total);
+            WatchArtistLine(artist);
             _npVolume = volume;
 
             if (art.Bitmap != null && art.ImageUrl.Length > 0) _ = ShowSharpArtworkAsync(art, art.ImageUrl, art.Bitmap, fade: false);
@@ -501,8 +504,9 @@ sealed partial class WiimController
 
         private void ClearNowPlayingControls()
         {
-            while (_npCoverContent.Children.Count > 3) _npCoverContent.Children.RemoveAt(3);
+            while (_npCoverContent.Children.Count > 4) _npCoverContent.Children.RemoveAt(4);
             _npAmbientControls.Child = null;
+            DetachArtistRow();
             _npUnder.IsVisible = false;
             ClearBigVinylControls();
             _npControlCard = null;

@@ -88,7 +88,7 @@ sealed partial class WiimController
         private void ApplyStereoAnalyzerStyle(bool on)
         {
             _npStereoPanel.IsVisible = on;
-            if (_npControlCard != null) _npControlCard.IsVisible = !on && NpStyle != NowPlayingStyle.VuMeters;
+            if (_npControlCard != null) _npControlCard.IsVisible = !on && NpStyle is not (NowPlayingStyle.VuMeters or NowPlayingStyle.Artist);
             if (!on) return;
             _npCoverCard.Width = _npCoverCard.Height = StereoCoverSize;
             Canvas.SetLeft(_npCoverCard, StereoRowLeft);

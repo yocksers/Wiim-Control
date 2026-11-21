@@ -250,7 +250,7 @@ sealed partial class WiimController
             _extrasProps =
             [
                 _clawCable, _claw, _clawConsole, _clawStick, _clawKnob, _sleeve, _sleeveDisc, _catapult, _catapultArm, _catapultCup, _catapultRope, _kite, _kiteString,
-                _kiteTail, _bananaPeel, _teleportBeam, _glyphShout, _glyphHighFive, _glyphAlarm,
+                _kiteTail, _bananaPeel, _teleportBeam, _glyphShout, _glyphHighFive, _glyphAlarm, .. _spinArcs,
                 .. _jigsaw.Select(j => (Control)j.Piece), .. _juggleBalls, .. _landingDust.Select(d => (Control)d.Puff)
             ];
         }

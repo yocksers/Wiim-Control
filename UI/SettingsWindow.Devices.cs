@@ -585,6 +585,7 @@ sealed partial class WiimController
                 UpdateLyricsTrack(status);
                 UpdateGatefoldTrack(status);
                 _npArtworkNotice.IsVisible = _owner.ArtworkLookupLimited(status);
+                UpdateArtistPhoto();
             }
             bool deviceCopy = sameSong && c.Art.ImageUrl.Length > 0 && !IsOnDevice(c.Art.ImageUrl, leaderIp) && IsOnDevice(status.ArtUrl, leaderIp);
             if (status.ArtUrl != c.Art.ImageUrl && !deviceCopy)
@@ -602,6 +603,7 @@ sealed partial class WiimController
             _nowPlayingControls.Values.Any(c => ReferenceEquals(c.Art.Bitmap, bitmap)) ||
             (_npControls != null && ReferenceEquals(_npControls.Art.Bitmap, bitmap)) ||
             ReferenceEquals(_npCover.Source, bitmap) || ReferenceEquals(_npCoverOld.Source, bitmap) || ReferenceEquals(_npPendingArt, bitmap) ||
+            IsArtistPhoto(bitmap) ||
             IsBackdrop(bitmap) ||
             _presets.ShowsImage(bitmap);
 

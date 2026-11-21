@@ -48,8 +48,10 @@ sealed partial class WiimController
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, MinWidth = 48, TextAlignment = TextAlignment.Center
         };
 
-        private NowPlayingStyle NpStyle =>
-            UsesComputerSound(_owner.NowPlayingStyle) && !VuMetersAvailable ? NowPlayingStyle.Cover : _owner.NowPlayingStyle;
+        private NowPlayingStyle NpStyle => StyleAvailable(_owner.NowPlayingStyle) ? _owner.NowPlayingStyle : NowPlayingStyle.Cover;
+
+        private bool StyleAvailable(NowPlayingStyle style) =>
+            (!UsesComputerSound(style) || VuMetersAvailable) && (style != NowPlayingStyle.Artist || _owner.OnlineArtwork);
 
         private bool VuMetersAvailable => AudioSamples.Supported && VuInputMode() is { } mode && _owner.InputFromComputer(mode);
 

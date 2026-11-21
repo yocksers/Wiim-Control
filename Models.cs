@@ -5,7 +5,7 @@ enum OsdCorner { TopLeft, TopRight, BottomLeft, BottomRight }
 enum DeviceLayout { Full, Compact, Dashboard }
 enum NowPlayingControlsStyle { Classic, Minimal, Glass }
 
-enum NowPlayingStyle { Cover, Vinyl, BigVinyl, Cassette, Cd, Reel, Ambient, Lyrics, Gatefold, Mascot, VuMeter, VuMeters, Analyzer, StereoAnalyzer, LedMatrix, Fire }
+enum NowPlayingStyle { Cover, Vinyl, BigVinyl, Cassette, Cd, Reel, Ambient, Lyrics, Gatefold, Mascot, VuMeter, VuMeters, Analyzer, StereoAnalyzer, LedMatrix, Fire, Artist }
 
 readonly record struct EqBand(int Index, string ParamName, int Value);
 
