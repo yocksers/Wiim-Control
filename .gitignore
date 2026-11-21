@@ -1,0 +1,9 @@
+bin/
+obj/
+installer/Output/
+*.user
+wiim.cfg
+*.apk
+*.xapk
+wiim-errors.log
+wiim-errors.log.old
