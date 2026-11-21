@@ -39,6 +39,7 @@ sealed partial class WiimController
 
     private string ConfigTextForBackup()
     {
+        FlushConfig();
         string sharedFolders = "sharedFolders=" + JsonSerializer.Serialize(_sharedFolders.Select(f => f with { Password = string.Empty }).ToList());
         var lines = ReadConfigText().Replace("\r\n", "\n").Split('\n')
             .Select(line => line.StartsWith("sharedFolders=", StringComparison.OrdinalIgnoreCase) ? sharedFolders : line);
@@ -266,9 +267,12 @@ sealed partial class WiimController
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
-            WriteConfigFile(_cfgPath, text.Replace("\r\n", "\n").Split('\n'));
-            _configLocked = true;
+            lock (_configGate)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
+                WriteConfigFile(_cfgPath, text.Replace("\r\n", "\n").Split('\n'));
+                _configLocked = true;
+            }
             return true;
         }
         catch (Exception ex)

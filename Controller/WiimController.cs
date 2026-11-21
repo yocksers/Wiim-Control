@@ -182,6 +182,7 @@ sealed partial class WiimController : IDisposable
 
     internal void Exit()
     {
+        FlushConfig();
         _settingsWindow?.Close();
         CloseMiniPlayers();
         StopPcAudio();
@@ -192,6 +193,7 @@ sealed partial class WiimController : IDisposable
 
     public void Dispose()
     {
+        FlushConfig();
         _shutdown.Cancel();
         if (_hookID != IntPtr.Zero) UnhookWindowsHookEx(_hookID);
         if (!ReferenceEquals(_globalHotkeys, _shellWnd)) _globalHotkeys?.Dispose();

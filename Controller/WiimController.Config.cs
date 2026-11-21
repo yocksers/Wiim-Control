@@ -1,4 +1,5 @@
 using System.Globalization;
+using Avalonia.Threading;
 
 namespace WiimControl;
 
@@ -154,24 +155,51 @@ sealed partial class WiimController
         })
     ];
 
+    private static readonly TimeSpan ConfigSaveDelay = TimeSpan.FromSeconds(1);
     private readonly object _configGate = new();
+    private bool _configDirty;
+    private bool _configSaveQueued;
+    private long _configVersion;
+    private long _configWritten;
 
     private void SaveConfig()
     {
         if (_configLocked) return;
-        lock (_configGate) SaveConfigLocked();
+        _configDirty = true;
+        if (_configSaveQueued) return;
+        _configSaveQueued = true;
+        Dispatcher.UIThread.Post(() => DispatcherTimer.RunOnce(() =>
+        {
+            _configSaveQueued = false;
+            FlushConfig(wait: false);
+        }, ConfigSaveDelay));
     }
 
-    private void SaveConfigLocked()
+    internal void FlushConfig(bool wait = true)
     {
-        try
+        if (!_configDirty || _configLocked) return;
+        _configDirty = false;
+        long version = ++_configVersion;
+        var lines = ConfigLines().ToList();
+        if (wait) WriteConfigVersion(version, lines);
+        else _ = Task.Run(() => WriteConfigVersion(version, lines));
+    }
+
+    private void WriteConfigVersion(long version, List<string> lines)
+    {
+        lock (_configGate)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
-            WriteConfigFile(_cfgPath, ConfigLines());
-        }
-        catch (Exception ex)
-        {
-            Notify($"Couldn't save settings: {ex.Message}");
+            if (_configLocked || version <= _configWritten) return;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_cfgPath)!);
+                WriteConfigFile(_cfgPath, lines);
+                _configWritten = version;
+            }
+            catch (Exception ex)
+            {
+                Notify($"Couldn't save settings: {ex.Message}");
+            }
         }
     }
 
