@@ -17,6 +17,7 @@ sealed partial class WiimController
         {
             var flyout = new Flyout { Placement = PlacementMode.BottomEdgeAlignedRight, FlyoutPresenterClasses = { "dropdown" } };
             var list = new ListBox { MinWidth = Math.Max(200, anchor.Bounds.Width), Background = Brushes.Transparent };
+            if (choices.Count(c => c.Selected) > 1) list.SelectionMode = SelectionMode.Multiple;
             foreach (var choice in choices)
             {
                 var item = new ListBoxItem
@@ -30,7 +31,7 @@ sealed partial class WiimController
                     await choice.Pick();
                 };
                 list.Items.Add(item);
-                if (choice.Selected) list.SelectedItem = item;
+                if (choice.Selected) list.SelectedItems!.Add(item);
             }
             flyout.Content = ScaledPopup(list);
             flyout.ShowAt(anchor);

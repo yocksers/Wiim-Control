@@ -56,12 +56,14 @@ sealed partial class WiimController
         }
 
         private bool IsDraggingVolume(string ip) =>
-            (_volumeControls.TryGetValue(ip, out var c) && c.Slider.IsDragging) || (_npIp == ip && _npVolume?.Slider.IsDragging == true);
+            (_volumeControls.TryGetValue(ip, out var c) && c.Slider.IsDragging) || (_npIp == ip && _npVolume?.Slider.IsDragging == true) ||
+            (_libraryPlayerIp == ip && _libraryVolume?.Slider.IsDragging == true);
 
         private void ApplyVolume(string ip)
         {
             if (_volumeControls.TryGetValue(ip, out var card)) ApplyVolumeTo(ip, card);
             if (_npIp == ip && _npVolume != null) ApplyVolumeTo(ip, _npVolume);
+            if (_libraryPlayerIp == ip && _libraryVolume != null) ApplyVolumeTo(ip, _libraryVolume);
             ApplyGroupVolume(ip);
             ApplyPlayerBarVolume(ip);
             if (_npIp != null && TargetOf(_npIp) == TargetOf(ip)) MascotVolumeChanged();

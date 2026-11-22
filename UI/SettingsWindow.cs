@@ -122,7 +122,7 @@ sealed partial class WiimController
             _positionTimer.Tick += (_, _) => AdvancePositions();
             _volumePollTimer.Tick += async (_, _) =>
             {
-                if (!PlayerWindowShowing && (_devicesPage is not { IsVisible: true } || WindowState == WindowState.Minimized)) return;
+                if (!PlayerWindowShowing && (_devicesPage is not { IsVisible: true } && _libraryPage is not { IsVisible: true } || WindowState == WindowState.Minimized)) return;
                 bool instant = _owner._knownDevices.Count > 0 && _owner._knownDevices.All(d => _owner.HasInstantUpdates(d.Ip));
                 if (instant)
                 {
@@ -350,6 +350,7 @@ sealed partial class WiimController
             var presetsPage = new LazyPage(_presets.Build);
             Reloaded += _library.FillDevices;
             var libraryPage = new LazyPage(_library.Build);
+            _libraryPage = libraryPage;
             var radio = new RadioPage(this);
             Reloaded += radio.FillDevices;
             var radioPage = new LazyPage(radio.Build);
@@ -394,6 +395,7 @@ sealed partial class WiimController
             var generalSettings = new GeneralPage(this);
             Reloaded += generalSettings.Load;
             var generalPage = new LazyPage(generalSettings.Build);
+            var updatesPage = new LazyPage(new UpdatesPage(this).Build);
             _devicePages.AddRange([
                 (presetsPage, _presets.RefreshPresetsAsync), (audioSettingsPage, audioSettings.RefreshAudioSettingsAsync), (outputPage, () => output.RefreshOutputAsync()),
                 (inputsPage, () => inputs.RefreshInputsAsync()), (subwooferPage, () => subwoofer.RefreshSubwooferAsync()),
@@ -431,7 +433,7 @@ sealed partial class WiimController
             sidebarItems.Children.Add(NavSection("Automation", automation));
             sidebarItems.Children.Add(NavSection("General", general));
             sidebarItems.Children.Add(NavSection("Wiim Control", NavGroup(
-                Nav("Media keys", Icons.Keyboard, mediaKeysPage), Nav("General", Icons.Settings, generalPage),
+                Nav("Media keys", Icons.Keyboard, mediaKeysPage), Nav("General", Icons.Settings, generalPage), Nav("Updates", Icons.Update, updatesPage),
                 Nav("Themes", Icons.Palette, themesPage))));
 
             var coffee = new StackPanel

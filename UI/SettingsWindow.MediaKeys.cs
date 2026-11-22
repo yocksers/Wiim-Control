@@ -25,6 +25,10 @@ sealed partial class WiimController
                 Classes = { "accent" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), IsVisible = false
             };
             private HotkeyAction? _recording;
+            private readonly StackPanel _outputList = new();
+            private readonly StackPanel _outputBody = new();
+            private readonly ToggleSwitch _chkVolumeKeys = new();
+            private readonly ToggleSwitch _chkForwardMedia = new();
 
             public void Load()
             {
@@ -42,10 +46,90 @@ sealed partial class WiimController
                 }
                 _cboOsdScale.SelectedItem = osdScale;
                 RebuildHotkeys();
+                _chkVolumeKeys.IsChecked = window._owner._volumeKeys;
+                _chkForwardMedia.IsChecked = window._owner._forwardMediaKeys;
+                RefreshOutputList();
             }
 
-            public Control Build() =>
-                window.Page("Media keys", null, [], new StackPanel { Children = { BuildVolumeKeysCard(), BuildVolumeOverlayCard(), BuildShortcutsCard() } });
+            public Control Build()
+            {
+                var cards = new StackPanel();
+                cards.Children.Add(BuildVolumeKeysCard());
+                if (OperatingSystem.IsWindows()) cards.Children.Add(BuildOutputCard());
+                cards.Children.Add(BuildVolumeOverlayCard());
+                cards.Children.Add(BuildShortcutsCard());
+                if (!OperatingSystem.IsWindows()) return window.Page("Media keys", null, [], cards);
+                var refresh = Pill("Refresh");
+                ToolTip.SetTip(refresh, "Reads the list of output devices again, for example after plugging in headphones or a USB sound card");
+                refresh.Click += (_, _) => RefreshOutputList();
+                var page = window.Page("Media keys", null, [refresh], cards);
+                page.PropertyChanged += (_, e) =>
+                {
+                    if (e.Property != IsVisibleProperty || !page.IsVisible) return;
+                    RefreshOutputList();
+                };
+                return page;
+            }
+
+            private Border BuildOutputCard()
+            {
+                var btnClear = Pill("Allow all outputs");
+                btnClear.Margin = new Thickness(0, 8, 0, 0);
+                btnClear.HorizontalAlignment = HorizontalAlignment.Left;
+                btnClear.Click += (_, _) => { window._owner.ClearOutputDevices(); window.LoadFromOwner(); };
+                _outputBody.Children.Add(Muted("Allow Wiim device volume control with keyboard on these computer outputs."));
+                _outputBody.Children.Add(_outputList);
+                _outputBody.Children.Add(btnClear);
+                return Card("Output devices", _outputBody);
+            }
+
+            private Control[] BuildKeyToggles()
+            {
+                if (!OperatingSystem.IsWindows()) return [];
+                _chkVolumeKeys.IsCheckedChanged += (_, _) =>
+                {
+                    if (window._loading) return;
+                    window._owner.SetVolumeKeys(_chkVolumeKeys.IsChecked == true);
+                    ApplyOutputState();
+                };
+                var volumeKeysRow = ToggleRow("Volume keys control the WiiM device", _chkVolumeKeys);
+                ToolTip.SetTip(volumeKeysRow, "When this is off, the keyboard's volume and mute keys change this computer's volume as usual. " +
+                                              "Hotkeys you set below keep working.");
+                _chkForwardMedia.IsCheckedChanged += (_, _) =>
+                {
+                    if (window._loading) return;
+                    window._owner.SetForwardMediaKeys(_chkForwardMedia.IsChecked == true);
+                };
+                return
+                [
+                    volumeKeysRow,
+                    Muted("Allow keyboard volume keys to control connected Wiim products directly on the Wiim."),
+                    ToggleRow("Forward media keys (play/pause/next/prev) to Wiim", _chkForwardMedia)
+                ];
+            }
+
+            private void ApplyOutputState()
+            {
+                bool on = window._owner._volumeKeys;
+                _outputBody.IsEnabled = on;
+                _outputBody.Opacity = on ? 1 : 0.45;
+            }
+
+            private void RefreshOutputList()
+            {
+                if (!OperatingSystem.IsWindows()) return;
+                ApplyOutputState();
+                var toggles = new List<Control>();
+                foreach (var (id, name) in ActiveOutputDevices())
+                {
+                    var toggle = new ToggleSwitch { IsChecked = window._owner.IsOutputEnabled(id) };
+                    string deviceId = id;
+                    toggle.IsCheckedChanged += (_, _) => { if (!window._loading) window._owner.SetOutputDeviceEnabled(deviceId, toggle.IsChecked == true); };
+                    toggles.Add(ToggleRow(name, toggle));
+                }
+                if (toggles.Count == 0) toggles.Add(Muted("No playback devices found"));
+                SetRows(_outputList, toggles);
+            }
 
             private Border BuildVolumeKeysCard()
             {
@@ -53,9 +137,12 @@ sealed partial class WiimController
                 _chkLogStep.IsCheckedChanged += (_, _) => { if (window._loading) return; window._owner.SetLogStep(_chkLogStep.IsChecked == true); };
                 _chkGroupVolume.IsCheckedChanged += (_, _) => { if (window._loading) return; window._owner.SetGroupVolumeKeys(_chkGroupVolume.IsChecked == true); };
                 return Card("Volume keys",
+                [
+                    .. BuildKeyToggles(),
                     LabeledRow("Step size", _numStep),
                     ToggleRow("Logarithmic step (finer at low volume)", _chkLogStep),
-                    ToggleRow("Volume keys also change linked devices", _chkGroupVolume));
+                    ToggleRow("Volume keys also change linked devices", _chkGroupVolume)
+                ]);
             }
 
             private Border BuildVolumeOverlayCard()

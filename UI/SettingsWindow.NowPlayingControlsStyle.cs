@@ -29,19 +29,25 @@ sealed partial class WiimController
         private Button BuildControlsButton()
         {
             _npControlsButton.Classes.Add("pill");
-            ToolTip.SetTip(_npControlsButton, "Show or hide the playback controls, and choose how they look");
+            ToolTip.SetTip(_npControlsButton, "Show or hide the playback controls and the song text, and choose where they go and how the controls look");
             _npControlsButton.Click += (_, _) =>
             {
                 var choices = new List<DropdownChoice>
                 {
                     DropdownAction("Show controls", () => SetNowPlayingControls(true, null), _owner.NowPlayingControlsShown),
                     DropdownAction("Hide controls", () => SetNowPlayingControls(false, null), !_owner.NowPlayingControlsShown),
-                    DropdownHeading("Place")
+                    DropdownAction("Show text", () => SetNowPlayingText(true), _owner.NowPlayingTextShown),
+                    DropdownAction("Hide text", () => SetNowPlayingText(false), !_owner.NowPlayingTextShown),
+                    DropdownHeading("Place controls")
                 };
                 bool canMove = CanPlaceControlsUnder(NpStyle);
                 foreach (bool under in new[] { false, true })
                     choices.Add(new DropdownChoice(under ? "Under the artwork" : "On the artwork", canMove && under == _owner.NowPlayingControlsUnder, canMove,
                         () => SetControlsUnder(under)));
+                choices.Add(DropdownHeading("Place text"));
+                foreach (bool under in new[] { false, true })
+                    choices.Add(new DropdownChoice(under ? "Under the artwork" : "On the artwork", canMove && under == _owner.NowPlayingTextUnder, canMove,
+                        () => SetTextUnder(under)));
                 choices.Add(DropdownHeading("Style"));
                 choices.AddRange(Enum.GetValues<NowPlayingControlsStyle>().Select(style =>
                     DropdownAction(ControlsStyleName(style), () => SetNowPlayingControls(true, style), style == _owner.NowPlayingControlsStyle)));
@@ -58,6 +64,36 @@ sealed partial class WiimController
             PlaceNowPlayingControls();
             LayoutLyrics();
             return Task.CompletedTask;
+        }
+
+        private Task SetTextUnder(bool under)
+        {
+            if (under != _owner.NowPlayingTextUnder) _owner.NowPlayingTextUnder = under;
+            ArrangeNowPlayingParts();
+            PlaceNowPlayingControls();
+            LayoutLyrics();
+            return Task.CompletedTask;
+        }
+
+        private Task SetNowPlayingText(bool shown)
+        {
+            if (shown != _owner.NowPlayingTextShown) _owner.NowPlayingTextShown = shown;
+            ArrangeNowPlayingParts();
+            ApplyNowPlayingControls();
+            LayoutLyrics();
+            return Task.CompletedTask;
+        }
+
+        private void UpdateNowPlayingCards()
+        {
+            var style = NpStyle;
+            bool movable = CanPlaceControlsUnder(style);
+            bool controls = _owner.NowPlayingControlsShown, text = _owner.NowPlayingTextShown;
+            bool controlsUnder = movable && _owner.NowPlayingControlsUnder, textUnder = movable && _owner.NowPlayingTextUnder;
+            _npUnder.IsVisible = controls && controlsUnder || text && textUnder;
+            if (_npControlCard != null)
+                _npControlCard.IsVisible = style is not (NowPlayingStyle.StereoAnalyzer or NowPlayingStyle.VuMeters)
+                    && (controls && !controlsUnder || text && !textUnder);
         }
 
         private Task SetNowPlayingControls(bool shown, NowPlayingControlsStyle? style)
@@ -80,12 +116,13 @@ sealed partial class WiimController
                 Orientation = Orientation.Horizontal, Spacing = 6,
                 Children =
                 {
-                    new TextBlock { Text = shown ? "Controls" : "Controls hidden", VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock { Text = shown || _owner.NowPlayingTextShown ? "Controls & Text" : "Controls & Text hidden", VerticalAlignment = VerticalAlignment.Center },
                     new PathIcon { Data = Icons.ChevronDown, Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center }
                 }
             };
             _npBigButtonBar.IsVisible = _npBigPrevious.IsVisible = _npBigNext.IsVisible = shown;
             if (_npParts is { } parts) parts.ButtonBar.IsVisible = parts.VolumeRow.IsVisible = shown;
+            UpdateNowPlayingCards();
             if (_npIp is { } ip && _npControls is { } controls && _statuses.ContainsKey(ip)) ApplyNowPlayingTo(ip, controls);
         }
 

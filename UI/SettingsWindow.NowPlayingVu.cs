@@ -51,7 +51,7 @@ sealed partial class WiimController
         private NowPlayingStyle NpStyle => StyleAvailable(_owner.NowPlayingStyle) ? _owner.NowPlayingStyle : NowPlayingStyle.Cover;
 
         private bool StyleAvailable(NowPlayingStyle style) =>
-            (!UsesComputerSound(style) || VuMetersAvailable) && (style != NowPlayingStyle.Artist || _owner.OnlineArtwork);
+            !UsesComputerSound(style) || VuMetersAvailable;
 
         private bool VuMetersAvailable => AudioSamples.Supported && VuInputMode() is { } mode && _owner.InputFromComputer(mode);
 

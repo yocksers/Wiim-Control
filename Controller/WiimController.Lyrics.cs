@@ -78,6 +78,22 @@ sealed partial class WiimController
         set { _nowPlayingControlsUnder = value; SaveConfig(); }
     }
 
+    private bool _nowPlayingTextShown = true;
+
+    internal bool NowPlayingTextShown
+    {
+        get => _nowPlayingTextShown;
+        set { _nowPlayingTextShown = value; SaveConfig(); }
+    }
+
+    private bool _nowPlayingTextUnder;
+
+    internal bool NowPlayingTextUnder
+    {
+        get => _nowPlayingTextUnder;
+        set { _nowPlayingTextUnder = value; SaveConfig(); }
+    }
+
     private NowPlayingControlsStyle _nowPlayingControlsStyle;
 
     internal NowPlayingControlsStyle NowPlayingControlsStyle

@@ -121,6 +121,7 @@ sealed partial class WiimController
             _volumeUpdating = true;
             if (_volumeControls.TryGetValue(ip, out var card)) card.Slider.Value = volume;
             if (_npIp == ip && _npVolume != null) _npVolume.Slider.Value = volume;
+            if (_libraryPlayerIp == ip && _libraryVolume != null) _libraryVolume.Slider.Value = volume;
             _volumeUpdating = false;
             ApplyPlayerBarVolume(ip);
         }

@@ -126,6 +126,7 @@ sealed partial class WiimController
                 int positionMs = p.PositionMs + (int)(DateTime.UtcNow - p.Fetched).TotalMilliseconds;
                 if (_nowPlayingControls.TryGetValue(ip, out var c)) ShowPosition(c, positionMs);
                 if (_npIp == ip && _npControls != null) ShowPosition(_npControls, positionMs);
+                AdvanceLibraryPlayer(ip, positionMs);
                 if (_barIp == ip && _barControls != null)
                 {
                     ShowPosition(_barControls, positionMs);

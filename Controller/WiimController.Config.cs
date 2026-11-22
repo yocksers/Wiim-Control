@@ -123,6 +123,8 @@ sealed partial class WiimController
         Flag("analyzerBackground", () => _analyzerBackground, value => _analyzerBackground = value, onUnlessFalse: true),
         Flag("vuFollowVolume", () => _vuFollowVolume, value => _vuFollowVolume = value),
         Flag("nowPlayingControlsUnder", () => _nowPlayingControlsUnder, value => _nowPlayingControlsUnder = value),
+        Flag("nowPlayingText", () => _nowPlayingTextShown, value => _nowPlayingTextShown = value, onUnlessFalse: true),
+        Flag("nowPlayingTextUnder", () => _nowPlayingTextUnder, value => _nowPlayingTextUnder = value),
         Choice("nowPlayingControlsStyle", () => _nowPlayingControlsStyle, value => _nowPlayingControlsStyle = value),
         Number("lyricsDelay", () => _lyricsDelayMs, value => _lyricsDelayMs = Math.Clamp(value, -LyricsDelayLimitMs, LyricsDelayLimitMs)),
         Flag("miniPlayerAuto", () => _miniPlayerAuto, value => _miniPlayerAuto = value),

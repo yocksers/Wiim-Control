@@ -53,6 +53,7 @@ sealed partial class WiimController
             public Control Build()
             {
                 ToolTip.SetTip(_cboLibraryAmp, "The device to play on");
+                _cboLibraryAmp.SelectionChanged += (_, _) => window.ShowLibraryPlayer(AmpOf(_cboLibraryAmp));
                 ToolTip.SetTip(_cboLibraryServer, "The music server to browse");
                 var btnFind = Pill("Find servers");
                 btnFind.Click += async (_, _) => await FindLibraryServersAsync(force: true);
@@ -108,12 +109,14 @@ sealed partial class WiimController
                 };
                 _librarySearchRow.Children.Add(_txtLibrarySearch);
                 _librarySearchRow.Children.Add(btnSearch);
-                var body = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
+                var body = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
                 body.Children.Add(_librarySearchRow);
                 Grid.SetRow(top, 1);
                 body.Children.Add(top);
                 Grid.SetRow(_libraryScroll, 2);
                 body.Children.Add(_libraryScroll);
+                Grid.SetRow(window._libraryPlayer, 3);
+                body.Children.Add(window._libraryPlayer);
 
                 HookRoonStatus();
                 var page = window.Page("Library", _lblLibraryStatus, [btnFind, btnAddShare, btnAddEmby, _btnRemoveShare], body,
@@ -121,6 +124,8 @@ sealed partial class WiimController
                 page.PropertyChanged += async (_, e) =>
                 {
                     if (e.Property != IsVisibleProperty || !page.IsVisible) return;
+                    window.ShowLibraryPlayer(AmpOf(_cboLibraryAmp));
+                    _ = window.RefreshDeviceStatusesAsync();
                     if (!_librarySearched) await FindLibraryServersAsync(force: false);
                     else if (SelectedLibraryServer is { IsEmbyJellyfin: true } server && (_libraryLoadFailed || !await window._owner.EmbyServerAnswersAsync(server)))
                         await LoadLibraryFolderAsync();

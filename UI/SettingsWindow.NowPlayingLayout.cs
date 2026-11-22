@@ -26,7 +26,6 @@ sealed partial class WiimController
             NowPlayingStyle.StereoAnalyzer => "Stereo Spectrum",
             NowPlayingStyle.LedMatrix => "Dot Matrix",
             NowPlayingStyle.Fire => "Fire",
-            NowPlayingStyle.Artist => "Artist photo",
             _ => "Cover only"
         };
 
@@ -80,7 +79,6 @@ sealed partial class WiimController
             if (style == NowPlayingStyle.Gatefold) OpenGatefold();
             else _npGatefoldTimer.Stop();
             ApplyMascotStyle(style == NowPlayingStyle.Mascot);
-            ApplyArtistStyle(style == NowPlayingStyle.Artist);
             ApplyVuStyle(style);
             ApplyAnalyzerStyle(style);
             ApplyStereoAnalyzerStyle(style == NowPlayingStyle.StereoAnalyzer);
@@ -116,17 +114,13 @@ sealed partial class WiimController
             if (_npControlPanel is not { } panel || _npControlCard is not { } card) return;
             var style = NpStyle;
             bool under = _owner.NowPlayingControlsUnder && CanPlaceControlsUnder(style);
-            bool artist = style == NowPlayingStyle.Artist;
-            Decorator host = style == NowPlayingStyle.Ambient ? _npAmbientControls : artist ? _npArtistControls : card;
-            _npUnder.IsVisible = under;
+            Decorator host = style == NowPlayingStyle.Ambient ? _npAmbientControls : card;
+            UpdateNowPlayingCards();
             _npUnder.Margin = new Thickness(ShadowRoom.Left + (style == NowPlayingStyle.Mascot ? MascotCoverLeft : 0), UnderControlsGap - ShadowRoom.Bottom,
                 ShadowRoom.Right, ShadowRoom.Bottom);
-            if (panel.Parent != host)
-            {
-                if (panel.Parent is Decorator previous) previous.Child = null;
-                host.Child = panel;
-            }
-            PlaceArtistUnder(card, artist);
+            if (panel.Parent == host) return;
+            if (panel.Parent is Decorator previous) previous.Child = null;
+            host.Child = panel;
         }
 
         private void UpdateStageMotion()
