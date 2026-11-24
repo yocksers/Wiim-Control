@@ -30,7 +30,7 @@ sealed partial class WiimController
     private IMediaSession? CreateMediaSession()
     {
 #if WINDOWS
-        return new WindowsMediaSession(OnMediaSessionCommand, OnMediaSessionSeek);
+        return new WindowsMediaSession(OnMediaSessionCommand, OnMediaSessionSeek, LoadMediaArtworkAsync);
 #else
         if (OperatingSystem.IsLinux())
             return LinuxMediaSession.Create(OnMediaSessionCommand, OnMediaSessionSeek, () => Dispatcher.UIThread.Post(ShowSettingsWindow),
@@ -40,9 +40,52 @@ sealed partial class WiimController
 #endif
     }
 
+    private DeviceStatus? _sessionStatus;
+    private readonly Dictionary<string, string> _sessionArtFiles = new();
+
+    private void ShowInMediaSession(DeviceStatus? status)
+    {
+        _sessionStatus = status;
+        if (_mediaSession == null) return;
+        if (OperatingSystem.IsLinux() && status is { ArtUrl.Length: > 0 } && !IsWebAddress(status.ArtUrl))
+        {
+            if (_sessionArtFiles.TryGetValue(status.ArtUrl, out var file)) status = status with { ArtUrl = new Uri(file).AbsoluteUri };
+            else
+            {
+                _ = SaveSessionArtAsync(status.ArtUrl);
+                status = status with { ArtUrl = string.Empty };
+            }
+        }
+        _mediaSession.Update(status);
+    }
+
+    private static bool IsWebAddress(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "file";
+
+    private async Task SaveSessionArtAsync(string url)
+    {
+        if (await LoadMediaArtworkAsync(url) is not { Length: > 0 } bytes) return;
+        string folder = Path.Combine(Path.GetTempPath(), "WiimControl-art");
+        try
+        {
+            Directory.CreateDirectory(folder);
+            foreach (var old in _sessionArtFiles.Values) LocalTempFile.Delete(old);
+            _sessionArtFiles.Clear();
+            string file = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".img");
+            await File.WriteAllBytesAsync(file, bytes);
+            Dispatcher.UIThread.Post(() =>
+            {
+                _sessionArtFiles[url] = file;
+                if (_sessionStatus?.ArtUrl == url) ShowInMediaSession(_sessionStatus);
+            });
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     private async Task<byte[]?> LoadMediaArtworkAsync(string url)
     {
-        try { return await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false); }
+        try { return await ArtworkBytesAsync(url).ConfigureAwait(false); }
         catch (Exception) { return null; }
     }
 
@@ -61,6 +104,7 @@ sealed partial class WiimController
     private void OnMediaSessionCommand(string action) => Dispatcher.UIThread.Post(async () =>
     {
         if (OperatingSystem.IsWindows() && !_forwardMediaKeys && IsMediaKeyEcho()) return;
+        if (LocalPlayerActive && LocalTransport(action)) return;
         await SendMediaCommandAsync(action);
         await Task.Delay(400);
         await RefreshNowPlayingAsync();
@@ -68,6 +112,11 @@ sealed partial class WiimController
 
     private void OnMediaSessionVolume(int volume) => Dispatcher.UIThread.Post(async () =>
     {
+        if (LocalPlayerActive)
+        {
+            SetLocalVolume(volume);
+            return;
+        }
         if (_deviceIp.Length == 0 || BlockedByLock(_deviceIp)) return;
         await SetVolumeAsync(_deviceIp, volume);
         await RefreshNowPlayingAsync();
@@ -75,6 +124,11 @@ sealed partial class WiimController
 
     private void OnMediaSessionSeek(int seconds) => Dispatcher.UIThread.Post(async () =>
     {
+        if (LocalPlayerActive)
+        {
+            LocalSeek(seconds);
+            return;
+        }
         if (BlockedByLock(_deviceIp, PlaybackTarget)) return;
         await SeekAsync(PlaybackTarget, seconds);
         await RefreshNowPlayingAsync();

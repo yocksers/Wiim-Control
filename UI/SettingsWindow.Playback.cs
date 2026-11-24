@@ -18,7 +18,10 @@ sealed partial class WiimController
 
         private static bool IsNetworkSource(DeviceStatus status) => IsNetworkMode(status.Mode);
 
-        private Grid BuildPositionRow(string ip, out LevelSlider slider, out TextBlock elapsed, out TextBlock total)
+        private Grid BuildPositionRow(string ip, out LevelSlider slider, out TextBlock elapsed, out TextBlock total) =>
+            BuildPositionRow(seconds => SeekAsync(ip, seconds), out slider, out elapsed, out total);
+
+        private static Grid BuildPositionRow(Func<int, Task> seek, out LevelSlider slider, out TextBlock elapsed, out TextBlock total)
         {
             var position = new LevelSlider { Margin = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center, WheelChangesValue = false };
             var elapsedText = new TextBlock { Classes = { "dim", "small" }, MinWidth = 34, VerticalAlignment = VerticalAlignment.Center };
@@ -27,7 +30,7 @@ sealed partial class WiimController
                 Classes = { "dim", "small" }, MinWidth = 34, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center
             };
             position.ValueChanged += (_, _) => { if (position.IsDragging) elapsedText.Text = FormatTime(position.Value); };
-            position.ValueCommitted += async (_, _) => await SeekAsync(ip, position.Value);
+            position.ValueCommitted += async (_, _) => await seek(position.Value);
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 6, 0, 0), IsVisible = false };
             row.Children.Add(elapsedText);
             Grid.SetColumn(position, 1);
@@ -120,6 +123,7 @@ sealed partial class WiimController
 
         private void AdvancePositions()
         {
+            AdvanceLocalPlayer();
             foreach (var (ip, p) in _positions)
             {
                 if (!p.Playing) continue;

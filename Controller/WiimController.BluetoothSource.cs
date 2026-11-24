@@ -48,16 +48,19 @@ sealed partial class WiimController
     }
 
     internal async Task<DeviceVolume?> GetVolumeAsync(string ip) =>
+        IsLocalIp(ip) ? new DeviceVolume(_localVolume, _localMuted) :
         IsBluetoothFromThisComputer(ip)
             ? await ThisComputer.GetVolumeAsync().ConfigureAwait(false)
             : await GetDeviceVolumeAsync(ip).ConfigureAwait(false);
 
     internal async Task<bool> SetVolumeAsync(string ip, int volume) =>
+        IsLocalIp(ip) ? SetLocalVolumeFrom(volume) :
         IsBluetoothFromThisComputer(ip)
             ? await ThisComputer.SetVolumeAsync(volume).ConfigureAwait(false)
             : await SetDeviceVolumeAsync(ip, volume).ConfigureAwait(false);
 
     internal async Task<bool> SetMuteAsync(string ip, bool muted) =>
+        IsLocalIp(ip) ? SetLocalMutedFrom(muted) :
         IsBluetoothFromThisComputer(ip)
             ? await ThisComputer.SetMutedAsync(muted).ConfigureAwait(false)
             : await SetDeviceMuteAsync(ip, muted).ConfigureAwait(false);

@@ -177,7 +177,7 @@ sealed partial class WiimController : IDisposable
         else if (cmd == "mute")
             _ = ToggleMuteAsync();
         else if (cmd is "playpause" or "next" or "prev" or "stop")
-            _ = SendMediaCommandAsync(cmd);
+            SendKeyMediaCommand(cmd);
     }
 
     internal void Exit()
@@ -202,6 +202,7 @@ sealed partial class WiimController : IDisposable
         _tray?.Dispose();
         _osd?.Close();
         StopComputerPlayback();
+        DisposeLocalPlayer();
         _trackToast?.Close();
         CloseSleepWarnings();
         StopPcAudio();

@@ -52,6 +52,11 @@ sealed partial class WiimController
 
             private async Task RoonPlayAsync(MediaEntry entry, string action)
             {
+                if (OnComputer && SelectedLibraryServer is { } roon)
+                {
+                    await ComputerCanPlayAsync(roon);
+                    return;
+                }
                 if (AmpOf(_cboLibraryAmp) is not { } ip)
                 {
                     await Dialogs.MessageAsync(window, "Add a WiiM device on the Devices page first.", window._scale);

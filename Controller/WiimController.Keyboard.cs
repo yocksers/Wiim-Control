@@ -81,7 +81,7 @@ sealed partial class WiimController
                         else if (cmd == "mute")
                             _ = ToggleMuteAsync();
                         else
-                            _ = SendMediaCommandAsync(cmd);
+                            SendKeyMediaCommand(cmd);
                     }
                     if (!isVolumeCmd || _suppress) return (IntPtr)1;
                 }

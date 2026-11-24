@@ -614,7 +614,7 @@ sealed partial class WiimController
 
         private void ShowStatus(string target, DeviceStatus? status)
         {
-            if (status != null) status = _owner.WithRadioArtwork(_owner.WithComputerPlayback(status));
+            if (status != null) status = _owner.WithOnlineArtwork(_owner.WithComputerPlayback(status), target);
             _artworkNotice.IsVisible = status != null && _owner.ArtworkLookupLimited(status);
             SetDeviceName(_owner.DeviceNameOf(Ip));
             _target = target;

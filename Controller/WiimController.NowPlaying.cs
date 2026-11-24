@@ -35,6 +35,7 @@ sealed partial class WiimController
 
     internal async Task<DeviceStatus?> GetDeviceStatusAsync(string ip)
     {
+        if (IsLocalIp(ip)) return LocalStatus();
         var statusTask = SendToDeviceAsync(ip, "getPlayerStatus");
         var metaTask = SendToDeviceAsync(ip, "getMetaInfo");
         var sleepTask = GetSleepSecondsAsync(ip);
@@ -217,6 +218,7 @@ sealed partial class WiimController
     }
 
     internal async Task<bool> SendTransportAsync(string ip, string action) =>
+        IsLocalIp(ip) ? LocalTransport(action) :
         action is "onepause" or "next" or "prev" && ControlsComputerPlayback(ip)
             ? await ControlComputerPlaybackAsync(action == "onepause" ? "playpause" : action).ConfigureAwait(false)
             : await TryExternalCommandAsync(ip, action).ConfigureAwait(false) ||
@@ -342,6 +344,7 @@ sealed partial class WiimController
             : string.Create(CultureInfo.InvariantCulture, $"{seconds / 60}:{seconds % 60:00}");
 
     internal string DeviceNameOf(string ip) =>
+        IsLocalIp(ip) ? LocalName :
         _knownDevices.FindIndex(d => d.Ip == ip) is var index and >= 0 ? _knownDevices[index].Name : ip;
 
     internal string SourceText(DeviceStatus status, string leaderIp, bool following)
@@ -410,7 +413,9 @@ sealed partial class WiimController
             string target = PlaybackTarget;
             var status = await GetDeviceStatusAsync(target);
             _nowPlayingText = status == null ? string.Empty : NowPlayingLine(status);
-            _mediaSession?.Update(status == null || IsNetworkMode(status.Mode) ? status : status with { PositionMs = 0, DurationMs = 0 });
+            if (LocalPlayerActive) ShowInMediaSession(LocalStatus());
+            else ShowInMediaSession(status == null ? null
+                : IsNetworkMode(status.Mode) ? WithOnlineArtwork(status, target) : status with { PositionMs = 0, DurationMs = 0 });
             RefreshDeviceStatusUi();
             NoteDeviceStatus(target, status);
             bool reachable = target == ip ? status != null : await GetDeviceVolumeAsync(ip) != null;

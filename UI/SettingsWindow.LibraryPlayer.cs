@@ -21,14 +21,22 @@ sealed partial class WiimController
         private NowPlayingControls? _libraryPlayerControls;
         private VolumeControls? _libraryVolume;
 
-        private void ShowLibraryPlayer(string? ip)
+        private void ShowLibraryPlayer(string? ip, bool local = false)
         {
-            string? key = ip == null ? null : $"{ip}|{_owner.IsDeviceLocked(ip)}";
+            string? key = local ? LocalPlayerKey : ip == null ? null : $"{ip}|{_owner.IsDeviceLocked(ip)}";
             if (key == _libraryPlayerKey) return;
             _libraryPlayerKey = key;
-            _libraryPlayerIp = ip;
+            _libraryPlayerIp = local ? null : ip;
             _libraryPlayerControls = null;
             _libraryVolume = null;
+            _localControls = null;
+            if (local)
+            {
+                _libraryPlayer.Child = BuildLocalPlayer();
+                _libraryPlayer.IsVisible = true;
+                ApplyLocalPlayer();
+                return;
+            }
             _libraryPlayer.Child = ip == null ? null : BuildLibraryPlayer(ip);
             _libraryPlayer.IsVisible = ip != null;
             if (ip != null && _statuses.ContainsKey(ip)) ApplyLibraryPlayer(ip);
@@ -89,14 +97,19 @@ sealed partial class WiimController
             sliders.Children.Add(volumeRow);
 
             var art = new ArtworkView { IsVisible = false };
-            var title = new TextBlock();
-            var artist = new TextBlock();
+            var title = new TextBlock { FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+            var artist = new TextBlock { Classes = { "muted", "small" }, TextTrimming = TextTrimming.CharacterEllipsis };
+            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0), Children = { title, artist } };
+            var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,*") };
+            top.Children.Add(info);
+            Grid.SetColumn(buttons, 1);
+            top.Children.Add(buttons);
             var detail = new TextBlock();
             var playing = new PlayingIndicator();
             _libraryPlayerControls = new NowPlayingControls(art, title, artist, detail, playing, playPause, playPauseIcon, previous, next,
                 shuffle, shuffleIcon, repeat, repeatIcon, positionRow, position, elapsed, total);
             buttons.IsEnabled = positionRow.IsEnabled = volumeRow.IsEnabled = !_owner.IsDeviceLocked(ip);
-            return new StackPanel { MaxWidth = LibraryPlayerWidth + LibraryVolumeWidth, Children = { buttons, sliders } };
+            return new StackPanel { MaxWidth = LibraryPlayerWidth + LibraryVolumeWidth, Children = { top, sliders } };
         }
 
         private void ApplyLibraryPlayer(string ip)

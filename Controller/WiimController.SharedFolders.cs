@@ -275,7 +275,7 @@ sealed partial class WiimController
         finally { store.CloseFile(handle); }
     }
 
-    private static byte[]? ReadFile(ISMBFileStore store, string path)
+    private static byte[]? ReadFile(ISMBFileStore store, string path, long maxBytes = MaxCoverBytes)
     {
         var status = store.CreateFile(out var handle, out _, path, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, SmbFileAttributes.Normal,
             ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
@@ -283,7 +283,7 @@ sealed partial class WiimController
         try
         {
             using var stream = new MemoryStream();
-            while (stream.Length < MaxCoverBytes)
+            while (stream.Length < maxBytes)
             {
                 status = store.ReadFile(out var data, handle, stream.Length, (int)store.MaxReadSize);
                 if (status == NTStatus.STATUS_END_OF_FILE || data is not { Length: > 0 }) break;

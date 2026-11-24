@@ -21,6 +21,7 @@ sealed partial class WiimController
 
     private async Task<string?> SendToDeviceAsync(string ip, string command)
     {
+        if (IsLocalIp(ip)) return null;
         try
         {
             return await GetDeviceTextAsync($"https://{ip}/httpapi.asp?command={Uri.EscapeDataString(command)}").ConfigureAwait(false);

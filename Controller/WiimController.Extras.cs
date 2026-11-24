@@ -58,10 +58,12 @@ sealed partial class WiimController
         : repeat switch { 2 => 0, 1 => 1, _ => 4 };
 
     internal async Task<bool> SetLoopModeAsync(string ip, int mode) =>
+        IsLocalIp(ip) ? SetLocalLoop(mode) :
         await TryRoonLoopAsync(ip, mode).ConfigureAwait(false) ||
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:loopmode:{mode}").ConfigureAwait(false));
 
     internal async Task<bool> SeekAsync(string ip, int seconds) =>
+        IsLocalIp(ip) ? SeekLocal(seconds) :
         ControlsComputerPlayback(ip) ? await SeekComputerPlaybackAsync(seconds).ConfigureAwait(false) :
         await TryExternalCommandAsync(ip, "seek", seconds).ConfigureAwait(false) ||
         ReplyIsOk(await SendToDeviceAsync(ip, $"setPlayerCmd:seek:{Math.Max(0, seconds)}").ConfigureAwait(false));

@@ -47,11 +47,12 @@ sealed partial class WiimController
                     : "Start in the tray without opening this window. Starting Wiim Control again while it runs opens the window.");
                 string startMinimizedLabel = OperatingSystem.IsMacOS() ? "Start minimized (in the menu bar)" : "Start minimized (in the tray)";
                 _chkMediaControls.IsCheckedChanged += (_, _) => { if (window._loading) return; window._owner.SetMediaControls(_chkMediaControls.IsChecked == true); };
-                ToolTip.SetTip(_chkMediaControls, OperatingSystem.IsWindows()
+                ToolTip.SetTip(_chkMediaControls, (OperatingSystem.IsWindows()
                     ? "Shows the track in the media pop-up next to the Windows volume, with play/pause, next and previous for the device."
                     : OperatingSystem.IsMacOS()
                         ? "Shows the track in Now Playing in Control Center and the menu bar, with play/pause, next, previous and the position bar for the device."
-                        : "Shows the track in the desktop's media controls (MPRIS), with play/pause, next, previous and the position bar for the device.");
+                        : "Shows the track in the desktop's media controls (MPRIS), with play/pause, next, previous and the position bar for the device.") +
+                    " While the Library plays music on this computer, that is shown instead.");
                 var mediaControlsRow = ToggleRow($"Show the device in the {MediaControlsName}", _chkMediaControls);
                 _chkForwardMedia.IsCheckedChanged += async (_, _) =>
                 {

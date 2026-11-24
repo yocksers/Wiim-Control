@@ -42,6 +42,7 @@ sealed partial class WiimController
             SaveConfig();
             SetComputerTrack(_computerTrack);
             RefreshRadioArtwork();
+            if (LocalNowPlaying != null) NotifyLocalPlayer();
         }
     }
 
@@ -133,6 +134,7 @@ sealed partial class WiimController
                     if (_computerTrack is { } waiting && OnlineArtworkKey(waiting) == key) _settingsWindow?.OnComputerPlaybackChanged();
                     RefreshRadioArtwork();
                 }
+                OnLocalLookupDone(key);
                 return;
             }
             _onlineArtworkFound[key] = url;
@@ -145,6 +147,7 @@ sealed partial class WiimController
             }
             if (_computerTrack is { } current && OnlineArtworkKey(current) == key) SetComputerTrack(current);
             if (_radioLookups.Remove(key)) RefreshRadioArtwork();
+            OnLocalLookupDone(key);
         });
     }
 

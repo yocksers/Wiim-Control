@@ -14,7 +14,10 @@ sealed partial class WiimController
             private async Task AddLibraryToQueueAsync(MediaEntry entry, int index, bool next)
             {
                 if (SelectedLibraryServer is not { } server) return;
-                if (AmpOf(_cboLibraryAmp) is not { } ip)
+                bool local = OnComputer;
+                if (local && !await ComputerCanPlayAsync(server)) return;
+                string? ip = AmpOf(_cboLibraryAmp);
+                if (!local && ip == null)
                 {
                     await Dialogs.MessageAsync(window, "Add a WiiM device on the Devices page first.", window._scale);
                     return;
@@ -31,7 +34,20 @@ sealed partial class WiimController
                         return;
                     }
                 }
-                string target = window.TargetOf(ip);
+                if (local)
+                {
+                    bool starts = !window._owner.LocalPlayerActive;
+                    if (!window._owner.AddToLocalQueue(tracks.Take(MaxQueueTracks).Select(ToLocalTrack).ToList(), next))
+                    {
+                        UpdateLibraryStatus();
+                        await Dialogs.MessageAsync(window, "Windows couldn't start the player on this computer.", window._scale);
+                        return;
+                    }
+                    string queued = tracks.Count == 1 ? tracks[0].Title : $"{entry.Title} ({tracks.Count} tracks)";
+                    _lblLibraryStatus.Text = starts ? $"Playing {queued} on this computer" : next ? $"{queued} plays next" : $"Added {queued} to the queue";
+                    return;
+                }
+                string target = window.TargetOf(ip!);
                 var added = await window._owner.AddToQueueAsync(target, server, tracks, next);
                 if (added == null)
                 {
@@ -96,6 +112,52 @@ sealed partial class WiimController
 
             private static QueueTrack ToQueueTrack(MediaEntry e) => QueueTrackOf(e);
 
+            private static QueueTrack ToLocalTrack(MediaEntry e) => QueueTrackOf(e) with { ArtUrl = e.ArtUrl };
+
+            private void ShowLocalProblem(string message) => _lblLibraryStatus.Text = message;
+
+            private async Task<bool> ComputerCanPlayAsync(MediaServer server)
+            {
+                if (!server.IsLyrion && !server.IsRoon) return true;
+                await Dialogs.MessageAsync(window, $"Music from {server.Name} plays through {(server.IsRoon ? "Roon" : "Lyrion")}, so it can't play on this " +
+                                                   "computer from here. Pick a WiiM device to play it.", window._scale);
+                return false;
+            }
+
+            private Task<bool> PlayHereAsync(PlaySource source, List<MediaEntry> tracks, int start) =>
+                OnComputer ? PlayLocallyAsync(source, tracks, start) : PlayLibraryTracksAsync(AmpOf(_cboLibraryAmp), source, tracks, start, _lblLibraryStatus);
+
+            private async Task<bool> PlayLocallyAsync(PlaySource source, List<MediaEntry> tracks, int start)
+            {
+                if (tracks.Count == 0 || !await ComputerCanPlayAsync(source.Server)) return false;
+                var queue = tracks.Take(MaxQueueTracks).Select(ToLocalTrack).ToList();
+                start = Math.Clamp(start, 0, queue.Count - 1);
+                if (!window._owner.PlayLocally(queue, start))
+                {
+                    UpdateLibraryStatus();
+                    await Dialogs.MessageAsync(window, "Windows couldn't start the player on this computer.", window._scale);
+                    return false;
+                }
+                AddLibraryRecent(source, queue, start);
+                _lblLibraryStatus.Text = $"Playing {queue[start].Title} on this computer";
+                return true;
+            }
+
+            private void AddLibraryRecent(PlaySource source, List<QueueTrack> queue, int start)
+            {
+                var server = source.Server;
+                var first = queue[start];
+                var detail = new List<string>();
+                string artist = queue.Select(t => t.Artist).FirstOrDefault(a => a.Length > 0) ?? string.Empty;
+                if (artist.Length > 0) detail.Add(artist);
+                if (start > 0) detail.Add($"from {first.Title}");
+                detail.Add(server.Name);
+                window._owner.AddRecent(new RecentItem(source.FolderTitle, string.Join(" · ", detail),
+                    first.ArtUrl.Length > 0 ? first.ArtUrl : source.FolderArt, DateTime.Now, null,
+                    new RecentLibrary(server.Name, server.Udn, server.ContentDirectoryUrl, server.IsLyrion, source.FolderId, source.FolderIndex,
+                        IsShare: server.IsShare, IsEmbyJellyfin: server.IsEmbyJellyfin)));
+            }
+
             public async Task<(List<MediaEntry> Tracks, int Start)?> CollectFolderTracksAsync(MediaServer server, string folderId, int index)
             {
                 var page = await BrowseLibraryAsync(server, folderId, 0, MaxQueueTracks);
@@ -140,8 +202,7 @@ sealed partial class WiimController
                     start = 0;
                 }
                 var folder = _libraryPath[^1];
-                await PlayLibraryTracksAsync(AmpOf(_cboLibraryAmp), new PlaySource(server, folder.Id, folder.Title, index, string.Empty),
-                    tracks, start, _lblLibraryStatus);
+                await PlayHereAsync(new PlaySource(server, folder.Id, folder.Title, index, string.Empty), tracks, start);
             }
 
             private async Task PlayLibraryContainerAsync(MediaEntry folder)
@@ -164,8 +225,7 @@ sealed partial class WiimController
                     return;
                 }
                 int first = page.Entries.FindIndex(e => e.IsAudio);
-                await PlayLibraryTracksAsync(AmpOf(_cboLibraryAmp), new PlaySource(server, folder.Id, folder.Title, Math.Max(0, first), folder.ArtUrl),
-                    tracks, 0, _lblLibraryStatus);
+                await PlayHereAsync(new PlaySource(server, folder.Id, folder.Title, Math.Max(0, first), folder.ArtUrl), tracks, 0);
             }
 
             public async Task<bool> PlayLibraryTracksAsync(string? ip, PlaySource source, List<MediaEntry> tracks, int start, TextBlock status)
@@ -198,15 +258,7 @@ sealed partial class WiimController
                 }
 
                 var first = queue[start];
-                var detail = new List<string>();
-                string artist = queue.Select(t => t.Artist).FirstOrDefault(a => a.Length > 0) ?? string.Empty;
-                if (artist.Length > 0) detail.Add(artist);
-                if (start > 0) detail.Add($"from {first.Title}");
-                detail.Add(server.Name);
-                window._owner.AddRecent(new RecentItem(source.FolderTitle, string.Join(" · ", detail),
-                    first.ArtUrl.Length > 0 ? first.ArtUrl : source.FolderArt, DateTime.Now, null,
-                    new RecentLibrary(server.Name, server.Udn, server.ContentDirectoryUrl, server.IsLyrion, source.FolderId, source.FolderIndex,
-                        IsShare: server.IsShare, IsEmbyJellyfin: server.IsEmbyJellyfin)));
+                AddLibraryRecent(source, queue, start);
 
                 string name = window._owner._knownDevices.FirstOrDefault(d => d.Ip == target).Name ?? target;
                 status.Text = string.Create(CultureInfo.InvariantCulture, $"Playing {first.Title} on {name}");

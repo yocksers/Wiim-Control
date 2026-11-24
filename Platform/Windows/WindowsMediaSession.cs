@@ -11,13 +11,15 @@ sealed class WindowsMediaSession : IMediaSession
     private readonly SystemMediaTransportControls _controls;
     private readonly Action<string> _onCommand;
     private readonly Action<int> _onSeek;
+    private readonly Func<string, Task<byte[]?>> _loadArtwork;
     private string _shownTrack = string.Empty;
     private string _shownArt = string.Empty;
 
-    public WindowsMediaSession(Action<string> onCommand, Action<int> onSeek)
+    public WindowsMediaSession(Action<string> onCommand, Action<int> onSeek, Func<string, Task<byte[]?>> loadArtwork)
     {
         _onCommand = onCommand;
         _onSeek = onSeek;
+        _loadArtwork = loadArtwork;
         _player.CommandManager.IsEnabled = false;
         _controls = _player.SystemMediaTransportControls;
         _controls.IsPlayEnabled = _controls.IsPauseEnabled = _controls.IsNextEnabled = _controls.IsPreviousEnabled = true;
@@ -61,12 +63,12 @@ sealed class WindowsMediaSession : IMediaSession
             display.MusicProperties.Title = status.Title.Length > 0 ? status.Title : WiimController.SourceName(status.Mode);
             display.MusicProperties.Artist = status.Artist;
             display.MusicProperties.AlbumTitle = status.Album;
-            display.Thumbnail = Uri.TryCreate(status.ArtUrl, UriKind.Absolute, out var art)
-                ? RandomAccessStreamReference.CreateFromUri(art)
-                : null;
+            bool web = Uri.TryCreate(status.ArtUrl, UriKind.Absolute, out var art) && art.Scheme is "http" or "https";
+            display.Thumbnail = web ? RandomAccessStreamReference.CreateFromUri(art) : null;
             display.Update();
             _shownTrack = track;
             _shownArt = status.ArtUrl;
+            if (!web && status.ArtUrl.Length > 0) _ = ShowLoadedArtworkAsync(status.ArtUrl);
         }
 
         _controls.PlaybackStatus = status.PlayState.ToLowerInvariant() switch
@@ -86,6 +88,30 @@ sealed class WindowsMediaSession : IMediaSession
             MaxSeekTime = duration,
             Position = TimeSpan.FromMilliseconds(Math.Min(status.PositionMs, status.DurationMs))
         });
+    }
+
+    private async Task ShowLoadedArtworkAsync(string url)
+    {
+        try
+        {
+            if (await _loadArtwork(url) is not { Length: > 0 } bytes || url != _shownArt) return;
+            var stream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(stream))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync();
+                writer.DetachStream();
+            }
+            stream.Seek(0);
+            if (url != _shownArt) return;
+            var display = _controls.DisplayUpdater;
+            display.Thumbnail = RandomAccessStreamReference.CreateFromStream(stream);
+            display.Update();
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Unexpected("Media controls", ex);
+        }
     }
 
     public void Dispose()

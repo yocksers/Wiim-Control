@@ -28,5 +28,10 @@
   <string>Wiim Control reads the level of the sound this computer plays to move the VU meters in the big player.</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Wiim Control connects to your WiiM amps on the local network.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoadsForMedia</key>
+    <true/>
+  </dict>
 </dict>
 </plist>

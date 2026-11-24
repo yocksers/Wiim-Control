@@ -48,12 +48,40 @@ sealed partial class WiimController
 
             private MediaServer? SelectedLibraryServer => (_cboLibraryServer.SelectedItem as ComboBoxItem)?.Tag as MediaServer;
 
-            public void FillDevices() => window.FillAmpCombo(_cboLibraryAmp);
+            private static readonly object ThisComputer = new();
+            private bool _fillingDevices;
+
+            private bool OnComputer => (_cboLibraryAmp.SelectedItem as ComboBoxItem)?.Tag == ThisComputer;
+
+            public void FillDevices()
+            {
+                bool local = window._owner.LibraryOnComputer;
+                _fillingDevices = true;
+                try
+                {
+                    window.FillAmpCombo(_cboLibraryAmp);
+                    if (LocalPlayerSupported)
+                    {
+                        var item = ComboItem(ThisComputer, "This computer");
+                        _cboLibraryAmp.Items.Add(item);
+                        if (local || _cboLibraryAmp.SelectedIndex < 0) _cboLibraryAmp.SelectedItem = item;
+                    }
+                }
+                finally { _fillingDevices = false; }
+                window.ShowLibraryPlayer(AmpOf(_cboLibraryAmp), OnComputer);
+            }
 
             public Control Build()
             {
                 ToolTip.SetTip(_cboLibraryAmp, "The device to play on");
-                _cboLibraryAmp.SelectionChanged += (_, _) => window.ShowLibraryPlayer(AmpOf(_cboLibraryAmp));
+                _cboLibraryAmp.SelectionChanged += (_, _) =>
+                {
+                    if (_fillingDevices) return;
+                    window._owner.LibraryOnComputer = OnComputer;
+                    window.ShowLibraryPlayer(AmpOf(_cboLibraryAmp), OnComputer);
+                };
+                window._owner.LocalPlayerProblem += ShowLocalProblem;
+                window.Closed += (_, _) => window._owner.LocalPlayerProblem -= ShowLocalProblem;
                 ToolTip.SetTip(_cboLibraryServer, "The music server to browse");
                 var btnFind = Pill("Find servers");
                 btnFind.Click += async (_, _) => await FindLibraryServersAsync(force: true);
@@ -124,7 +152,7 @@ sealed partial class WiimController
                 page.PropertyChanged += async (_, e) =>
                 {
                     if (e.Property != IsVisibleProperty || !page.IsVisible) return;
-                    window.ShowLibraryPlayer(AmpOf(_cboLibraryAmp));
+                    window.ShowLibraryPlayer(AmpOf(_cboLibraryAmp), OnComputer);
                     _ = window.RefreshDeviceStatusesAsync();
                     if (!_librarySearched) await FindLibraryServersAsync(force: false);
                     else if (SelectedLibraryServer is { IsEmbyJellyfin: true } server && (_libraryLoadFailed || !await window._owner.EmbyServerAnswersAsync(server)))

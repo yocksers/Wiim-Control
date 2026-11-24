@@ -114,6 +114,11 @@ sealed partial class WiimController
             SetComputerTrack(null);
             return;
         }
+        if (LocalPlayerActive)
+        {
+            SetComputerTrack(LocalComputerTrack());
+            return;
+        }
         if ((_computerPlayback ??= CreateComputerPlayback()) is not { } reader) return;
         _computerReading = true;
         ComputerTrack? track;
@@ -196,6 +201,13 @@ sealed partial class WiimController
 
     private async Task<bool> SeekComputerPlaybackAsync(int seconds)
     {
+        if (LocalPlayerActive)
+            return await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                LocalSeek(Math.Max(0, seconds));
+                _ = ReadComputerPlaybackAsync();
+                return true;
+            });
         if (_computerPlayback is not { } reader) return false;
         bool ok = await Task.Run(() => reader.SeekAsync(Math.Max(0, seconds) * 1000)).ConfigureAwait(false);
         await Task.Delay(400).ConfigureAwait(false);
@@ -205,6 +217,13 @@ sealed partial class WiimController
 
     private async Task<bool> ControlComputerPlaybackAsync(string action)
     {
+        if (LocalPlayerActive)
+            return await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                bool done = LocalTransport(action);
+                _ = ReadComputerPlaybackAsync();
+                return done;
+            });
         if (_computerPlayback is not { } reader) return false;
         bool ok = await Task.Run(() => reader.ControlAsync(action)).ConfigureAwait(false);
         await Task.Delay(400).ConfigureAwait(false);
@@ -226,6 +245,10 @@ sealed partial class WiimController
     {
         if (url.StartsWith(ComputerArtPrefix, StringComparison.Ordinal))
             return url == _computerArtUrl && _computerArt is { } art ? art : throw new InvalidOperationException("The computer's artwork has changed.");
+        if (url.StartsWith(LocalArtPrefix, StringComparison.Ordinal))
+            return LocalArtBytes(url) ?? throw new InvalidOperationException("The track's artwork has changed.");
+        if (IsShareUrl(url))
+            return await ReadShareFileAsync(url).ConfigureAwait(false) ?? throw new IOException("The shared folder didn't send the cover.");
         var bytes = await HttpFor(url).GetByteArrayAsync(url).ConfigureAwait(false);
         return LooksLikeJson(bytes) ? await StationArtworkBytesAsync(url, bytes).ConfigureAwait(false) : bytes;
     }

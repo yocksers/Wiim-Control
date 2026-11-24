@@ -33,7 +33,7 @@ sealed partial class WiimController
             await homeTheater;
         }
 
-        private string DeviceName(string ip) => _owner._knownDevices.FirstOrDefault(d => d.Ip == ip).Name ?? ip;
+        private string DeviceName(string ip) => IsLocalIp(ip) ? LocalName : _owner._knownDevices.FirstOrDefault(d => d.Ip == ip).Name ?? ip;
 
         private (string Text, IBrush Brush)? GroupDescription(string ip)
         {

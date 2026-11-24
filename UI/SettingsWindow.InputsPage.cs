@@ -31,8 +31,9 @@ sealed partial class WiimController
                     _computerInputRows,
                     _computerProblem,
                     ToggleRow("Look up artwork online", onlineArtwork),
-                    Muted("Warning: when this is on, the artist, title and album of what this computer plays, or the channel and title of " +
-                          "a video, are sent to Deezer and Apple to find the cover."));
+                    Muted("Also finds covers for internet radio, and for Library music that has no cover of its own. Warning: when this is on, " +
+                          "the artist, title and album of what this computer plays, or the channel and title of a video, are sent to Deezer and " +
+                          "Apple to find the cover."));
                 var page = window.Page("Inputs", _lblInputsStatus, [_cboInputsAmp, refresh], new StackPanel { Children = { _inputsRows, computerCard } });
                 page.PropertyChanged += async (_, e) =>
                 {

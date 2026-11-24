@@ -101,6 +101,7 @@ sealed partial class WiimController
             _amp = new AmpPage(this);
             _eq = new EqPage(this);
             _library = new LibraryPage(this);
+            HookLocalPlayer();
             _scaler = new ScaledContent { Scale = _scale, Child = BuildLayout() };
             Content = _scaler;
             LoadFromOwner();

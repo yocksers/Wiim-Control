@@ -66,8 +66,8 @@ sealed partial class WiimController
             menu.Add(_mnuOutputStatus);
         }
         menu.Add(new NativeMenuItemSeparator());
-        menu.Add(MenuAction("Play / Pause", () => _ = SendMediaCommandAsync("playpause")));
-        menu.Add(MenuAction("Stop", () => _ = SendMediaCommandAsync("stop")));
+        menu.Add(MenuAction("Play / Pause", () => SendKeyMediaCommand("playpause")));
+        menu.Add(MenuAction("Stop", () => SendKeyMediaCommand("stop")));
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(MenuAction("Settings…", ShowSettingsWindow));
         menu.Add(new NativeMenuItemSeparator());
