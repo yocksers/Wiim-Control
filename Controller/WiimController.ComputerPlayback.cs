@@ -114,7 +114,7 @@ sealed partial class WiimController
             SetComputerTrack(null);
             return;
         }
-        if (LocalPlayerActive)
+        if (LocalPlaying)
         {
             SetComputerTrack(LocalComputerTrack());
             return;
@@ -137,6 +137,7 @@ sealed partial class WiimController
         }
         bool outputChanged = !string.Equals(defaultOutput, _computerDefaultOutput, StringComparison.OrdinalIgnoreCase);
         _computerDefaultOutput = defaultOutput;
+        if (LocalPlaying || LocalPlayerActive && (track == null || !track.Playing && ShowsLocalTrack)) track = LocalComputerTrack();
         SetComputerTrack(track);
         if (outputChanged) _settingsWindow?.OnComputerPlaybackChanged();
     }
@@ -199,9 +200,11 @@ sealed partial class WiimController
 
     internal string? ComputerOutputForMode(int mode) => InputOfMode(mode) is { } input ? ComputerOutputFor(input) ?? _computerDefaultOutput : null;
 
+    private bool ShowsLocalTrack => LocalPlayerActive && _computerTrack?.Key.StartsWith(LocalIp + '\n', StringComparison.Ordinal) == true;
+
     private async Task<bool> SeekComputerPlaybackAsync(int seconds)
     {
-        if (LocalPlayerActive)
+        if (ShowsLocalTrack)
             return await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 LocalSeek(Math.Max(0, seconds));
@@ -217,7 +220,7 @@ sealed partial class WiimController
 
     private async Task<bool> ControlComputerPlaybackAsync(string action)
     {
-        if (LocalPlayerActive)
+        if (ShowsLocalTrack)
             return await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 bool done = LocalTransport(action);
