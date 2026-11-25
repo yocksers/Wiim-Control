@@ -39,6 +39,9 @@ sealed partial class WiimController
         RegexOptions.IgnoreCase);
     private const int MinSoundtrackTitleLetters = 10;
     private const int MaxLookupTries = 6;
+    private const int MaxAppleSearches = 2;
+    private static readonly Regex TrailingArticle = new(
+        @"([^,;&/]+?),\s*(The|A|An|Los|Las|La|Le|Les|Die|Der|Das|El|Il)\s*(?=$|[;&/,])", RegexOptions.IgnoreCase);
     private const int MinArtistPrefix = 6;
 
     private sealed record LookupTry(string QueryArtist, string QueryTitle, string Artist, string Title, string Album, bool Soundtrack);
@@ -140,6 +143,7 @@ sealed partial class WiimController
     {
         string url = string.Empty;
         bool unanswered = false, limited = false;
+        int appleSearches = 0;
         foreach (var attempt in LookupTries(title, artist, album, bothOrders))
         {
             if (!_onlineArtwork) break;
@@ -147,7 +151,7 @@ sealed partial class WiimController
             unanswered |= deezer.Url == null;
             limited |= deezer.Limited;
             url = deezer.Url ?? string.Empty;
-            if (url.Length == 0 && _onlineArtwork)
+            if (url.Length == 0 && _onlineArtwork && appleSearches++ < MaxAppleSearches)
             {
                 var apple = await FindAppleArtworkAsync(attempt).ConfigureAwait(false);
                 unanswered |= apple.Url == null;
@@ -284,15 +288,17 @@ sealed partial class WiimController
         return fallback;
     }
 
+    private static string ArtistText(string artist) => TrailingArticle.Replace(NormalizePunctuation(artist), "$2 $1").Trim();
+
     private static List<string> ArtistNames(string artist) =>
-        ArtistSeparators.Split(NormalizePunctuation(artist)).Select(n => n.Trim()).Where(n => n.Length > 0).ToList();
+        ArtistSeparators.Split(ArtistText(artist)).Select(n => n.Trim()).Where(n => n.Length > 0).ToList();
 
     private static string FirstArtist(string artist) => ArtistNames(artist) is { Count: > 0 } names ? names[0] : artist.Trim();
 
     private static HashSet<string> ArtistForms(string artist)
     {
         var forms = ArtistNames(artist).Select(Comparable).ToHashSet();
-        forms.Add(Comparable(artist));
+        forms.Add(Comparable(ArtistText(artist)));
         forms.Remove(string.Empty);
         return forms;
     }

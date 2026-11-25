@@ -69,11 +69,7 @@ sealed partial class WiimController
                 stationArt = apple != null || picture != null;
             }
         }
-        catch (Exception)
-        {
-            _ = Task.Delay(OnlineArtworkRetryDelay).ContinueWith(_ => _radioArtProbing.TryRemove(link, out byte _));
-            return;
-        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException) { }
         if (_stationGivesArtwork.Count >= RadioArtLinkCacheSize) _stationGivesArtwork.Clear();
         _stationGivesArtwork[link] = stationArt;
         _radioArtProbing.TryRemove(link, out _);

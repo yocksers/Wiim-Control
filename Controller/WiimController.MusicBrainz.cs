@@ -9,6 +9,7 @@ sealed partial class WiimController
     private const int MaxMusicBrainzSearches = 3;
     private const int MaxCoverChecks = 3;
     private const int MusicBrainzAttempts = 2;
+    private const string SoundtrackType = "Soundtrack";
     private static readonly TimeSpan MusicBrainzSpacing = TimeSpan.FromSeconds(1.1);
     private static readonly SemaphoreSlim MusicBrainzGate = new(1, 1);
     private static DateTime _musicBrainzLast = DateTime.MinValue;
@@ -77,8 +78,40 @@ sealed partial class WiimController
                 if (await CoverExistsAsync(cover).ConfigureAwait(false)) return cover;
             }
         }
+        if (_onlineArtwork && SoundtrackCandidate(title))
+        {
+            string plainTitle = PlainTitle(title) is { Length: > 0 } plain ? plain : SearchTitle(title);
+            var (doc, status) = await GetMusicBrainzJsonAsync("https://musicbrainz.org/ws/2/recording/?fmt=json&limit=10&query=" +
+                Uri.EscapeDataString($"recording:{LuceneQuoted(plainTitle)}")).ConfigureAwait(false);
+            using var owned = doc;
+            if (doc == null) return status == HttpStatusCode.ServiceUnavailable || !answered ? null : string.Empty;
+            answered = true;
+            var wantedTitles = TitleForms(plainTitle);
+            var groups = new List<string>();
+            if (doc.RootElement.TryGetProperty("recordings", out var recordings) && recordings.ValueKind == JsonValueKind.Array)
+                foreach (var recording in recordings.EnumerateArray())
+                {
+                    var titles = TitleForms(JsonText(recording, "title"));
+                    if (!titles.Any(t => wantedTitles.Any(w => SameText(t, w)))) continue;
+                    if (!recording.TryGetProperty("releases", out var releases) || releases.ValueKind != JsonValueKind.Array) continue;
+                    foreach (var release in releases.EnumerateArray())
+                        if (release.TryGetProperty("release-group", out var group) && IsSoundtrackGroup(group) &&
+                            JsonText(group, "id") is { Length: > 0 } id && !groups.Contains(id))
+                            groups.Add(id);
+                }
+            foreach (string group in groups.Take(MaxCoverChecks))
+            {
+                string cover = $"https://coverartarchive.org/release-group/{group}/front-500";
+                if (await CoverExistsAsync(cover).ConfigureAwait(false)) return cover;
+            }
+        }
         return answered ? string.Empty : null;
     }
+
+    private static bool IsSoundtrackGroup(JsonElement group) =>
+        group.TryGetProperty("secondary-types", out var types) && types.ValueKind == JsonValueKind.Array &&
+        types.EnumerateArray().Any(t => t.ValueKind == JsonValueKind.String && t.GetString() == SoundtrackType) ||
+        SoundtrackAlbum.IsMatch(JsonText(group, "title"));
 
     private static IEnumerable<string> CreditNames(JsonElement recording)
     {
