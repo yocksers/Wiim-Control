@@ -98,8 +98,6 @@ sealed partial class WiimController
             _legacyEnabledOutputIds = null;
         }),
         Flag("onlineArtwork", () => _onlineArtwork, value => _onlineArtwork = value),
-        Text("computerInputs", () => string.Join('|', _computerInputs), value => _computerInputs = ComputerInputSet(value)),
-        Text("computerOutputs", () => string.Join('|', _computerOutputs.Select(o => $"{o.Key}>{o.Value}")), ParseComputerOutputs),
         Text("libraryServer", () => _libraryServer, value => _libraryServer = value),
         Text("radioFavorites", SerializeRadioFavorites, value => _radioFavorites = ParseRadioFavorites(value)),
         Text("recent", SerializeRecent, value => _recent = ParseRecent(value)),
@@ -130,6 +128,7 @@ sealed partial class WiimController
         Flag("localPlayerShuffle", () => _localShuffle, value => _localShuffle = value),
         Number("localPlayerRepeat", () => _localRepeat, value => _localRepeat = value is 1 or 2 ? value : 0),
         Choice("nowPlayingControlsStyle", () => _nowPlayingControlsStyle, value => _nowPlayingControlsStyle = value),
+        Text("nowPlayingLayouts", SerializeNowPlayingLayouts, ParseNowPlayingLayouts),
         Number("lyricsDelay", () => _lyricsDelayMs, value => _lyricsDelayMs = Math.Clamp(value, -LyricsDelayLimitMs, LyricsDelayLimitMs)),
         Flag("miniPlayerAuto", () => _miniPlayerAuto, value => _miniPlayerAuto = value),
         Flag("miniPlayerOnTop", () => _miniPlayerOnTop, value => _miniPlayerOnTop = value),

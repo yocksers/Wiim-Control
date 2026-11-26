@@ -183,7 +183,7 @@ sealed partial class WiimController
         private void UpdateVuMeters()
         {
             bool run = _npOverlay.IsVisible && IsVuStyle(NpStyle);
-            string? source = run && VuInputMode() is { } mode ? _owner.ComputerOutputForMode(mode) ?? string.Empty : null;
+            string? source = run && VuInputMode() is not null ? _owner.ComputerSoundSource ?? string.Empty : null;
             if (!run || source != _npVuSource)
             {
                 _npVuLevels?.Dispose();

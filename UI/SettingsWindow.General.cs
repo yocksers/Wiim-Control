@@ -18,6 +18,31 @@ sealed partial class WiimController
             private readonly ToggleSwitch _chkForwardMedia = new();
             private readonly ToggleSwitch _chkMediaControls = new();
             private readonly ToggleSwitch _chkPortal = new();
+            private readonly TextBlock _computerProblem = new()
+            {
+                TextWrapping = TextWrapping.Wrap, Foreground = Palette.AccentText, Margin = new Thickness(0, 4, 0, 8), IsVisible = false
+            };
+
+            public void UpdateComputerProblem()
+            {
+                string? problem = window._owner.ComputerPlaybackProblem;
+                _computerProblem.Text = problem ?? string.Empty;
+                _computerProblem.IsVisible = problem != null;
+            }
+
+            private Border BuildArtworkCard()
+            {
+                var onlineArtwork = new ToggleSwitch { IsChecked = window._owner.OnlineArtwork };
+                onlineArtwork.IsCheckedChanged += (_, _) => window._owner.OnlineArtwork = onlineArtwork.IsChecked == true;
+                UpdateComputerProblem();
+                return Card("Artwork",
+                    ToggleRow("Look up artwork online", onlineArtwork),
+                    Muted("Finds a cover for any track that comes without one: internet radio, Library music, what this computer plays and " +
+                          "anything else a WiiM plays. Warning: when this is on, the artist, title and album of those tracks, or the channel and " +
+                          "title of a video, are sent to Deezer and Apple to find the cover, and to MusicBrainz when those two have none."),
+                    _computerProblem);
+            }
+
             private readonly TextBlock _lblPortalStatus = new() { Classes = { "muted" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
 
             private void ApplyVolumeKeysState(bool on) => _chkSuppress.IsEnabled = on;
@@ -131,6 +156,7 @@ sealed partial class WiimController
                 ToolTip.SetTip(instantRow, "The devices tell Wiim Control right away when the track, playback or volume changes, instead of " +
                                            "Wiim Control asking every few seconds. Wiim Control listens on a network port for this, so your " +
                                            "firewall or macOS may ask for permission the first time.");
+                cards.Children.Add(BuildArtworkCard());
                 cards.Children.Add(Card("Network", instantRow));
                 cards.Children.Add(BuildBackupCard());
 

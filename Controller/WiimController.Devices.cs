@@ -172,6 +172,7 @@ sealed partial class WiimController
         SaveConfig();
         UpdateTrayStatus();
         UpdateVolumeKeyRegistration();
+        OnComputerOutputChanged();
     }
 
     internal void ClearOutputDevices()
@@ -181,6 +182,7 @@ sealed partial class WiimController
         SaveConfig();
         UpdateTrayStatus();
         UpdateVolumeKeyRegistration();
+        OnComputerOutputChanged();
     }
 
     private void MigrateEnabledOutputs()

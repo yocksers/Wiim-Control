@@ -47,6 +47,8 @@ sealed record DeviceStatus(DeviceVolume Volume, string PlayState, int Mode, stri
 
     public string AudioFormat { get; init; } = "";
 
+    public bool StreamFromComputer { get; init; }
+
     public string ServiceQuality { get; init; } = "";
 
     public string FileFormat { get; init; } = "";

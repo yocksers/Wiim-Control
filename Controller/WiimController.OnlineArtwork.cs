@@ -15,7 +15,7 @@ sealed partial class WiimController
     private readonly List<string> _onlineArtworkOrder = [];
     private readonly Dictionary<string, DateTime> _onlineArtworkRunning = new();
     private readonly Dictionary<string, (DateTime At, bool Limited)> _onlineArtworkRetryAt = new();
-    internal const string ArtworkQuotaNotice = "Artwork lookup: quota exceeded – will retry in 1 minute";
+    internal const string ArtworkQuotaNotice = "Artwork lookup is busy or over its limit – trying again in a minute";
     private static readonly TimeSpan OnlineArtworkRetryDelay = TimeSpan.FromMinutes(1);
     private static readonly Lazy<string> ArtworkCountry = new(() => RadioDirectory.HomeCountry().ToLowerInvariant());
 
@@ -163,8 +163,9 @@ sealed partial class WiimController
         if (url.Length == 0 && _onlineArtwork)
         {
             var musicBrainz = await FindMusicBrainzArtworkAsync(title, artist, bothOrders).ConfigureAwait(false);
-            unanswered |= musicBrainz == null;
-            url = musicBrainz ?? string.Empty;
+            unanswered |= musicBrainz.Url == null;
+            limited |= musicBrainz.Busy;
+            url = musicBrainz.Url ?? string.Empty;
         }
         Dispatcher.UIThread.Post(() =>
         {

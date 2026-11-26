@@ -415,7 +415,7 @@ sealed partial class WiimController
             _nowPlayingText = status == null ? string.Empty : NowPlayingLine(status);
             if (LocalPlayerActive) ShowInMediaSession(LocalStatus());
             else ShowInMediaSession(status == null ? null
-                : IsNetworkMode(status.Mode) ? WithOnlineArtwork(status, target) : status with { PositionMs = 0, DurationMs = 0 });
+                : IsNetworkMode(status.Mode) ? WithOnlineArtwork(status) : status with { PositionMs = 0, DurationMs = 0 });
             RefreshDeviceStatusUi();
             NoteDeviceStatus(target, status);
             bool reachable = target == ip ? status != null : await GetDeviceVolumeAsync(ip) != null;

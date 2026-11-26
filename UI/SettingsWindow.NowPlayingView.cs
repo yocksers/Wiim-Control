@@ -72,12 +72,10 @@ sealed partial class WiimController
         private readonly Grid _npCoverContent = new();
         private readonly TextBlock _npDeviceMenuLabel = new() { Text = "Device", MaxWidth = 300, TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Button _npStyleButton = new();
-        private readonly Border _npArtworkNotice = new()
+        private readonly TextBlock _npArtworkNotice = new()
         {
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(20),
-            Padding = new Thickness(12, 6), CornerRadius = new CornerRadius(12), Background = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)),
-            IsVisible = false, IsHitTestVisible = false,
-            Child = new TextBlock { Text = ArtworkQuotaNotice, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)) }
+            Text = ArtworkQuotaNotice, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0), IsVisible = false, IsHitTestVisible = false
         };
         private string? _npIp;
         private NowPlayingControls? _npControls;
@@ -170,7 +168,7 @@ sealed partial class WiimController
                 _npRestoreState = null;
                 ApplyFullScreenButton();
             };
-            var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { close } };
+            var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { close, _npArtworkNotice } };
             _npTopBar.Children.Add(left);
             var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(10, 3), Children = { BuildNowPlayingDeviceButton(), _npLyricsDelayButton, _npLyricsButton, BuildControlsButton(), _npStyleButton, BuildBrightnessButton(), BuildBorderlessButton(), BuildPopOutButton(), _npFullScreen.Button } };
             Grid.SetColumn(right, 2);
@@ -190,7 +188,6 @@ sealed partial class WiimController
             _npOverlay.Children.Add(_npAmbient);
             _npOverlay.Children.Add(BuildLyricsPanel());
             _npOverlay.Children.Add(_npTopBar);
-            _npOverlay.Children.Add(_npArtworkNotice);
 
             _npFadeTimer.Host = _npOverlay;
             _npFadeTimer.Tick += (_, _) => StepArtFade();

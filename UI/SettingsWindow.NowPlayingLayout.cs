@@ -35,6 +35,7 @@ sealed partial class WiimController
         {
             var style = NpStyle;
             _npAppliedStyle = style;
+            _owner.NowPlayingLayoutStyle = style;
             bool ambient = IsAmbient(style);
             _npDisc.IsVisible = _npSheen.IsVisible = style == NowPlayingStyle.Vinyl;
             _npBigDisc.IsVisible = _npBigControls.IsVisible = style == NowPlayingStyle.BigVinyl;

@@ -116,6 +116,7 @@ static class Icons
     public static readonly StreamGeometry HideMenu = StreamGeometry.Parse(
         "M5,13L9,17L7.6,18.42L1.18,12L7.6,5.58L9,7L5,11H21V13H5M21,6V8H11V6H21M21,16V18H11V16H21Z");
     public static readonly StreamGeometry ChevronDown = StreamGeometry.Parse("M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z");
+    public static readonly StreamGeometry ToTop = StreamGeometry.Parse("M8,11H11V21H13V11H16L12,7L8,11M4,3V5H20V3H4Z");
     public static readonly StreamGeometry ChevronUp = StreamGeometry.Parse("M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z");
     public static readonly StreamGeometry ViewDashboard = StreamGeometry.Parse("M13,3V9H21V3M13,21H21V11H13M3,21H11V15H3M3,13H11V3H3V13Z");
     public static readonly StreamGeometry ViewGrid = StreamGeometry.Parse("M3,11H11V3H3M3,21H11V13H3M13,21H21V13H13M13,3V11H21V3");

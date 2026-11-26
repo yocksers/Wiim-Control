@@ -5,7 +5,6 @@ namespace WiimControl;
 sealed partial class WiimController
 {
     private const string ComputerArtPrefix = "computer-art:";
-    private HashSet<string> _computerInputs = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _computerTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
     private IComputerPlayback? _computerPlayback;
     private ComputerTrack? _computerTrack;
@@ -18,74 +17,25 @@ sealed partial class WiimController
     private const int GoodComputerArtPixels = 640;
     private byte[]? _checkedArt;
     private int _checkedArtPixels;
-    private readonly Dictionary<string, string> _computerOutputs = new(StringComparer.OrdinalIgnoreCase);
     private string? _computerDefaultOutput;
     private string? _computerProblem;
 
     internal string? ComputerPlaybackProblem => _computerProblem;
 
-    private void ParseComputerOutputs(string value)
-    {
-        _computerOutputs.Clear();
-        foreach (string entry in value.Split('|', StringSplitOptions.RemoveEmptyEntries))
-            if (entry.IndexOf('>') is int split and > 0 && entry[(split + 1)..].Trim() is { Length: > 0 } id)
-                _computerOutputs[PlainInput(entry[..split])] = id;
-    }
-
-    internal string? ComputerOutputFor(string input) => _computerOutputs.TryGetValue(PlainInput(input), out var id) ? id : null;
-
-    internal void SetComputerOutput(string input, string? outputId)
-    {
-        string key = PlainInput(input);
-        if (outputId is { Length: > 0 }) _computerOutputs[key] = outputId;
-        else if (!_computerOutputs.Remove(key)) return;
-        SaveConfig();
-        _ = ReadComputerPlaybackAsync();
-        _settingsWindow?.OnComputerPlaybackChanged();
-    }
-
-    private bool ComputerFeeds(string input) =>
-        !_computerOutputs.TryGetValue(PlainInput(input), out var id) || _computerDefaultOutput == null ||
-        string.Equals(id, _computerDefaultOutput, StringComparison.OrdinalIgnoreCase);
-
-    internal static string PlainInput(string input) => input.Trim().ToLowerInvariant() switch
-    {
-        "auxin" => "line-in",
-        "coaxial" => "co-axial",
-        "usb" => "pcusb",
-        var other => other
-    };
-
-    private static HashSet<string> ComputerInputSet(string value) =>
-        new(IdSet(value).Select(entry => PlainInput(entry[(entry.LastIndexOf('/') + 1)..])).Where(entry => entry.Length > 0),
-            StringComparer.OrdinalIgnoreCase);
-
-    internal bool IsComputerInput(string input) => _computerInputs.Contains(PlainInput(input));
-
-    internal void SetComputerInput(string input, bool connected)
-    {
-        string key = PlainInput(input);
-        if (connected ? !_computerInputs.Add(key) : !_computerInputs.Remove(key)) return;
-        SaveConfig();
-        UpdateComputerTimer();
-        if (connected) _ = ReadComputerPlaybackAsync();
-        else _settingsWindow?.OnComputerPlaybackChanged();
-    }
-
     private void StartComputerPlayback()
     {
         _computerTimer.Tick += async (_, _) => await ReadComputerPlaybackAsync();
-        UpdateComputerTimer();
+        _computerTimer.Start();
     }
 
-    private void UpdateComputerTimer()
+    private bool ComputerSoundGoesToWiim => _outputMonitor?.IsEnabledOutputActive ?? true;
+
+    private static bool IsCableInput(string? input) => input is not null and not "wifi" and not "udisk";
+
+    private void OnComputerOutputChanged()
     {
-        if (_computerInputs.Count > 0) _computerTimer.Start();
-        else
-        {
-            _computerTimer.Stop();
-            SetComputerTrack(null);
-        }
+        _ = ReadComputerPlaybackAsync();
+        _settingsWindow?.OnComputerPlaybackChanged();
     }
 
     private void StopComputerPlayback()
@@ -109,7 +59,7 @@ sealed partial class WiimController
     private async Task ReadComputerPlaybackAsync()
     {
         if (_computerReading) return;
-        if (_computerInputs.Count == 0 || (_settingsWindow == null && _miniPlayers.Count == 0))
+        if (_settingsWindow == null && _miniPlayers.Count == 0)
         {
             SetComputerTrack(null);
             return;
@@ -125,7 +75,7 @@ sealed partial class WiimController
         string? defaultOutput = _computerDefaultOutput;
         try
         {
-            if (_computerOutputs.Count > 0) defaultOutput = await Task.Run(ComputerOutputs.DefaultId);
+            if (OperatingSystem.IsWindows()) defaultOutput = await Task.Run(ComputerOutputs.DefaultId);
             track = await Task.Run(reader.ReadAsync);
         }
         catch (Exception) { track = null; }
@@ -186,19 +136,17 @@ sealed partial class WiimController
     private static int ExpectedPosition(ComputerTrack track, DateTime at) =>
         track.PositionMs + (track.Playing ? (int)Math.Max(0, (at - track.PositionAt).TotalMilliseconds) : 0);
 
-    private bool ShowsComputerPlayback(int mode) =>
-        _computerTrack != null && InputOfMode(mode) is { } input && input != "wifi" && IsComputerInput(input) && ComputerFeeds(input);
+    private bool ShowsComputerPlayback(int mode) => _computerTrack != null && InputFromComputer(mode);
 
     private bool ControlsComputerPlayback(string ip) =>
-        _computerTrack != null && _lastInputs.TryGetValue(ip, out var input) && input is not null and not "wifi" && IsComputerInput(input) &&
-        ComputerFeeds(input);
+        _computerTrack != null && (_pcAudioIp == ip ||
+            _lastInputs.TryGetValue(ip, out var input) && IsCableInput(input) && ComputerSoundGoesToWiim && (input != "bluetooth" || IsBluetoothFromThisComputer(ip)));
 
     internal bool PlaysFromComputer(int mode) => ShowsComputerPlayback(mode);
 
-    internal bool InputFromComputer(int mode) =>
-        InputOfMode(mode) is { } input && input != "wifi" && IsComputerInput(input) && ComputerFeeds(input);
+    internal bool InputFromComputer(int mode) => IsCableInput(InputOfMode(mode)) && ComputerSoundGoesToWiim;
 
-    internal string? ComputerOutputForMode(int mode) => InputOfMode(mode) is { } input ? ComputerOutputFor(input) ?? _computerDefaultOutput : null;
+    internal string? ComputerSoundSource => _computerDefaultOutput;
 
     private bool ShowsLocalTrack => LocalPlayerActive && _computerTrack?.Key.StartsWith(LocalIp + '\n', StringComparison.Ordinal) == true;
 
@@ -236,7 +184,8 @@ sealed partial class WiimController
 
     internal DeviceStatus WithComputerPlayback(DeviceStatus status)
     {
-        if (!ShowsComputerPlayback(status.Mode) || _computerTrack is not { } track) return status;
+        if (!(status.StreamFromComputer || ShowsComputerPlayback(status.Mode)) || _computerTrack is not { } track) return status;
+        if (InputOfMode(status.Mode) == "bluetooth" && !ThisComputer.Names.Contains(status.BluetoothName, StringComparer.OrdinalIgnoreCase)) return status;
         return status with
         {
             PlayState = track.Playing ? "play" : "pause", Title = track.Title, Artist = track.Artist, Album = track.Album,

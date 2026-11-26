@@ -569,7 +569,7 @@ sealed partial class WiimController
             var leaderStatus = leaderIp != ip ? _statuses.GetValueOrDefault(leaderIp) : null;
             bool following = leaderStatus != null;
             if (leaderStatus != null) status = leaderStatus;
-            status = _owner.WithOnlineArtwork(_owner.WithComputerPlayback(status), leaderIp);
+            status = _owner.WithOnlineArtwork(_owner.WithComputerPlayback(status));
             string songBefore = ShownSong(c);
             var texts = _owner.NowPlayingTexts(status, leaderIp, following);
             if (!HoldNowPlayingText(c, texts, status.ArtUrl)) (c.Title.Text, c.Artist.Text, c.Detail.Text) = texts;

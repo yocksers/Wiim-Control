@@ -10,27 +10,14 @@ sealed partial class WiimController
     private readonly ConcurrentDictionary<string, bool> _stationGivesArtwork = new();
     private readonly ConcurrentDictionary<string, byte> _radioArtProbing = new();
     private readonly HashSet<string> _radioLookups = [];
-    private readonly ConcurrentDictionary<string, byte> _libraryDevices = new();
 
     internal static bool IsInternetRadio(DeviceStatus status) =>
         status.Album.Trim().Equals(InternetRadioAlbum, StringComparison.OrdinalIgnoreCase) && status.DurationMs <= 0;
 
-    internal void NoteLibraryPlayback(string ip, bool library)
-    {
-        if (library) _libraryDevices[ip] = 0;
-        else _libraryDevices.TryRemove(ip, out _);
-    }
-
-    internal DeviceStatus WithOnlineArtwork(DeviceStatus status, string ip)
+    internal DeviceStatus WithOnlineArtwork(DeviceStatus status)
     {
         if (!_onlineArtwork) return status;
         if (IsInternetRadio(status)) return WithRadioArtwork(status);
-        if (!_libraryDevices.ContainsKey(ip)) return status;
-        if (!IsNetworkMode(status.Mode))
-        {
-            _libraryDevices.TryRemove(ip, out _);
-            return status;
-        }
         if (status.ArtUrl.Trim().Length > 0 || status.Title.Trim().Length == 0 || status.Artist.Trim().Length == 0) return status;
         var track = new ComputerTrack(string.Empty, status.Title.Trim(), status.Artist.Trim(), status.Album.Trim(), status.IsPlaying, 0, 0,
             DateTime.UtcNow, string.Empty, null);

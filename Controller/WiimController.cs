@@ -109,11 +109,16 @@ sealed partial class WiimController : IDisposable
 
             if (_outputMonitor != null)
             {
-                _outputMonitor.DefaultDeviceChanged += () => Dispatcher.UIThread.Post(OnDefaultOutputChanged);
+                _outputMonitor.DefaultDeviceChanged += () => Dispatcher.UIThread.Post(() =>
+                {
+                    OnDefaultOutputChanged();
+                    OnComputerOutputChanged();
+                });
                 _outputMonitor.StatusChanged += _ => Dispatcher.UIThread.Post(() =>
                 {
                     UpdateTrayStatus();
                     UpdateVolumeKeyRegistration();
+                    OnComputerOutputChanged();
                 });
                 UpdateVolumeKeyRegistration();
             }

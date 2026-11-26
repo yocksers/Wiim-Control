@@ -77,7 +77,9 @@ sealed partial class WiimController
                 btnClear.Margin = new Thickness(0, 8, 0, 0);
                 btnClear.HorizontalAlignment = HorizontalAlignment.Left;
                 btnClear.Click += (_, _) => { window._owner.ClearOutputDevices(); window.LoadFromOwner(); };
-                _outputBody.Children.Add(Muted("Allow Wiim device volume control with keyboard on these computer outputs."));
+                _outputBody.Children.Add(Muted("While this computer plays through one of these outputs, Wiim Control controls the WiiM: the " +
+                                               "keyboard's volume keys change the WiiM's volume, and a WiiM on a cable input (optical, line in, " +
+                                               "HDMI, USB…) shows and controls what this computer plays, with artwork, VU meters and visualizers."));
                 _outputBody.Children.Add(_outputList);
                 _outputBody.Children.Add(btnClear);
                 return Card("Output devices", _outputBody);
@@ -90,7 +92,6 @@ sealed partial class WiimController
                 {
                     if (window._loading) return;
                     window._owner.SetVolumeKeys(_chkVolumeKeys.IsChecked == true);
-                    ApplyOutputState();
                 };
                 var volumeKeysRow = ToggleRow("Volume keys control the WiiM device", _chkVolumeKeys);
                 ToolTip.SetTip(volumeKeysRow, "When this is off, the keyboard's volume and mute keys change this computer's volume as usual. " +
@@ -108,17 +109,9 @@ sealed partial class WiimController
                 ];
             }
 
-            private void ApplyOutputState()
-            {
-                bool on = window._owner._volumeKeys;
-                _outputBody.IsEnabled = on;
-                _outputBody.Opacity = on ? 1 : 0.45;
-            }
-
             private void RefreshOutputList()
             {
                 if (!OperatingSystem.IsWindows()) return;
-                ApplyOutputState();
                 var toggles = new List<Control>();
                 foreach (var (id, name) in ActiveOutputDevices())
                 {

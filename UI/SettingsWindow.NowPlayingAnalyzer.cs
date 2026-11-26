@@ -108,7 +108,7 @@ sealed partial class WiimController
         private void UpdateAnalyzer()
         {
             bool run = _npOverlay.IsVisible && IsAnalyzer(NpStyle);
-            string? source = run && VuInputMode() is { } mode ? _owner.ComputerOutputForMode(mode) ?? string.Empty : null;
+            string? source = run && VuInputMode() is not null ? _owner.ComputerSoundSource ?? string.Empty : null;
             if (!run || source != _npAnalyzerSourceId)
             {
                 _npAnalyzerSource?.Dispose();

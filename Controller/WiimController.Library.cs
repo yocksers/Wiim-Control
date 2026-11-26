@@ -50,7 +50,6 @@ sealed partial class WiimController
         bool ok = await Upnp.CallAsync(await GetPlayQueueUrlAsync(ip).ConfigureAwait(false), PlayQueueService, "CreateQueue",
             ("QueueContext", context)).ConfigureAwait(false) != null;
         if (ok && ip == _deviceIp) OnWiimRequestSucceeded();
-        if (ok) NoteLibraryPlayback(ip, library: true);
         return ok;
     }
 
@@ -63,11 +62,7 @@ sealed partial class WiimController
         string context = Didl.QueueContext("WiimControlRadio", [track], 0, radio: true);
         bool ok = await Upnp.CallAsync(await GetPlayQueueUrlAsync(ip).ConfigureAwait(false), PlayQueueService, "CreateQueue",
             ("QueueContext", context)).ConfigureAwait(false) != null;
-        if (ok)
-        {
-            NoteLibraryPlayback(ip, library: false);
-            _ = RadioDirectory.CountClickAsync(station.Uuid);
-        }
+        if (ok) _ = RadioDirectory.CountClickAsync(station.Uuid);
         return ok;
     }
 

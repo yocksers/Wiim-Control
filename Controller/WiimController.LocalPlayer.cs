@@ -109,7 +109,7 @@ sealed partial class WiimController
     private void NotifyLocalPlayer()
     {
         LocalPlayerChanged?.Invoke();
-        if (_computerInputs.Count > 0) _ = ReadComputerPlaybackAsync();
+        _ = ReadComputerPlaybackAsync();
         if (_miniPlayers.TryGetValue(LocalIp, out var mini)) mini.RefreshNow();
         if (LocalPlayerActive)
         {

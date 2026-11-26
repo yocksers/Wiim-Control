@@ -8,9 +8,9 @@ sealed partial class WiimController
         private LazyPage? _outputPageRef;
         private OutputPage? _outputView;
         private LazyPage? _ampPageRef;
-        private InputsPage? _inputsView;
+        private GeneralPage? _generalView;
 
-        internal void OnComputerPlaybackProblem() => _inputsView?.UpdateComputerProblem();
+        internal void OnComputerPlaybackProblem() => _generalView?.UpdateComputerProblem();
 
         internal void OnEqualizerChanged(string ip)
         {

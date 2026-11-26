@@ -37,10 +37,43 @@ sealed partial class WiimController
 
     private bool _nowPlayingControls = true;
 
+    private sealed record NowPlayingLayout(bool Controls, bool Text, bool ControlsUnder, bool TextUnder, NowPlayingControlsStyle Style);
+
+    private readonly Dictionary<NowPlayingStyle, NowPlayingLayout> _nowPlayingLayouts = new();
+
+    internal NowPlayingStyle NowPlayingLayoutStyle { get; set; }
+
+    private NowPlayingLayout CurrentLayout => _nowPlayingLayouts.TryGetValue(NowPlayingLayoutStyle, out var layout)
+        ? layout
+        : new NowPlayingLayout(_nowPlayingControls, _nowPlayingTextShown, _nowPlayingControlsUnder, _nowPlayingTextUnder, _nowPlayingControlsStyle);
+
+    private void ChangeLayout(Func<NowPlayingLayout, NowPlayingLayout> change)
+    {
+        _nowPlayingLayouts[NowPlayingLayoutStyle] = change(CurrentLayout);
+        SaveConfig();
+    }
+
+    private string SerializeNowPlayingLayouts() => string.Join(';', _nowPlayingLayouts.Select(p =>
+        $"{p.Key}:{p.Value.Controls},{p.Value.Text},{p.Value.ControlsUnder},{p.Value.TextUnder},{p.Value.Style}"));
+
+    private void ParseNowPlayingLayouts(string value)
+    {
+        _nowPlayingLayouts.Clear();
+        foreach (string entry in value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = entry.Split(':', 2);
+            if (parts.Length != 2 || !Enum.TryParse<NowPlayingStyle>(parts[0], true, out var style)) continue;
+            var fields = parts[1].Split(',');
+            if (fields.Length != 5 || !Enum.TryParse<NowPlayingControlsStyle>(fields[4], true, out var controls)) continue;
+            _nowPlayingLayouts[style] = new NowPlayingLayout(IsWord(fields[0], "true"), IsWord(fields[1], "true"), IsWord(fields[2], "true"),
+                IsWord(fields[3], "true"), controls);
+        }
+    }
+
     internal bool NowPlayingControlsShown
     {
-        get => _nowPlayingControls;
-        set { _nowPlayingControls = value; SaveConfig(); }
+        get => CurrentLayout.Controls;
+        set => ChangeLayout(layout => layout with { Controls = value });
     }
 
     internal const int VuSensitivityLimit = 10;
@@ -74,32 +107,32 @@ sealed partial class WiimController
 
     internal bool NowPlayingControlsUnder
     {
-        get => _nowPlayingControlsUnder;
-        set { _nowPlayingControlsUnder = value; SaveConfig(); }
+        get => CurrentLayout.ControlsUnder;
+        set => ChangeLayout(layout => layout with { ControlsUnder = value });
     }
 
     private bool _nowPlayingTextShown = true;
 
     internal bool NowPlayingTextShown
     {
-        get => _nowPlayingTextShown;
-        set { _nowPlayingTextShown = value; SaveConfig(); }
+        get => CurrentLayout.Text;
+        set => ChangeLayout(layout => layout with { Text = value });
     }
 
     private bool _nowPlayingTextUnder;
 
     internal bool NowPlayingTextUnder
     {
-        get => _nowPlayingTextUnder;
-        set { _nowPlayingTextUnder = value; SaveConfig(); }
+        get => CurrentLayout.TextUnder;
+        set => ChangeLayout(layout => layout with { TextUnder = value });
     }
 
     private NowPlayingControlsStyle _nowPlayingControlsStyle;
 
     internal NowPlayingControlsStyle NowPlayingControlsStyle
     {
-        get => _nowPlayingControlsStyle;
-        set { _nowPlayingControlsStyle = value; SaveConfig(); }
+        get => CurrentLayout.Style;
+        set => ChangeLayout(layout => layout with { Style = value });
     }
 
     internal const int LyricsDelayLimitMs = 1000;

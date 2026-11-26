@@ -18,7 +18,7 @@ sealed partial class WiimController
         private readonly ScaledContent _scaler;
         private Size _normalSize;
 
-        private readonly TextBlock _lblDeviceName = new() { Classes = { "device" }, Margin = new Thickness(4, 18, 4, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+        private readonly TextBlock _lblDeviceName = new() { Classes = { "device" }, Margin = new Thickness(4, 0), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly TextBlock _lblDeviceIp = new() { Classes = { "muted" }, Margin = new Thickness(4, 2, 4, 0) };
         private readonly List<(Button Item, Border Bar, Control Page, string? Section)> _pages = [];
         private readonly Dictionary<Control, TextBlock> _pageTitles = new();
@@ -380,7 +380,6 @@ sealed partial class WiimController
             _outputPageRef = outputPage;
             _outputView = output;
             var inputs = new InputsPage(this);
-            _inputsView = inputs;
             Reloaded += inputs.FillDevices;
             var inputsPage = new LazyPage(inputs.Build);
             var subwoofer = new SubwooferPage(this);
@@ -394,6 +393,7 @@ sealed partial class WiimController
             _ampPageRef = ampPage;
             var sleepPage = new LazyPage(new SleepPage(this).Build);
             var generalSettings = new GeneralPage(this);
+            _generalView = generalSettings;
             Reloaded += generalSettings.Load;
             var generalPage = new LazyPage(generalSettings.Build);
             var updatesPage = new LazyPage(new UpdatesPage(this).Build);
@@ -403,14 +403,11 @@ sealed partial class WiimController
                 (roomFitPage, _eq.RefreshRoomFitAsync)
             ]);
 
-            var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 0), RenderTransform = new TranslateTransform(0, 6) };
-            brand.Children.Add(new TextBlock { Text = "Wiim Control", Classes = { "small" } });
-            brand.Children.Add(new TextBlock { Text = $"v{AppVersion}", Classes = { "small", "muted" } });
-
             var hideMenu = MenuButton(Icons.HideMenu, "Hide the menu", hidden: true);
-            hideMenu.Margin = new Thickness(0, 0, 14, -12);
+            hideMenu.Margin = new Thickness(0, 0, 14, 0);
+            hideMenu.VerticalAlignment = VerticalAlignment.Top;
             DockPanel.SetDock(hideMenu, Dock.Right);
-            var header = new StackPanel { Children = { new DockPanel { Children = { hideMenu, brand } }, _lblDeviceName, _lblDeviceIp } };
+            var header = new DockPanel { Children = { hideMenu, new StackPanel { Children = { _lblDeviceName, _lblDeviceIp } } } };
             DockPanel.SetDock(header, Dock.Top);
             var sidebarItems = new StackPanel();
             sidebarItems.Children.Add(NavSection("Devices", NavGroup(Nav("Devices", Icons.Speaker, devicesPage), Nav("Multiroom", Icons.Link, multiroomPage),
@@ -437,16 +434,31 @@ sealed partial class WiimController
                 Nav("Media keys", Icons.Keyboard, mediaKeysPage), Nav("General", Icons.Settings, generalPage), Nav("Updates", Icons.Update, updatesPage),
                 Nav("Themes", Icons.Palette, themesPage))));
 
-            var coffee = new StackPanel
+            var menuScroll = MenuScroller(sidebarItems);
+            var (toTop, toTopIcon) = IconButton(Icons.ToTop);
+            toTopIcon.Width = toTopIcon.Height = 18;
+            toTop.Width = toTop.Height = 32;
+            toTop.Padding = new Thickness(0);
+            toTop.MinHeight = 0;
+            toTop.Margin = new Thickness(0, 0, 14, 0);
+            toTop.VerticalAlignment = VerticalAlignment.Center;
+            ToolTip.SetTip(toTop, "Scroll the menu to the top");
+            toTop.Click += (_, _) => menuScroll.ScrollToHome();
+            DockPanel.SetDock(toTop, Dock.Right);
+            var coffee = new DockPanel
             {
-                Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(4, 12, 0, 0),
-                Children = { CoffeeButton(), WiimButton() }
+                Margin = new Thickness(4, 12, 0, 0),
+                Children =
+                {
+                    toTop,
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { CoffeeButton(), WiimButton() } }
+                }
             };
             DockPanel.SetDock(coffee, Dock.Bottom);
             var sidebar = new Border
             {
                 Background = Palette.Sidebar, Width = 250, Padding = new Thickness(12, 16),
-                Child = new DockPanel { Children = { header, coffee, MenuScroller(sidebarItems) } }
+                Child = new DockPanel { Children = { header, coffee, menuScroll } }
             };
 
             _showMenuButton = MenuButton(Icons.Menu, "Show the menu", hidden: false);

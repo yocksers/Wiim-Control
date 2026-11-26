@@ -156,6 +156,9 @@ sealed partial class WiimController
     private DeviceStatus WithPcAudioTitle(string ip, DeviceStatus status) =>
         _pcAudioIp == ip && IsNetworkMode(status.Mode) &&
         (status.Title.Length == 0 || status.Title.Contains(PcAudioServer.StreamPath.TrimStart('/'), StringComparison.OrdinalIgnoreCase))
-            ? status with { Title = PcAudioTitle, Artist = Environment.MachineName, Album = string.Empty, BitDepth = PcAudioServer.StreamBits }
+            ? status with
+            {
+                Title = PcAudioTitle, Artist = Environment.MachineName, Album = string.Empty, BitDepth = PcAudioServer.StreamBits, StreamFromComputer = true
+            }
             : status;
 }

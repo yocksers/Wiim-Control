@@ -39,7 +39,7 @@ sealed partial class WiimController
             .ToList();
     }
 
-    private async Task<string?> FindMusicBrainzArtworkAsync(string title, string artist, bool bothOrders)
+    private async Task<(string? Url, bool Busy)> FindMusicBrainzArtworkAsync(string title, string artist, bool bothOrders)
     {
         bool answered = false;
         foreach (var (queryTitle, queryArtist) in MusicBrainzQueries(title, artist, bothOrders))
@@ -53,7 +53,7 @@ sealed partial class WiimController
             using var owned = doc;
             if (doc == null)
             {
-                if (status == HttpStatusCode.ServiceUnavailable) return null;
+                if (status == HttpStatusCode.ServiceUnavailable) return (null, true);
                 continue;
             }
             answered = true;
@@ -75,7 +75,7 @@ sealed partial class WiimController
             foreach (string group in groups.Take(MaxCoverChecks))
             {
                 string cover = $"https://coverartarchive.org/release-group/{group}/front-500";
-                if (await CoverExistsAsync(cover).ConfigureAwait(false)) return cover;
+                if (await CoverExistsAsync(cover).ConfigureAwait(false)) return (cover, false);
             }
         }
         if (_onlineArtwork && SoundtrackCandidate(title))
@@ -84,7 +84,11 @@ sealed partial class WiimController
             var (doc, status) = await GetMusicBrainzJsonAsync("https://musicbrainz.org/ws/2/recording/?fmt=json&limit=10&query=" +
                 Uri.EscapeDataString($"recording:{LuceneQuoted(plainTitle)}")).ConfigureAwait(false);
             using var owned = doc;
-            if (doc == null) return status == HttpStatusCode.ServiceUnavailable || !answered ? null : string.Empty;
+            if (doc == null)
+            {
+                bool busy = status == HttpStatusCode.ServiceUnavailable;
+                return (busy || !answered ? null : string.Empty, busy);
+            }
             answered = true;
             var wantedTitles = TitleForms(plainTitle);
             var groups = new List<string>();
@@ -102,10 +106,10 @@ sealed partial class WiimController
             foreach (string group in groups.Take(MaxCoverChecks))
             {
                 string cover = $"https://coverartarchive.org/release-group/{group}/front-500";
-                if (await CoverExistsAsync(cover).ConfigureAwait(false)) return cover;
+                if (await CoverExistsAsync(cover).ConfigureAwait(false)) return (cover, false);
             }
         }
-        return answered ? string.Empty : null;
+        return (answered ? string.Empty : null, false);
     }
 
     private static bool IsSoundtrackGroup(JsonElement group) =>
