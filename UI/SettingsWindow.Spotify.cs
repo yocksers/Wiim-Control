@@ -152,7 +152,13 @@ sealed partial class WiimController
                 Grid.SetRow(_browser, 1);
                 body.Children.Add(_browser);
                 ShowState();
-                var page = window.Page("Spotify", _status, [], body, scroll: false, subtitleBelow: true, secondRow: [_cboAmp]);
+                var (bigPlayer, _) = IconPill(Icons.FullScreen, "Open the big player");
+                bigPlayer.Click += (_, _) =>
+                {
+                    if (window.BigPlayerDevice() is { } ip) window.ShowNowPlayingView(ip);
+                };
+                window._idlePlayerDevice = () => _pageShown && AmpOf(_cboAmp) is { } ip && ip != ThisComputer ? ip : null;
+                var page = window.Page("Spotify", _status, [], body, scroll: false, subtitleBelow: true, secondRow: [bigPlayer, window.IdleBigPlayerButton(), _cboAmp]);
                 page.PropertyChanged += (_, e) =>
                 {
                     if (e.Property != IsVisibleProperty) return;

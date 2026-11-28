@@ -113,6 +113,7 @@ sealed partial class WiimController
         Flag("instantUpdates", () => _instantUpdates, value => _instantUpdates = value, onUnlessFalse: true),
         Text("skippedVersion", () => _skippedVersion, value => _skippedVersion = value),
         Flag("tabletMode", () => _tabletMode, value => _tabletMode = value),
+        Number("idleBigPlayer", () => _idleBigPlayerSeconds, value => _idleBigPlayerSeconds = IdleBigPlayerChoices.Contains(value) ? value : 0),
         Flag("startMinimized", () => _startMinimized, value => _startMinimized = value),
         Legacy("compactDevices", value => { if (IsWord(value, "true")) _deviceLayout = DeviceLayout.Compact; }),
         Choice("deviceLayout", () => _deviceLayout, value => _deviceLayout = value),

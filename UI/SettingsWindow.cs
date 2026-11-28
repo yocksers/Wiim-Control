@@ -105,6 +105,7 @@ sealed partial class WiimController
             _scaler = new ScaledContent { Scale = _scale, Child = BuildLayout() };
             Content = _scaler;
             LoadFromOwner();
+            HookIdleBigPlayer();
 
             KeyDown += (_, e) =>
             {
