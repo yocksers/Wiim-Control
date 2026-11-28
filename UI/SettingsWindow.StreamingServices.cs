@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Media;
 
 namespace WiimControl;
 
@@ -17,6 +18,47 @@ sealed partial class WiimController
             private readonly ComboBox _cboAmp = new() { Width = 200 };
             private readonly StackPanel _body = new() { Spacing = 16 };
             private int _version;
+            private Border? _spotifyCard;
+            private readonly Grid _spotifyLinkedRow = new() { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 4, 0, 4) };
+            private readonly TextBlock _spotifyLinkedText = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+
+            private Border SpotifyCard()
+            {
+                if (_spotifyCard == null)
+                {
+                    var toggle = new ToggleSwitch { IsChecked = window._owner.SpotifyEnabled };
+                    toggle.IsCheckedChanged += (_, _) =>
+                    {
+                        window._owner.SpotifyEnabled = toggle.IsChecked == true;
+                        ApplySpotifyLink();
+                    };
+                    var unlink = Pill("Unlink");
+                    ToolTip.SetTip(unlink, "Remove the link to your Spotify account from Wiim Control");
+                    unlink.Click += async (_, _) =>
+                    {
+                        if (!await Dialogs.ConfirmAsync(window, "Unlink your Spotify account from Wiim Control? You can link it again on the Spotify page.", window._scale)) return;
+                        window._owner.UnlinkSpotify();
+                        ApplySpotifyLink();
+                    };
+                    _spotifyLinkedRow.Children.Add(_spotifyLinkedText);
+                    Grid.SetColumn(unlink, 1);
+                    _spotifyLinkedRow.Children.Add(unlink);
+                    _spotifyCard = Card("Wiim Control - Spotify",
+                        ToggleRow("Use Spotify in Wiim Control", toggle),
+                        _spotifyLinkedRow,
+                        Muted("Adds a Spotify page under Library in the menu. There you link your own Spotify developer account, then search, browse " +
+                              "and play Spotify on your WiiM devices or in the Spotify app on this computer. Playing needs Spotify Premium."));
+                }
+                ApplySpotifyLink();
+                return _spotifyCard;
+            }
+
+            private void ApplySpotifyLink()
+            {
+                var owner = window._owner;
+                _spotifyLinkedRow.IsVisible = owner.SpotifyEnabled && owner.SpotifyLinked;
+                _spotifyLinkedText.Text = owner.SpotifyUser.Length > 0 ? $"Linked to Spotify as {owner.SpotifyUser}" : "Linked to Spotify";
+            }
 
             public void FillDevices() => window.FillAmpCombo(_cboAmp);
 
@@ -39,6 +81,7 @@ sealed partial class WiimController
                 {
                     _body.Children.Clear();
                     _body.Children.Add(Muted("Add a WiiM device on the Devices page first."));
+                    _body.Children.Add(SpotifyCard());
                     return;
                 }
                 _status.Text = "Loading…";
@@ -54,6 +97,7 @@ sealed partial class WiimController
                 if (services == null && castTask.Result == null)
                 {
                     _body.Children.Add(Muted("The device didn't answer. Check that it's switched on and reachable."));
+                    _body.Children.Add(SpotifyCard());
                     return;
                 }
                 var rows = new List<Control>();
@@ -83,6 +127,7 @@ sealed partial class WiimController
                     copy.Click += async (_, _) => await CopyToAllAsync(ip, copy);
                     _body.Children.Add(copy);
                 }
+                _body.Children.Add(SpotifyCard());
             }
 
             private Grid SettingToggle(string text, bool value, Func<bool, Task<bool>> apply, Func<Task<bool?>> read, bool reload = false)

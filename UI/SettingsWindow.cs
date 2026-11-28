@@ -109,6 +109,7 @@ sealed partial class WiimController
             KeyDown += (_, e) =>
             {
                 if (e.Key == Key.F11 && _npIp != null && _npWindow == null) SetNowPlayingFullScreen(_npRestoreState == null);
+                else if (e.Key == Key.F11 && _npIp == null) SetAppFullScreen(_appRestoreState == null);
                 if (e.Key != Key.Escape) return;
                 if (_npWindow != null)
                 {
@@ -117,6 +118,7 @@ sealed partial class WiimController
                 }
                 if (_npRestoreState != null) SetNowPlayingFullScreen(false);
                 else if (_npIp != null) HideNowPlayingView();
+                else if (_appRestoreState != null) SetAppFullScreen(false);
                 else Close();
             };
             _volumeSendTimer.Tick += (_, _) => FlushVolumes();
@@ -162,7 +164,9 @@ sealed partial class WiimController
                 e.Cancel = true;
                 if (_closeFlushing) return;
                 _closeFlushing = true;
-                _owner.SaveWindowState(_normalSize, (_npWindow == null ? _npRestoreState ?? WindowState : WindowState) == WindowState.Maximized);
+                var savedState = _npWindow == null ? _npRestoreState ?? WindowState : WindowState;
+                if (savedState == WindowState.FullScreen && _appRestoreState is { } beforeFullScreen) savedState = beforeFullScreen;
+                _owner.SaveWindowState(_normalSize, savedState == WindowState.Maximized);
                 var flush = FlushBeforeCloseAsync();
                 await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(3)));
                 _closeFlushed = true;
@@ -352,6 +356,11 @@ sealed partial class WiimController
             Reloaded += _library.FillDevices;
             var libraryPage = new LazyPage(_library.Build);
             _libraryPage = libraryPage;
+            var spotify = new SpotifyPage(this);
+            Reloaded += spotify.FillDevices;
+            var spotifyPage = new LazyPage(spotify.Build);
+            _spotifyNav = Nav("Spotify", Icons.Spotify, spotifyPage);
+            _spotifyNav.IsVisible = _owner.SpotifyEnabled;
             var radio = new RadioPage(this);
             Reloaded += radio.FillDevices;
             var radioPage = new LazyPage(radio.Build);
@@ -413,7 +422,7 @@ sealed partial class WiimController
             sidebarItems.Children.Add(NavSection("Devices", NavGroup(Nav("Devices", Icons.Speaker, devicesPage), Nav("Multiroom", Icons.Link, multiroomPage),
                 Nav("Presets", Icons.Star, presetsPage))));
             sidebarItems.Children.Add(NavSection("Music", NavGroup(
-                Nav("Library", Icons.Library, libraryPage), Nav("Radio", Icons.Radio, radioPage), Nav("Queue", Icons.Queue, queuePage),
+                Nav("Library", Icons.Library, libraryPage), _spotifyNav, Nav("Radio", Icons.Radio, radioPage), Nav("Queue", Icons.Queue, queuePage),
                 Nav("Recent", Icons.History, recentPage), Nav("Services", Icons.Cast, streamingPage))));
             sidebarItems.Children.Add(NavSection("Audio", NavGroup(
                 Nav("Equalizer", Icons.Equalizer, eqPage), Nav("RoomFit", Icons.Room, roomFitPage), Nav("Output", Icons.Output, outputPage), Nav("Inputs", Icons.Input, inputsPage),
@@ -610,6 +619,16 @@ sealed partial class WiimController
             _ = RefreshMultiroomAsync();
             _ = _amp.RefreshAmpAsync();
         });
+
+        private Button? _spotifyNav;
+
+        internal void OnSpotifyEnabledChanged()
+        {
+            if (_spotifyNav == null) return;
+            bool on = _owner.SpotifyEnabled;
+            _spotifyNav.IsVisible = on;
+            if (!on && _pages.FirstOrDefault(p => p.Item == _spotifyNav).Page is { IsVisible: true } && _libraryPage != null) ShowPage(_libraryPage);
+        }
 
         private void UpdateDisplayNav()
         {

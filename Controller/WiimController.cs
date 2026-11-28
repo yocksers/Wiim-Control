@@ -64,6 +64,7 @@ sealed partial class WiimController : IDisposable
     {
         LoadConfig();
         ThemeEngine.Apply(_activeTheme);
+        if (_tabletMode) TouchKeyboard.SetEnabled(true);
         ErrorLog.Cleanup();
         DeleteOldInstallers();
         AutoStart.MigrateLegacy();

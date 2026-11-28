@@ -38,7 +38,7 @@ sealed partial class WiimController
                 _ = _eq.RefreshEqAsync();
                 _ = RefreshMultiroomAsync();
             };
-            var page = Page("Devices", _lblDeviceCount, [LayoutButton(), GroupsButton(_devicesGroupMenuLabel, () => GroupMenuText(_owner._deviceIp)), btnDiscover, btnAdd], BuildDevicesBody(), scroll: false);
+            var page = Page("Devices", _lblDeviceCount, [LayoutButton(), AppFullScreenButton(), GroupsButton(_devicesGroupMenuLabel, () => GroupMenuText(_owner._deviceIp)), btnDiscover, btnAdd], BuildDevicesBody(), scroll: false);
             page.PropertyChanged += (_, e) =>
             {
                 if (e.Property == IsVisibleProperty && page.IsVisible) _ = RefreshDashboardPresetsAsync();

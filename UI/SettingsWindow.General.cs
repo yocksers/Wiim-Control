@@ -43,6 +43,30 @@ sealed partial class WiimController
                     _computerProblem);
             }
 
+            private Border BuildTabletCard()
+            {
+                var tablet = new ToggleSwitch { IsChecked = window._owner.TabletMode };
+                var rows = new List<Control>
+                {
+                    ToggleRow("Tablet mode", tablet),
+                    Muted(OperatingSystem.IsWindows()
+                        ? "For touchscreens: the touch keyboard opens whenever you press a text field, and closes again when you leave it."
+                        : "For touchscreens: the Onboard on-screen keyboard opens whenever you press a text field, and closes again when you leave it.")
+                };
+                if (OperatingSystem.IsLinux())
+                {
+                    var onboard = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Palette.AccentText, Margin = new Thickness(0, 4, 0, 0) };
+                    void ShowOnboardNote() => onboard.IsVisible = OnboardKeyboard.ProgramPath == null;
+                    onboard.Text = "Onboard isn't installed. Install the \"onboard\" package from your distribution's software center, or with " +
+                                   "\"sudo apt install onboard\" on Debian, Ubuntu and Mint, then switch Tablet mode on again.";
+                    ShowOnboardNote();
+                    tablet.IsCheckedChanged += (_, _) => ShowOnboardNote();
+                    rows.Add(onboard);
+                }
+                tablet.IsCheckedChanged += (_, _) => window._owner.TabletMode = tablet.IsChecked == true;
+                return Card("Touchscreen", rows.ToArray());
+            }
+
             private readonly TextBlock _lblPortalStatus = new() { Classes = { "muted" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
 
             private void ApplyVolumeKeysState(bool on) => _chkSuppress.IsEnabled = on;
@@ -128,6 +152,7 @@ sealed partial class WiimController
                     window.ApplyScale(percent);
                 };
                 cards.Children.Add(Card("Appearance", LabeledRow("Scale", scale), Muted("Makes this window bigger or smaller.")));
+                if (TouchKeyboard.Supported) cards.Children.Add(BuildTabletCard());
                 var holidays = new ToggleSwitch { IsChecked = window._owner.MascotHolidays };
                 holidays.IsCheckedChanged += (_, _) => window._owner.MascotHolidays = holidays.IsChecked == true;
                 cards.Children.Add(Card("Holidays",
