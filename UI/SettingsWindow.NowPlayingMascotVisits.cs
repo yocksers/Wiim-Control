@@ -100,7 +100,9 @@ sealed partial class WiimController
             bool paused = _npControls?.Playing.IsVisible != true;
             if (paused && _mascotLastVisitKind != MascotVisit.Paused) return MascotVisit.Paused;
             if (LyricsShown && !paused && _mascotLastVisitKind != MascotVisit.Karaoke && Random.Shared.NextDouble() < MascotKaraokeChance) return MascotVisit.Karaoke;
-            var kinds = Enum.GetValues<MascotVisit>().Where(k => k is not (MascotVisit.Paused or MascotVisit.Karaoke)).ToArray();
+            CheckMascotSeason(force: true);
+            if (_mascotNewYearsEve && !paused && _mascotLastVisitKind != MascotVisit.Fireworks && Random.Shared.Next(2) == 0) return MascotVisit.Fireworks;
+            var kinds = Enum.GetValues<MascotVisit>().Where(k => k is not (MascotVisit.Paused or MascotVisit.Karaoke or MascotVisit.Fireworks)).ToArray();
             return PickOther(kinds, _mascotLastVisitKind ?? MascotVisit.Paused, _mascotLastVisitKind != null);
         }
 
@@ -131,6 +133,9 @@ sealed partial class WiimController
                     SetMascotState(MascotState.Fly);
                     UpdateMascotTimer();
                     break;
+                case MascotVisit.Bump:
+                    StartMascotEnter(MascotState.Act, MascotRushSpeed, _mascotFromRight);
+                    break;
                 default:
                     StartMascotEnter(MascotState.Act, MascotWalkSpeed, _mascotFromRight);
                     break;
@@ -145,6 +150,10 @@ sealed partial class WiimController
             MascotVisit.Paused => 4.0,
             MascotVisit.Selfie => 3.4,
             MascotVisit.Balloon => 6.8,
+            MascotVisit.Ironing => IroningSeconds,
+            MascotVisit.ShadowPuppets => PuppetSeconds,
+            MascotVisit.Bump => BumpSeconds,
+            MascotVisit.Fireworks => FireworksSeconds,
             MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke
                 or MascotVisit.Juggling or MascotVisit.Kite => MascotIdleLength(),
             _ => MascotActSeconds
@@ -295,6 +304,18 @@ sealed partial class WiimController
                 case MascotVisit.Fishing or MascotVisit.Climb or MascotVisit.SkipRope or MascotVisit.PaperPlane or MascotVisit.Sweep or MascotVisit.Karaoke
                     or MascotVisit.Juggling or MascotVisit.Kite:
                     offset = StepMascotIdle(s);
+                    break;
+                case MascotVisit.Ironing:
+                    offset = StepMascotIroning(s);
+                    break;
+                case MascotVisit.ShadowPuppets:
+                    offset = StepMascotPuppets(s);
+                    break;
+                case MascotVisit.Bump:
+                    offset = StepMascotBump(s);
+                    break;
+                case MascotVisit.Fireworks:
+                    offset = StepMascotFireworks(s);
                     break;
                 default:
                     Pose(lean: 0, bounce: Math.Sin(s * 2) * 2, arms: (20, -150 + Math.Sin(s * 10) * 28), legs: (0, 0));

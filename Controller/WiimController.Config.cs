@@ -119,6 +119,7 @@ sealed partial class WiimController
         Flag("nowPlayingControls", () => _nowPlayingControls, value => _nowPlayingControls = value, onUnlessFalse: true),
         Number("vuSensitivity", () => _vuSensitivity, value => _vuSensitivity = Math.Clamp(value, -VuSensitivityLimit, VuSensitivityLimit)),
         Flag("analyzerBackground", () => _analyzerBackground, value => _analyzerBackground = value, onUnlessFalse: true),
+        Flag("mascotHolidays", () => _mascotHolidays, value => _mascotHolidays = value, onUnlessFalse: true),
         Flag("vuFollowVolume", () => _vuFollowVolume, value => _vuFollowVolume = value),
         Flag("nowPlayingControlsUnder", () => _nowPlayingControlsUnder, value => _nowPlayingControlsUnder = value),
         Flag("nowPlayingText", () => _nowPlayingTextShown, value => _nowPlayingTextShown = value, onUnlessFalse: true),

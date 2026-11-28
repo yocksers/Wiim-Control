@@ -128,6 +128,12 @@ sealed partial class WiimController
                     window.ApplyScale(percent);
                 };
                 cards.Children.Add(Card("Appearance", LabeledRow("Scale", scale), Muted("Makes this window bigger or smaller.")));
+                var holidays = new ToggleSwitch { IsChecked = window._owner.MascotHolidays };
+                holidays.IsCheckedChanged += (_, _) => window._owner.MascotHolidays = holidays.IsChecked == true;
+                cards.Children.Add(Card("Holidays",
+                    ToggleRow("Celebrate holidays in the Mascot style", holidays),
+                    Muted("From 1 to 30 December the mascot in the big player wears a Santa hat and snow falls. On 31 December it wears a " +
+                          "party hat and sets off fireworks.")));
                 var miniAuto = new ToggleSwitch { IsChecked = window._owner.MiniPlayerAuto };
                 miniAuto.IsCheckedChanged += (_, _) => window._owner.MiniPlayerAuto = miniAuto.IsChecked == true;
                 var miniOnTop = new ToggleSwitch { IsChecked = window._owner.MiniPlayerOnTop };

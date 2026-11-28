@@ -10,11 +10,11 @@ sealed partial class WiimController
 {
     private sealed partial class SettingsWindow
     {
-        private enum MascotState { Gone, Push, Dance, WalkOff, RushIn, PushOut, Enter, RunOff, React, Poke, Dizzy, Zip, ZipFall, FlipArt, Whoosh, Act, Stroll, Peek, Skate, Exit, Fly, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult, Held, Dropped, HighFive, Oops, SpinArt }
+        private enum MascotState { Gone, Push, Dance, WalkOff, RushIn, PushOut, Enter, RunOff, React, Poke, Dizzy, Zip, ZipFall, FlipArt, Whoosh, Act, Stroll, Peek, Skate, Exit, Fly, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult, Held, Dropped, HighFive, Oops, SpinArt, Shutter, Crumple, Slots, Argue }
 
-        private enum MascotVisit { Dance, Loud, Wave, Peekaboo, Polish, AirGuitar, Conductor, Paused, Selfie, Skateboard, Balloon, Superhero, Fishing, Climb, SkipRope, PaperPlane, Sweep, Karaoke, Juggling, Kite }
+        private enum MascotVisit { Dance, Loud, Wave, Peekaboo, Polish, AirGuitar, Conductor, Paused, Selfie, Skateboard, Balloon, Superhero, Fishing, Climb, SkipRope, PaperPlane, Sweep, Karaoke, Juggling, Kite, Ironing, ShadowPuppets, Bump, Fireworks }
 
-        private enum MascotSwap { Push, Zip, Flip, Whoosh, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult, Oops, Spin }
+        private enum MascotSwap { Push, Zip, Flip, Whoosh, Magic, Paint, Crate, Ufo, Claw, Sleeve, Jigsaw, Catapult, Oops, Spin, Shutter, Crumple, Slots, Argue }
 
         private enum MascotMood { Normal, Loud, Quiet }
 
@@ -109,10 +109,11 @@ sealed partial class WiimController
 
         private bool MascotBusy => _mascotState is MascotState.Push or MascotState.RushIn or MascotState.PushOut or MascotState.Zip or MascotState.FlipArt or MascotState.Whoosh
                                        or MascotState.Magic or MascotState.Paint or MascotState.Crate or MascotState.Ufo or MascotState.Claw or MascotState.Sleeve
-                                       or MascotState.Jigsaw or MascotState.Catapult or MascotState.Oops or MascotState.SpinArt ||
+                                       or MascotState.Jigsaw or MascotState.Catapult or MascotState.Oops or MascotState.SpinArt or MascotState.Shutter
+                                       or MascotState.Crumple or MascotState.Slots or MascotState.Argue ||
                                    _mascotState == MascotState.Enter && _mascotAfterEnter is MascotState.FlipArt or MascotState.Magic or MascotState.Paint or MascotState.Crate
                                        or MascotState.Ufo or MascotState.Claw or MascotState.Sleeve or MascotState.Jigsaw or MascotState.Catapult or MascotState.Oops
-                                       or MascotState.SpinArt;
+                                       or MascotState.SpinArt or MascotState.Shutter or MascotState.Crumple or MascotState.Slots or MascotState.Argue;
 
         private double MascotSpot => _mascotFromRight ? MascotRightSpot : MascotDanceSpot;
 
@@ -199,9 +200,13 @@ sealed partial class WiimController
             if (_npHeldText != null) _npTextWaitsForMascot = true;
             _mascot.ZIndex = 0;
             ClearMascotNotes();
-            var regular = Enum.GetValues<MascotSwap>().Where(kind => kind != MascotSwap.Ufo).ToArray();
-            _mascotSwap = Random.Shared.NextDouble() < MascotUfoChance ? MascotSwap.Ufo : PickOther(regular, _mascotSwap, _mascotSwapped);
+            var regular = Enum.GetValues<MascotSwap>().Where(kind => kind is not (MascotSwap.Ufo or MascotSwap.Argue)).ToArray();
+            double roll = Random.Shared.NextDouble();
+            _mascotSwap = roll < MascotUfoChance ? MascotSwap.Ufo : roll < MascotUfoChance + MascotArgueChance ? MascotSwap.Argue : PickOther(regular, _mascotSwap, _mascotSwapped);
             if (_mascotSwap == MascotSwap.Jigsaw && !PrepareJigsaw()) _mascotSwap = MascotSwap.Crate;
+            if (_mascotSwap == MascotSwap.Slots && !PrepareSlots()) _mascotSwap = MascotSwap.Crate;
+            if (_mascotSwap == MascotSwap.Crumple) PrepareCrumple();
+            if (_mascotSwap == MascotSwap.Argue) PrepareRival();
             if (_mascotSwap == MascotSwap.Oops && _npCover.Source == null) _mascotSwap = MascotSwap.Flip;
             _mascotSwapped = true;
             _zipLayer.IsVisible = false;
@@ -228,7 +233,7 @@ sealed partial class WiimController
                 return;
             }
             if (_mascotSwap is MascotSwap.Magic or MascotSwap.Paint or MascotSwap.Crate or MascotSwap.Ufo or MascotSwap.Claw or MascotSwap.Sleeve or MascotSwap.Jigsaw
-                or MascotSwap.Catapult)
+                or MascotSwap.Catapult or MascotSwap.Shutter or MascotSwap.Crumple or MascotSwap.Slots or MascotSwap.Argue)
             {
                 Canvas.SetLeft(_npCoverCard, MascotCoverLeft);
                 StartMascotEnter(_mascotSwap switch
@@ -240,6 +245,10 @@ sealed partial class WiimController
                     MascotSwap.Sleeve => MascotState.Sleeve,
                     MascotSwap.Jigsaw => MascotState.Jigsaw,
                     MascotSwap.Catapult => MascotState.Catapult,
+                    MascotSwap.Shutter => MascotState.Shutter,
+                    MascotSwap.Crumple => MascotState.Crumple,
+                    MascotSwap.Slots => MascotState.Slots,
+                    MascotSwap.Argue => MascotState.Argue,
                     _ => MascotState.Ufo
                 }, MascotRushSpeed);
                 return;
@@ -254,12 +263,16 @@ sealed partial class WiimController
 
         private void SetMascotState(MascotState state)
         {
+            if (_mascotState == MascotState.Act && _mascotVisit == MascotVisit.Bump && state is not (MascotState.Act or MascotState.Poke)) _npCoverTurn.Angle = 0;
             _mascotState = state;
             _mascotStart = DateTime.UtcNow;
             if (state == MascotState.Gone)
             {
                 _mascotDone = false;
                 HideMascotExtras();
+                HideMascotSwaps();
+                HideMascotChores();
+                HideMascotSeason();
                 _mascot.ZIndex = 0;
                 Canvas.SetLeft(_mascot, MascotWalkTarget - MascotWidth);
             }
@@ -274,6 +287,7 @@ sealed partial class WiimController
             else if (!run) _mascotTimer.Stop();
             if (shown && !_mascotVisitTimer.IsEnabled) _mascotVisitTimer.Start();
             else if (!shown) _mascotVisitTimer.Stop();
+            UpdateMascotAmbient(shown);
         }
 
         private void CheckMascotVisit()
@@ -355,6 +369,10 @@ sealed partial class WiimController
             HideMascotTricks();
             HideMascotStageProps();
             HideMascotExtras();
+            HideMascotSwaps();
+            HideMascotChores();
+            HideMascotSeason();
+            ApplySeasonLook();
             _mascotScale.ScaleX = _mascotScale.ScaleY = 1;
             _mascotHeadroom = 0;
             _mascotEyes.ScaleX = _mascotEyes.ScaleY = 1;
@@ -515,6 +533,18 @@ sealed partial class WiimController
                     break;
                 case MascotState.SpinArt:
                     top = MascotOffsetTop() + StepMascotSpin(s);
+                    break;
+                case MascotState.Shutter:
+                    top = MascotOffsetTop() + StepMascotShutter(s);
+                    break;
+                case MascotState.Crumple:
+                    top = MascotOffsetTop() + StepMascotCrumple(s);
+                    break;
+                case MascotState.Slots:
+                    top = MascotOffsetTop() + StepMascotSlots(s);
+                    break;
+                case MascotState.Argue:
+                    top = MascotOffsetTop() + StepMascotArgue(s);
                     break;
                 case MascotState.Held:
                     top = StepMascotHeld(s);

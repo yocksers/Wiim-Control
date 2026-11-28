@@ -95,6 +95,19 @@ sealed partial class WiimController
         set { _analyzerBackground = value; SaveConfig(); }
     }
 
+    private bool _mascotHolidays = true;
+
+    internal bool MascotHolidays
+    {
+        get => _mascotHolidays;
+        set
+        {
+            _mascotHolidays = value;
+            SaveConfig();
+            _settingsWindow?.OnMascotHolidaysChanged();
+        }
+    }
+
     private bool _vuFollowVolume;
 
     internal bool VuFollowVolume

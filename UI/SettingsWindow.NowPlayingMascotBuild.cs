@@ -92,6 +92,9 @@ sealed partial class WiimController
             BuildMascotExtras(figure);
             BuildMascotOops();
             BuildMascotSpin();
+            BuildMascotSwaps();
+            BuildMascotChores();
+            BuildMascotSeason(figure);
             _mascotTimer.Host = _npOverlay;
             _mascotTimer.Tick += (_, _) => StepMascot();
             _npCoverCard.Tapped += (_, e) =>
@@ -139,6 +142,10 @@ sealed partial class WiimController
                 _zipLayer.IsVisible = false;
                 HideMascotTricks();
                 HideMascotStageProps();
+                HideMascotSwaps();
+                HideMascotChores();
+                HideMascotSeason();
+                UpdateMascotAmbient(false);
                 ResetCoverPlacement();
                 ApplyMascotHeadroom(0);
                 return;
